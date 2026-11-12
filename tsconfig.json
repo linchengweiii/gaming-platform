@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@gaming-platform/core": ["packages/core/src/index.ts"],
+      "@gaming-platform/core/*": ["packages/core/src/*"],
+      "@gaming-platform/catan": ["packages/games/catan/src/index.ts"],
+      "@gaming-platform/catan/*": ["packages/games/catan/src/*"],
+      "@gaming-platform/splendor": ["packages/games/splendor/src/index.ts"],
+      "@gaming-platform/splendor/*": ["packages/games/splendor/src/*"],
+      "@gaming-platform/azul": ["packages/games/azul/src/index.ts"],
+      "@gaming-platform/azul/*": ["packages/games/azul/src/*"]
+    }
+  },
+  "include": [
+    "packages/**/*.ts",
+    "apps/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    ".venv"
+  ]
+}

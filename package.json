@@ -1,0 +1,20 @@
+{
+  "name": "gaming-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-board-game online platform featuring Catan (Base Game, 5-6 Player Extension, Seafarers, Harbormaster & City Walls)",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "packages/games/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build:web": "bun build apps/web/src/app.ts --outdir apps/web/public/dist --target browser --minify",
+    "dev:server": "bun run apps/server/src/index.ts",
+    "start": "bun build apps/web/src/app.ts --outdir apps/web/public/dist --target browser && bun run apps/server/src/index.ts",
+    "sim": "bun run packages/games/catan/src/cli-sim.ts"
+  }
+}

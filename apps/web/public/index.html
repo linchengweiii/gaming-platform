@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-type="software" data-radius="soft" data-buttons="solid" data-motion>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Game Arena: Online tabletop board games</title>
+  <meta name="description" content="Play Settlers of Catan with expansions, Splendor, and Azul in your browser with room setup, undo history, and tabletop bots.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Game Arena: Online tabletop board games">
+  <meta property="og:description" content="Catan, Splendor, and Azul tables in your browser.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#18191b">
+  <meta name="site-kind" content="gaming">
+  <meta name="page-type" content="software">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400..700&family=Figtree:wght@400..600&family=Martian+Mono:wght@400..500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/system.css">
+  <link rel="stylesheet" href="assets/ui/cards.css">
+  <link rel="stylesheet" href="assets/motion/motion.css">
+  <link rel="stylesheet" href="assets/backgrounds/backgrounds.css">
+  <link rel="stylesheet" href="assets/layout/layout.css">
+  <link rel="stylesheet" href="assets/icons/icon.css">
+  <!-- <html lang="en" data-radius="soft">; keep this <style> after the links: layout.css resets --ly-scale -->
+  <style>
+  :root {
+    --p-bg: #18191b; --p-surface: #222427; --p-ink: #eff0f1; --p-muted: #9c9ea3;
+    --p-accent: #ff4a1f; --p-accent-ink: #18191b; --p-action: #ff4a1f; --p-action-ink: #18191b;
+    --p-inv-bg: #eff0f1; --p-inv-surface: #dedfe0; --p-inv-ink: #18191b; --p-inv-muted: #5b5c5e;
+    --p-inv-accent: #18191b; --p-inv-accent-ink: #eff0f1; --p-inv-action: #18191b; --p-inv-action-ink: #eff0f1;
+    --font-display: "Sora", system-ui, sans-serif;
+    --font-text: "Figtree", system-ui, sans-serif;
+    --font-mono: "Martian Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --display-weight: 400;
+    --display-tracking: -0.035em;
+    --display-tracking-xl: -0.045em;
+    --ly-scale: 0.9;
+  }
+  </style>
+  <link rel="stylesheet" href="./styles.css">
+  <script>document.documentElement.classList.add('m-enter');setTimeout(()=>document.documentElement.classList.add('m-enter-done'),700)</script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="./dist/app.js"></script>
+  <script type="module" src="assets/motion/motion.js"></script>
+</body>
+</html>

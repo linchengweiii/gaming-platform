@@ -1,0 +1,42 @@
+# OS
+.DS_Store
+
+# Node / Bun / TypeScript
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Python / Legacy
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Agent / Local Skill Metadata & Unused Starter Demo Packs
+.agents/
+.taste-skill/
+apps/web/public/assets/*
+!apps/web/public/assets/system.css
+!apps/web/public/assets/system.js
+!apps/web/public/assets/ui/
+apps/web/public/assets/ui/*
+!apps/web/public/assets/ui/cards.css
+!apps/web/public/assets/motion/
+apps/web/public/assets/motion/*
+!apps/web/public/assets/motion/motion.css
+!apps/web/public/assets/motion/motion.js
+!apps/web/public/assets/backgrounds/
+apps/web/public/assets/backgrounds/*
+!apps/web/public/assets/backgrounds/backgrounds.css
+!apps/web/public/assets/layout/
+apps/web/public/assets/layout/*
+!apps/web/public/assets/layout/layout.css
+!apps/web/public/assets/icons/
+apps/web/public/assets/icons/*
+!apps/web/public/assets/icons/icon.css
+
+# Env
+.env
+.env.local

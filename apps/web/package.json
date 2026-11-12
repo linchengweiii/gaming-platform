@@ -1,0 +1,12 @@
+{
+  "name": "@gaming-platform/web",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@gaming-platform/core": "workspace:*",
+    "@gaming-platform/catan": "workspace:*",
+    "@gaming-platform/splendor": "workspace:*",
+    "@gaming-platform/azul": "workspace:*"
+  }
+}

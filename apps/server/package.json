@@ -1,0 +1,13 @@
+{
+  "name": "@gaming-platform/server",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "dependencies": {
+    "@gaming-platform/core": "workspace:*",
+    "@gaming-platform/catan": "workspace:*",
+    "@gaming-platform/splendor": "workspace:*",
+    "@gaming-platform/azul": "workspace:*"
+  }
+}
