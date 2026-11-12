@@ -4,6 +4,7 @@
 # Node / Bun / TypeScript
 node_modules/
 dist/
+_site/
 build/
 coverage/
 *.tsbuildinfo

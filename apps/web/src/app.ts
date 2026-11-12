@@ -72,6 +72,7 @@ type AppViewMode = "login" | "lobby" | "room_setup" | "in_game";
 export interface MultiGamePlatformAppOptions {
   startAtLogin?: boolean;
   forceLocalMode?: boolean;
+  staticHostOnly?: boolean;
 }
 
 interface GuestSession {
@@ -286,6 +287,7 @@ class MultiGamePlatformApp {
 
   // Guest session, multi-host device profiles & server realtime sync state
   private useServerBackend = false;
+  private staticHostOnly = false;
   private serverReachable = true;
   private isAuthenticated = true;
   private addingAdditionalGuest = false;
@@ -348,13 +350,22 @@ class MultiGamePlatformApp {
 
   constructor(root: HTMLElement, options?: MultiGamePlatformAppOptions) {
     this.root = root;
+    const isStaticHost =
+      Boolean(options?.staticHostOnly) ||
+      (typeof document !== "undefined" &&
+        Boolean(document.documentElement?.hasAttribute("data-static-only"))) ||
+      (typeof window !== "undefined" &&
+        Boolean(window.location?.hostname?.endsWith(".github.io")));
     const isBrowserHttp =
       !options?.forceLocalMode &&
       typeof window !== "undefined" &&
       typeof fetch === "function" &&
       Boolean(window.location?.protocol?.startsWith("http"));
-    this.useServerBackend = isBrowserHttp;
-    this.createRoomMode = isBrowserHttp ? "online" : "offline";
+
+    this.staticHostOnly = isStaticHost;
+    this.useServerBackend = isBrowserHttp && !isStaticHost;
+    this.serverReachable = !isStaticHost;
+    this.createRoomMode = this.useServerBackend ? "online" : "offline";
     this.loginDraftName = `Guest ${100 + Math.floor(Math.random() * 900)}`;
 
     this.deviceGuests = this.loadDeviceGuests();
@@ -376,7 +387,7 @@ class MultiGamePlatformApp {
           mode: "guest",
         });
       }
-    } else if (isBrowserHttp) {
+    } else if (isBrowserHttp || isStaticHost) {
       this.isAuthenticated = false;
       this.viewMode = "login";
     } else {
@@ -387,7 +398,7 @@ class MultiGamePlatformApp {
       });
     }
 
-    if (!this.useServerBackend) {
+    if (!this.useServerBackend && !this.staticHostOnly) {
       this.seedInitialLobbyRooms();
     }
     this.registerGlobalDropdownDismiss();
@@ -395,7 +406,6 @@ class MultiGamePlatformApp {
 
     if (this.useServerBackend && this.isAuthenticated) {
       void this.fetchLobbyRooms();
-      this.connectServerRealtime();
     }
   }
 
@@ -537,8 +547,29 @@ class MultiGamePlatformApp {
 
     if (this.useServerBackend) {
       void this.fetchLobbyRooms();
-      this.connectServerRealtime();
     }
+    return true;
+  }
+
+  public startSoloGameFromLogin(rawName?: string): boolean {
+    const fallbackName = (rawName ?? this.loginDraftName).trim() || "Player 1";
+    const ok = this.signInAsGuest(fallbackName);
+    if (!ok) return false;
+    this.createRoomMode = "offline";
+    const room = this.createLocalRoom({
+      name: `${this.currentUserName}'s solo table`,
+      gameId: this.createRoomGameId,
+      ownerId: this.currentUserId,
+      ownerName: this.currentUserName,
+      isOfflineLocal: true,
+      botCount: 3,
+      startingPlayerMode: "random",
+      autoStart: false,
+    });
+    this.activeRoomId = room.roomId;
+    this.viewMode = "room_setup";
+    this.resetSubModes();
+    this.render();
     return true;
   }
 
@@ -840,8 +871,24 @@ class MultiGamePlatformApp {
     if (!this.useServerBackend) return;
     try {
       const res = await fetch("/api/rooms");
-      if (!res.ok) return;
+      const ct = res.headers.get("content-type") ?? "";
+      if (!res.ok || !ct.includes("application/json")) {
+        // Running on a static host without the Node/Bun room backend
+        this.staticHostOnly = true;
+        this.useServerBackend = false;
+        this.serverReachable = false;
+        this.createRoomMode = "offline";
+        if (this.wsReconnectTimer) {
+          clearTimeout(this.wsReconnectTimer);
+          this.wsReconnectTimer = null;
+        }
+        if (this.viewMode === "lobby") {
+          this.renderPreservingFocus();
+        }
+        return;
+      }
       this.serverReachable = true;
+      this.connectServerRealtime();
       const data = await res.json();
       if (Array.isArray(data.rooms)) {
         this.syncOnlineLobbyRooms(data.rooms);
@@ -1977,14 +2024,17 @@ class MultiGamePlatformApp {
               ${this.addingAdditionalGuest ? "Save and switch guest" : "Continue as guest"}${DRAWN_ARROW_SVG}
             </button>
 
-            <button type="button" id="btn-start-offline-local" class="btn btn--secondary" style="width: 100%;">
-              Play offline with local friends
-            </button>
-
             ${
-              this.addingAdditionalGuest
-                ? `<button type="button" id="btn-cancel-add-guest" class="btn btn--secondary" style="width: 100%;">Cancel</button>`
-                : ""
+              !this.addingAdditionalGuest
+                ? `
+                  <button type="button" id="btn-start-solo-game" class="btn btn--secondary" style="width: 100%;">
+                    Start solo game with bots
+                  </button>
+                  <button type="button" id="btn-start-offline-local" class="btn btn--secondary" style="width: 100%;">
+                    Play offline with local friends
+                  </button>
+                `
+                : `<button type="button" id="btn-cancel-add-guest" class="btn btn--secondary" style="width: 100%;">Cancel</button>`
             }
           </div>
 
@@ -2010,7 +2060,7 @@ class MultiGamePlatformApp {
           }
 
           <p class="t-small muted">
-            Add multiple guests on one computer to host separate rooms, or start an offline table to pass and play with friends.
+            Play solo against tabletop bots, pass and play offline with local friends, or add multiple guest profiles on one computer.
           </p>
         </form>
       </main>
@@ -2030,6 +2080,12 @@ class MultiGamePlatformApp {
       ?.addEventListener("submit", (e) => {
         e.preventDefault();
         this.signInAsGuest(this.loginDraftName);
+      });
+
+    this.root
+      .querySelector("#btn-start-solo-game")
+      ?.addEventListener("click", () => {
+        this.startSoloGameFromLogin(this.loginDraftName);
       });
 
     this.root
@@ -2084,7 +2140,7 @@ class MultiGamePlatformApp {
     for (const g of this.deviceGuests) {
       pushProfile(g.id, g.name, "Guest");
     }
-    if (!this.useServerBackend) {
+    if (!this.useServerBackend && !this.staticHostOnly) {
       for (const u of USER_PROFILES) {
         pushProfile(u.id, u.name, u.roleHint);
       }
@@ -2093,9 +2149,11 @@ class MultiGamePlatformApp {
     return `
       <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">
         ${
-          this.useServerBackend && !this.serverReachable
-            ? `<span class="ga-chip ga-chip--warn">Offline mode</span>`
-            : ""
+          this.staticHostOnly
+            ? `<span class="ga-chip ga-chip--ok">Solo and local play</span>`
+            : this.useServerBackend && !this.serverReachable
+              ? `<span class="ga-chip ga-chip--warn">Offline mode</span>`
+              : ""
         }
         <label class="ga-inline-label" for="sel-user-identity-btn">Guest</label>
         ${renderDropdown({
@@ -2130,9 +2188,19 @@ class MultiGamePlatformApp {
       this.useServerBackend && this.serverReachable
         ? [
             { value: "online", label: "Online room", meta: "Live sync" },
-            { value: "offline", label: "Offline local", meta: "Pass and play" },
+            {
+              value: "offline",
+              label: "Offline local",
+              meta: "Solo and friends",
+            },
           ]
-        : [{ value: "offline", label: "Offline local", meta: "Pass and play" }];
+        : [
+            {
+              value: "offline",
+              label: "Offline local",
+              meta: "Solo and friends",
+            },
+          ];
 
     this.root.innerHTML = `
       <header class="ga-nav">
@@ -2263,7 +2331,7 @@ class MultiGamePlatformApp {
             <p class="t-small muted">
               ${
                 effectiveMode === "offline"
-                  ? `Opens an offline room on this computer with <strong>${escapeAttr(this.currentUserName)}</strong> as host. Add local friends and bots on the setup screen.`
+                  ? `Opens a local room on this computer with <strong>${escapeAttr(this.currentUserName)}</strong> as host. Add bots for a solo game or add local friends to pass and play.`
                   : `Opens an online room with <strong>${escapeAttr(this.currentUserName)}</strong> as host. Choose bots, local friends, and starting player on the setup screen.`
               }
             </p>
@@ -2284,7 +2352,7 @@ class MultiGamePlatformApp {
                 ? `
                   <div class="ga-empty-rooms">
                     <p class="t-body" style="color: var(--ink); font-weight: 500;">No open rooms yet.</p>
-                    <p class="t-small muted">Create a room on the left to become the host, or open an offline local table to play with friends on this computer.</p>
+                    <p class="t-small muted">Create a room on the left to play solo against bots or pass and play offline with local friends.</p>
                   </div>
                 `
                 : `

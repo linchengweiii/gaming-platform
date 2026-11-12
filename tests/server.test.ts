@@ -236,7 +236,10 @@ describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", ()
   });
 
   test("applies taste-skill design system tokens and renders Lobby, Setup, and Game pages cleanly", () => {
-    const indexHtml = fs.readFileSync("apps/web/public/index.html", "utf8");
+    const indexHtml = fs.readFileSync(
+      new URL("../apps/web/public/index.html", import.meta.url),
+      "utf8"
+    );
     expect(indexHtml).toContain('data-type="software"');
     expect(indexHtml).toContain('data-radius="soft"');
     expect(indexHtml).toContain('data-buttons="solid"');
@@ -662,5 +665,40 @@ describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", ()
     expect(srvRoom.players[1]!.controllerId).toBe("host-mia");
     manager.startGame(srvRoom.roomId, "host-mia");
     expect(srvRoom.status).toBe("in_progress");
+  });
+
+  test("serves static GitHub Pages mode cleanly for solo games against bots and local pass-and-play", () => {
+    const fakeRoot: any = {
+      innerHTML: "",
+      querySelector: () => null,
+      querySelectorAll: () => [],
+    };
+    const staticApp = new MultiGamePlatformApp(fakeRoot, {
+      staticHostOnly: true,
+    });
+
+    // Boots at Guest Sign-In with zero pre-seeded rooms and zero server/WS calls
+    expect((staticApp as any).viewMode).toBe("login");
+    expect((staticApp as any).useServerBackend).toBe(false);
+    expect((staticApp as any).rooms.size).toBe(0);
+    expect(fakeRoot.innerHTML).toContain('id="btn-start-solo-game"');
+    expect(fakeRoot.innerHTML).toContain('id="btn-start-offline-local"');
+
+    // 1-click Solo game vs bots opens Room Setup with 1 human + 3 bots
+    staticApp.startSoloGameFromLogin("Solo Explorer");
+    expect((staticApp as any).viewMode).toBe("room_setup");
+    expect(fakeRoot.innerHTML).toContain("Solo and local play");
+    const soloRoomId = (staticApp as any).activeRoomId as string;
+    const soloRoom = (staticApp as any).rooms.get(soloRoomId);
+    expect(soloRoom.isOfflineLocal).toBe(true);
+    expect(soloRoom.botCount).toBe(3);
+    expect(soloRoom.players.length).toBe(4);
+
+    // Launch solo match and verify invariants
+    (staticApp as any).startRoomMatch(soloRoomId);
+    expect((staticApp as any).viewMode).toBe("in_game");
+    expect(CatanEngine.checkInvariants(soloRoom.session.getState()).valid).toBe(
+      true
+    );
   });
 });
