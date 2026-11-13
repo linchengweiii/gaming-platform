@@ -1,11 +1,14 @@
 import type { BotDifficulty } from "@gaming-platform/core";
 import {
   computeCardPurchasePayment,
+  emptyGemMap,
   getSplendorLegalActions,
+  totalTokens,
 } from "./rules.ts";
 import {
   GEM_COLORS,
   type GemColor,
+  type GemMap,
   type SplendorAction,
   type SplendorCard,
   type SplendorPlayerState,
@@ -30,22 +33,27 @@ export interface SplendorMasterWeights {
   unlockTwoTurnWeight: number;
 }
 
+export const DEFAULT_SPLENDOR_MASTER_WEIGHTS: Readonly<SplendorMasterWeights> =
+  {
+    basePointWeight: 5.969,
+    sprintPointWeight: 9.328,
+    nobleImmediateWeight: 7.935,
+    nobleProgressWeight: 7.5,
+    earlyDiscountWeight: 1.55,
+    midDiscountWeight: 0.826,
+    costEfficiencyPenalty: 0.259,
+    sprintZeroPointPenalty: 0.595,
+    reserveBoost: 1.46,
+    distanceExponent: 2.15,
+    singleColorBottleneckMult: 1.294,
+    draftedCountBonus: 1.4,
+    overflowPenalty: 7.715,
+    unlockOneTurnWeight: 0.889,
+    unlockTwoTurnWeight: 0.202,
+  };
+
 export let SPLENDOR_MASTER_WEIGHTS: SplendorMasterWeights = {
-  basePointWeight: 5.969,
-  sprintPointWeight: 9.328,
-  nobleImmediateWeight: 7.935,
-  nobleProgressWeight: 7.5,
-  earlyDiscountWeight: 1.55,
-  midDiscountWeight: 0.826,
-  costEfficiencyPenalty: 0.259,
-  sprintZeroPointPenalty: 0.595,
-  reserveBoost: 1.46,
-  distanceExponent: 2.15,
-  singleColorBottleneckMult: 1.294,
-  draftedCountBonus: 1.4,
-  overflowPenalty: 7.715,
-  unlockOneTurnWeight: 0.889,
-  unlockTwoTurnWeight: 0.202,
+  ...DEFAULT_SPLENDOR_MASTER_WEIGHTS,
 };
 
 export function setMasterSplendorBotWeights(
@@ -57,15 +65,11 @@ export function setMasterSplendorBotWeights(
   };
 }
 
-function totalPlayerTokens(player: SplendorPlayerState): number {
-  return (
-    player.tokens.emerald +
-    player.tokens.diamond +
-    player.tokens.sapphire +
-    player.tokens.onyx +
-    player.tokens.ruby +
-    player.tokens.gold
-  );
+function maxBy<T>(items: readonly T[], scoreFn: (item: T) => number): T | null {
+  return items.reduce<{ item: T; score: number } | null>((best, item) => {
+    const score = scoreFn(item);
+    return best === null || score > best.score ? { item, score } : best;
+  }, null)?.item ?? null;
 }
 
 function getUnlockedNoblePoints(
@@ -73,26 +77,20 @@ function getUnlockedNoblePoints(
   player: SplendorPlayerState,
   bonusColor: GemColor
 ): number {
-  let bestNoblePts = 0;
-  for (const noble of state.nobles) {
-    let qualifies = true;
-    for (const c of GEM_COLORS) {
+  return state.nobles.reduce((bestNoblePts, noble) => {
+    const qualifies = GEM_COLORS.every((c) => {
       const req = noble.requirements[c] ?? 0;
       const after = player.bonuses[c] + (c === bonusColor ? 1 : 0);
-      if (after < req) {
-        qualifies = false;
-        break;
-      }
-    }
-    if (qualifies && noble.points > bestNoblePts) {
-      bestNoblePts = noble.points;
-    }
-  }
-  return bestNoblePts;
+      return after >= req;
+    });
+    return qualifies && noble.points > bestNoblePts
+      ? noble.points
+      : bestNoblePts;
+  }, 0);
 }
 
 /**
- * Evaluates a Splendor card's strategic utility across difficulty levels (`easy` -> `master`).
+ * Pure strategic card utility evaluator across difficulty tiers (`easy` -> `master`).
  */
 function evaluateCardUtility(
   state: SplendorState,
@@ -128,7 +126,7 @@ function evaluateCardUtility(
   const inSprintPhase =
     player.points >= 8 || maxOppPts >= 10 || engineSize >= 9;
 
-  let score =
+  const baseScore =
     card.points *
       (difficulty === "master"
         ? inSprintPhase
@@ -138,35 +136,32 @@ function evaluateCardUtility(
     nobleImmediatePts *
       (difficulty === "master" ? mw.nobleImmediateWeight : 8.5);
 
-  for (const noble of state.nobles) {
+  const nobleProgressBonus = state.nobles.reduce((sum, noble) => {
     const req = noble.requirements[card.bonus] ?? 0;
-    if (req > 0 && player.bonuses[card.bonus] < req) {
-      let totalMissingForNoble = 0;
-      for (const c of GEM_COLORS) {
-        totalMissingForNoble += Math.max(
-          0,
-          (noble.requirements[c] ?? 0) - player.bonuses[c]
-        );
-      }
-      score +=
-        difficulty === "master"
-          ? mw.nobleProgressWeight / Math.max(1, totalMissingForNoble)
-          : 3.0 / Math.max(1, totalMissingForNoble);
+    if (req <= 0 || player.bonuses[card.bonus] >= req) {
+      return sum;
     }
-  }
+    const totalMissingForNoble = GEM_COLORS.reduce(
+      (mAcc, c) =>
+        mAcc + Math.max(0, (noble.requirements[c] ?? 0) - player.bonuses[c]),
+      0
+    );
+    const weight = difficulty === "master" ? mw.nobleProgressWeight : 3.0;
+    return sum + weight / Math.max(1, totalMissingForNoble);
+  }, 0);
 
   const futureTargets = [
     ...player.reservedCards,
     ...state.market[2],
     ...state.market[3],
   ];
-  let demandForBonus = 0;
-  for (const future of futureTargets) {
-    if (future.id === card.id) continue;
-    if ((future.cost[card.bonus] ?? 0) > player.bonuses[card.bonus]) {
-      demandForBonus += future.points >= 2 ? 1.5 : 0.75;
-    }
-  }
+  const demandForBonus = futureTargets.reduce((sum, future) => {
+    if (future.id === card.id) return sum;
+    return (future.cost[card.bonus] ?? 0) > player.bonuses[card.bonus]
+      ? sum + (future.points >= 2 ? 1.5 : 0.75)
+      : sum;
+  }, 0);
+
   const discountWeight =
     engineSize < 5
       ? difficulty === "master"
@@ -179,23 +174,28 @@ function evaluateCardUtility(
         : inSprintPhase
           ? 0.2
           : 0.55;
-  score += (2.4 + Math.min(7.5, demandForBonus)) * discountWeight;
 
-  if (difficulty === "master") {
-    const payment = computeCardPurchasePayment(player, card);
-    const coloredSpent = GEM_COLORS.reduce(
-      (acc, c) => acc + (payment.payment[c] ?? 0),
-      0
-    );
-    const effectiveCost = coloredSpent + payment.goldShortfall * 1.35;
-    score -=
-      effectiveCost *
-      (card.points === 0 && inSprintPhase
-        ? mw.sprintZeroPointPenalty
-        : mw.costEfficiencyPenalty);
-  }
+  const engineBonus = (2.4 + Math.min(7.5, demandForBonus)) * discountWeight;
 
-  return score;
+  const efficiencyPenalty =
+    difficulty === "master"
+      ? (() => {
+          const payment = computeCardPurchasePayment(player, card);
+          const coloredSpent = GEM_COLORS.reduce(
+            (acc, c) => acc + (payment.payment[c] ?? 0),
+            0
+          );
+          const effectiveCost = coloredSpent + payment.goldShortfall * 1.35;
+          return (
+            effectiveCost *
+            (card.points === 0 && inSprintPhase
+              ? mw.sprintZeroPointPenalty
+              : mw.costEfficiencyPenalty)
+          );
+        })()
+      : 0;
+
+  return baseScore + nobleProgressBonus + engineBonus - efficiencyPenalty;
 }
 
 export function chooseSplendorBotAction(
@@ -223,26 +223,22 @@ export function chooseSplendorBotAction(
       return retActions[0] ?? legal[0]!;
     }
 
-    const colorPriority: Record<GemColor, number> = {
-      emerald: 0,
-      diamond: 0,
-      sapphire: 0,
-      onyx: 0,
-      ruby: 0,
-    };
-    for (const card of [
+    const relevantCards = [
       ...player.reservedCards,
       ...state.market[3],
       ...state.market[2],
       ...state.market[1],
-    ]) {
-      for (const c of GEM_COLORS) {
-        const need = Math.max(0, card.cost[c] - player.bonuses[c]);
-        colorPriority[c] += need * (card.points + 1);
-      }
-    }
+    ];
+    const colorPriority: GemMap = relevantCards.reduce<GemMap>(
+      (acc, card) =>
+        GEM_COLORS.reduce<GemMap>((inner, c) => {
+          const need = Math.max(0, card.cost[c] - player.bonuses[c]);
+          return { ...inner, [c]: inner[c] + need * (card.points + 1) };
+        }, acc),
+      emptyGemMap()
+    );
 
-    retActions.sort((a, b) => {
+    const sortedReturns = [...retActions].sort((a, b) => {
       const penaltyA =
         (a.tokens.gold ?? 0) * 100 +
         GEM_COLORS.reduce(
@@ -257,7 +253,7 @@ export function chooseSplendorBotAction(
         );
       return penaltyA - penaltyB;
     });
-    return retActions[0] ?? legal[0]!;
+    return sortedReturns[0] ?? legal[0]!;
   }
 
   const allAvailableCards = [
@@ -275,7 +271,7 @@ export function chooseSplendorBotAction(
   if (difficulty === "easy") {
     if (
       purchaseActions.length > 0 &&
-      (state.round % 2 === 1 || totalPlayerTokens(player) >= 8)
+      (state.round % 2 === 1 || totalTokens(player.tokens) >= 8)
     ) {
       return purchaseActions[0]!;
     }
@@ -283,80 +279,79 @@ export function chooseSplendorBotAction(
     return takes[takes.length - 1] ?? purchaseActions[0] ?? legal[0]!;
   }
 
-  let bestPurchase: Extract<SplendorAction, { type: "PURCHASE_CARD" }> | null =
-    null;
-  let bestPurchaseCard: SplendorCard | null = null;
-  let bestPurchaseScore = -Infinity;
-  for (const act of purchaseActions) {
+  const scoredPurchases = purchaseActions.flatMap((act) => {
     const card = allAvailableCards.find((c) => c.id === act.cardId);
-    if (!card) continue;
-    const s = evaluateCardUtility(state, player, card, difficulty);
-    if (s > bestPurchaseScore) {
-      bestPurchaseScore = s;
-      bestPurchase = act;
-      bestPurchaseCard = card;
-    }
+    return card
+      ? [{ act, card, score: evaluateCardUtility(state, player, card, difficulty) }]
+      : [];
+  });
+
+  const bestPurchaseEntry = scoredPurchases.reduce<
+    (typeof scoredPurchases)[number] | null
+  >(
+    (best, entry) => (best === null || entry.score > best.score ? entry : best),
+    null
+  );
+
+  if (bestPurchaseEntry && bestPurchaseEntry.score >= 900) {
+    return bestPurchaseEntry.act;
   }
 
-  if (bestPurchase && bestPurchaseScore >= 900) {
-    return bestPurchase;
-  }
-
-  // Master Defensive Block against an opponent's immediate lethal purchase
   const reserveActions = legal.filter(
     (a): a is Extract<SplendorAction, { type: "RESERVE_CARD" }> =>
       a.type === "RESERVE_CARD" && Boolean(a.cardId)
   );
+
   if (difficulty === "master" && reserveActions.length > 0) {
     const marketCards = [
       ...state.market[3],
       ...state.market[2],
       ...state.market[1],
     ];
-    for (const opp of state.players) {
-      if (opp.id === player.id) continue;
-      if (opp.points < state.config.targetPoints - 6) continue;
-      for (const mCard of marketCards) {
-        const oppNoble = getUnlockedNoblePoints(state, opp, mCard.bonus);
-        if (opp.points + mCard.points + oppNoble < state.config.targetPoints) {
-          continue;
-        }
-        const oppPay = computeCardPurchasePayment(opp, mCard);
-        if (oppPay.affordable) {
+    const defensiveReserve = state.players
+      .filter(
+        (opp) =>
+          opp.id !== player.id && opp.points >= state.config.targetPoints - 6
+      )
+      .flatMap((opp) =>
+        marketCards.flatMap((mCard) => {
+          const oppNoble = getUnlockedNoblePoints(state, opp, mCard.bonus);
+          if (opp.points + mCard.points + oppNoble < state.config.targetPoints) {
+            return [];
+          }
+          if (!computeCardPurchasePayment(opp, mCard).affordable) {
+            return [];
+          }
           const blockAct = reserveActions.find((r) => r.cardId === mCard.id);
-          if (blockAct) return blockAct;
-        }
-      }
+          return blockAct ? [blockAct] : [];
+        })
+      )[0];
+
+    if (defensiveReserve) {
+      return defensiveReserve;
     }
   }
 
-  if (bestPurchase && bestPurchaseCard) {
-    let holdTokensForBomb = false;
-    if (
+  if (bestPurchaseEntry) {
+    const { act: bestPurchase, card: bestPurchaseCard } = bestPurchaseEntry;
+    const holdTokensForBomb =
       difficulty === "master" &&
       player.points >= 9 &&
       bestPurchaseCard.points === 0 &&
-      getUnlockedNoblePoints(state, player, bestPurchaseCard.bonus) === 0
-    ) {
-      for (const bomb of [
-        ...player.reservedCards,
-        ...state.market[3],
-        ...state.market[2],
-      ]) {
-        if (bomb.points < 3) continue;
-        let miss = 0;
-        for (const c of GEM_COLORS) {
-          miss += Math.max(
-            0,
-            bomb.cost[c] - player.bonuses[c] - player.tokens[c]
+      getUnlockedNoblePoints(state, player, bestPurchaseCard.bonus) === 0 &&
+      [...player.reservedCards, ...state.market[3], ...state.market[2]].some(
+        (bomb) => {
+          if (bomb.points < 3) return false;
+          const miss = GEM_COLORS.reduce(
+            (sum, c) =>
+              sum +
+              Math.max(0, bomb.cost[c] - player.bonuses[c] - player.tokens[c]),
+            0
           );
+          return miss - player.tokens.gold <= 2;
         }
-        if (miss - player.tokens.gold <= 2) {
-          holdTokensForBomb = true;
-          break;
-        }
-      }
-    }
+      );
+
     if (!holdTokensForBomb) {
       return bestPurchase;
     }
@@ -366,28 +361,32 @@ export function chooseSplendorBotAction(
     difficulty === "master" &&
     player.reservedCards.length < 2 &&
     state.bank.gold > 0 &&
-    totalPlayerTokens(player) <= 9
+    totalTokens(player.tokens) <= 9
   ) {
-    for (const act of reserveActions) {
+    const starvedBombReserve = reserveActions.find((act) => {
       const card = [...state.market[3], ...state.market[2]].find(
         (c) => c.id === act.cardId
       );
-      if (!card || card.points < 3) continue;
-      let totalMiss = 0;
-      let bankStarvedMiss = false;
-      for (const c of GEM_COLORS) {
-        const miss = Math.max(
-          0,
-          card.cost[c] - player.bonuses[c] - player.tokens[c]
-        );
-        totalMiss += miss;
-        if (miss > 0 && state.bank[c] === 0) {
-          bankStarvedMiss = true;
-        }
-      }
-      if (bankStarvedMiss && totalMiss <= player.tokens.gold + 1) {
-        return act;
-      }
+      if (!card || card.points < 3) return false;
+      const { totalMiss, bankStarvedMiss } = GEM_COLORS.reduce(
+        (acc, c) => {
+          const miss = Math.max(
+            0,
+            card.cost[c] - player.bonuses[c] - player.tokens[c]
+          );
+          return {
+            totalMiss: acc.totalMiss + miss,
+            bankStarvedMiss:
+              acc.bankStarvedMiss || (miss > 0 && state.bank[c] === 0),
+          };
+        },
+        { totalMiss: 0, bankStarvedMiss: false }
+      );
+      return bankStarvedMiss && totalMiss <= player.tokens.gold + 1;
+    });
+
+    if (starvedBombReserve) {
+      return starvedBombReserve;
     }
   }
 
@@ -401,7 +400,7 @@ export function chooseSplendorBotAction(
           ...state.market[3],
         ];
 
-  const gemNeedWeights: Record<GemColor, number> = {
+  const initialGemWeights: GemMap = {
     emerald: 0.4,
     diamond: 0.4,
     sapphire: 0.4,
@@ -409,23 +408,31 @@ export function chooseSplendorBotAction(
     ruby: 0.4,
   };
 
-  for (const card of candidateCards) {
+  const gemNeedWeights = candidateCards.reduce<GemMap>((weightsAcc, card) => {
     const isReservedByMe = player.reservedCards.some((r) => r.id === card.id);
-    let totalMissing = 0;
-    let maxSingleColorMissing = 0;
-    for (const c of GEM_COLORS) {
-      const m = Math.max(
-        0,
-        card.cost[c] - player.bonuses[c] - player.tokens[c]
-      );
-      totalMissing += m;
-      if (m > maxSingleColorMissing) {
-        const effectiveColorTurns = m === 2 && state.bank[c] >= 4 ? 1 : m;
-        if (effectiveColorTurns > maxSingleColorMissing) {
-          maxSingleColorMissing = effectiveColorTurns;
-        }
-      }
-    }
+    const { totalMissing, maxSingleColorMissing } = GEM_COLORS.reduce(
+      (acc, c) => {
+        const m = Math.max(
+          0,
+          card.cost[c] - player.bonuses[c] - player.tokens[c]
+        );
+        const effectiveColorTurns =
+          m > acc.maxSingleColorMissing
+            ? m === 2 && state.bank[c] >= 4
+              ? 1
+              : m
+            : acc.maxSingleColorMissing;
+        return {
+          totalMissing: acc.totalMissing + m,
+          maxSingleColorMissing: Math.max(
+            acc.maxSingleColorMissing,
+            effectiveColorTurns
+          ),
+        };
+      },
+      { totalMissing: 0, maxSingleColorMissing: 0 }
+    );
+
     const netTotalMissing = Math.max(1, totalMissing - player.tokens.gold);
     const effectiveDistance =
       difficulty === "master"
@@ -439,8 +446,11 @@ export function chooseSplendorBotAction(
       1,
       evaluateCardUtility(state, player, card, difficulty)
     );
-    const reserveBoost =
-      isReservedByMe ? (difficulty === "master" ? mw.reserveBoost : 1.55) : 1.0;
+    const reserveBoost = isReservedByMe
+      ? difficulty === "master"
+        ? mw.reserveBoost
+        : 1.55
+      : 1.0;
     const exp =
       difficulty === "normal"
         ? 1.15
@@ -449,83 +459,102 @@ export function chooseSplendorBotAction(
           : mw.distanceExponent;
     const weight = (util * reserveBoost) / Math.pow(effectiveDistance, exp);
 
-    for (const color of GEM_COLORS) {
+    return GEM_COLORS.reduce<GemMap>((inner, color) => {
       const missing = Math.max(
         0,
         card.cost[color] - player.bonuses[color] - player.tokens[color]
       );
-      if (missing > 0) {
-        gemNeedWeights[color] += missing * weight;
-      }
-    }
-  }
+      return missing > 0
+        ? { ...inner, [color]: inner[color] + missing * weight }
+        : inner;
+    }, weightsAcc);
+  }, initialGemWeights);
 
   const takeGemsActions = legal.filter(
     (a): a is Extract<SplendorAction, { type: "TAKE_GEMS" }> =>
       a.type === "TAKE_GEMS"
   );
-  if (takeGemsActions.length > 0) {
-    const curTokens = totalPlayerTokens(player);
-    let bestTake = takeGemsActions[0]!;
-    let bestScore = -Infinity;
 
-    for (const act of takeGemsActions) {
-      let draftedCount = 0;
-      let s = 0;
-      for (const color of GEM_COLORS) {
-        const count = act.gems[color] ?? 0;
-        draftedCount += count;
-        s += count * gemNeedWeights[color];
-      }
+  if (takeGemsActions.length > 0) {
+    const curTokens = totalTokens(player.tokens);
+
+    const scoreTakeAction = (
+      act: Extract<SplendorAction, { type: "TAKE_GEMS" }>
+    ): number => {
+      const { draftedCount, baseNeedScore } = GEM_COLORS.reduce(
+        (acc, color) => {
+          const count = act.gems[color] ?? 0;
+          return {
+            draftedCount: acc.draftedCount + count,
+            baseNeedScore: acc.baseNeedScore + count * gemNeedWeights[color],
+          };
+        },
+        { draftedCount: 0, baseNeedScore: 0 }
+      );
 
       if (difficulty === "master") {
-        s += draftedCount * mw.draftedCountBonus;
         const overflow = Math.max(0, curTokens + draftedCount - 10);
-        s -= overflow * mw.overflowPenalty;
+        const { maxUnlockedUtil, maxTwoTurnUtil } = candidateCards.reduce(
+          (uAcc, card) => {
+            const { remShortfall, maxColorRem } = GEM_COLORS.reduce(
+              (cAcc, c) => {
+                const haveAfter =
+                  player.bonuses[c] + player.tokens[c] + (act.gems[c] ?? 0);
+                if (haveAfter >= card.cost[c]) return cAcc;
+                const cm = card.cost[c] - haveAfter;
+                return {
+                  remShortfall: cAcc.remShortfall + cm,
+                  maxColorRem: Math.max(cAcc.maxColorRem, cm),
+                };
+              },
+              { remShortfall: 0, maxColorRem: 0 }
+            );
 
-        let maxUnlockedUtil = 0;
-        let maxTwoTurnUtil = 0;
-        for (const card of candidateCards) {
-          let remShortfall = 0;
-          let maxColorRem = 0;
-          for (const c of GEM_COLORS) {
-            const haveAfter =
-              player.bonuses[c] + player.tokens[c] + (act.gems[c] ?? 0);
-            if (haveAfter < card.cost[c]) {
-              const cm = card.cost[c] - haveAfter;
-              remShortfall += cm;
-              if (cm > maxColorRem) maxColorRem = cm;
+            if (remShortfall <= player.tokens.gold) {
+              const u = evaluateCardUtility(state, player, card, difficulty);
+              return {
+                ...uAcc,
+                maxUnlockedUtil: Math.max(uAcc.maxUnlockedUtil, u),
+              };
             }
-          }
-          if (remShortfall <= player.tokens.gold) {
-            const u = evaluateCardUtility(state, player, card, difficulty);
-            if (u > maxUnlockedUtil) maxUnlockedUtil = u;
-          } else if (
-            remShortfall - player.tokens.gold <= 3 &&
-            maxColorRem - player.tokens.gold <= 1
-          ) {
-            const u2 = evaluateCardUtility(state, player, card, difficulty);
-            if (u2 > maxTwoTurnUtil) maxTwoTurnUtil = u2;
-          }
-        }
-        s +=
+            if (
+              remShortfall - player.tokens.gold <= 3 &&
+              maxColorRem - player.tokens.gold <= 1
+            ) {
+              const u2 = evaluateCardUtility(state, player, card, difficulty);
+              return {
+                ...uAcc,
+                maxTwoTurnUtil: Math.max(uAcc.maxTwoTurnUtil, u2),
+              };
+            }
+            return uAcc;
+          },
+          { maxUnlockedUtil: 0, maxTwoTurnUtil: 0 }
+        );
+
+        return (
+          baseNeedScore +
+          draftedCount * mw.draftedCountBonus -
+          overflow * mw.overflowPenalty +
           maxUnlockedUtil * mw.unlockOneTurnWeight +
-          maxTwoTurnUtil * mw.unlockTwoTurnWeight;
-      } else if (difficulty === "smart") {
+          maxTwoTurnUtil * mw.unlockTwoTurnWeight
+        );
+      }
+
+      if (difficulty === "smart") {
         const overflow = Math.max(0, curTokens + draftedCount - 10);
-        s -= overflow * 4.5;
+        return baseNeedScore - overflow * 4.5;
       }
 
-      if (s > bestScore) {
-        bestScore = s;
-        bestTake = act;
-      }
-    }
+      return baseNeedScore;
+    };
 
+    const bestTake = maxBy(takeGemsActions, scoreTakeAction)!;
     const bestDraftedCount = GEM_COLORS.reduce(
       (acc, c) => acc + (bestTake.gems[c] ?? 0),
       0
     );
+
     if (
       difficulty === "master" &&
       bestDraftedCount <= 1 &&
@@ -533,24 +562,20 @@ export function chooseSplendorBotAction(
       reserveActions.length > 0 &&
       curTokens <= 8
     ) {
-      let bestRes = reserveActions[0]!;
-      let bestResUtil = -Infinity;
-      for (const rAct of reserveActions) {
+      const validReserves = reserveActions.flatMap((rAct) => {
         const c = allAvailableCards.find((x) => x.id === rAct.cardId);
-        if (!c) continue;
-        const u = evaluateCardUtility(state, player, c, difficulty);
-        if (u > bestResUtil) {
-          bestResUtil = u;
-          bestRes = rAct;
-        }
-      }
-      return bestRes;
+        return c
+          ? [{ rAct, util: evaluateCardUtility(state, player, c, difficulty) }]
+          : [];
+      });
+      const bestResEntry = maxBy(validReserves, (entry) => entry.util);
+      return bestResEntry ? bestResEntry.rAct : reserveActions[0]!;
     }
 
     return bestTake;
   }
 
-  if (bestPurchase) return bestPurchase;
+  if (bestPurchaseEntry) return bestPurchaseEntry.act;
   if (reserveActions.length > 0) return reserveActions[0]!;
   return legal[0]!;
 }

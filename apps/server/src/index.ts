@@ -5,14 +5,16 @@ import path from "node:path";
 import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import {
-  PlatformRoomManager,
+  type PlatformRoomManager,
+  type RoomInstance,
+  createPlatformRoomManager,
   getRoomActingPlayerId,
 } from "./room-manager.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, "../../web/public");
 
-const MIME_TYPES: Record<string, string> = {
+const MIME_TYPES: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
@@ -27,67 +29,173 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 interface WsClient {
-  id: string;
-  socket: Duplex;
-  roomId: string | null;
-  playerId: string | null;
+  readonly id: string;
+  readonly socket: Duplex;
+  readonly roomId: string | null;
+  readonly playerId: string | null;
 }
 
-export function createPlatformServer() {
-  const roomManager = new PlatformRoomManager();
-  const wsClients = new Set<WsClient>();
+export interface DecodedWsFrame {
+  readonly opcode: number;
+  readonly text?: string;
+}
+
+export function resolveEffectiveViewerIdPure(
+  room: Pick<RoomInstance, "players">,
+  viewerId: string | null,
+  actingId: string | null
+): string | null {
+  if (!viewerId) return null;
+  if (actingId) {
+    const actingPlayer = room.players.find((p) => p.id === actingId);
+    if (actingPlayer?.controllerId === viewerId) {
+      return actingId;
+    }
+  }
+  return viewerId;
+}
+
+export function computeWsAcceptKeyPure(secWebsocketKey: string): string {
+  return crypto
+    .createHash("sha1")
+    .update(secWebsocketKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+    .digest("base64");
+}
+
+export function encodeWsTextFramePure(payload: unknown): Buffer {
+  const json = Buffer.from(JSON.stringify(payload), "utf8");
+  const len = json.length;
+  const header = (() => {
+    if (len < 126) {
+      return Buffer.from([0x81, len]);
+    }
+    if (len < 65536) {
+      const buf = Buffer.alloc(4);
+      buf[0] = 0x81;
+      buf[1] = 126;
+      buf.writeUInt16BE(len, 2);
+      return buf;
+    }
+    const buf = Buffer.alloc(10);
+    buf[0] = 0x81;
+    buf[1] = 127;
+    buf.writeBigUInt64BE(BigInt(len), 2);
+    return buf;
+  })();
+  return Buffer.concat([header, json]);
+}
+
+export function decodeWsFramesPure(buffer: Buffer): readonly DecodedWsFrame[] {
+  const parseFrom = (
+    cursor: number,
+    acc: readonly DecodedWsFrame[]
+  ): readonly DecodedWsFrame[] => {
+    if (cursor + 2 > buffer.length) return acc;
+    const opcode = buffer[cursor]! & 0x0f;
+    if (opcode === 0x08) {
+      return [...acc, { opcode: 0x08 }];
+    }
+
+    const isMasked = Boolean(buffer[cursor + 1]! & 0x80);
+    const rawLen = buffer[cursor + 1]! & 0x7f;
+
+    const lengthInfo = (() => {
+      if (rawLen === 126) {
+        if (cursor + 4 > buffer.length) return null;
+        return { payloadLen: buffer.readUInt16BE(cursor + 2), offset: cursor + 4 };
+      }
+      if (rawLen === 127) {
+        if (cursor + 10 > buffer.length) return null;
+        return {
+          payloadLen: Number(buffer.readBigUInt64BE(cursor + 2)),
+          offset: cursor + 10,
+        };
+      }
+      return { payloadLen: rawLen, offset: cursor + 2 };
+    })();
+
+    if (!lengthInfo) return acc;
+    const totalNeeded =
+      lengthInfo.offset + (isMasked ? 4 : 0) + lengthInfo.payloadLen;
+    if (totalNeeded > buffer.length) return acc;
+
+    if (opcode === 0x01) {
+      const payload = isMasked
+        ? (() => {
+            const mask = buffer.subarray(lengthInfo.offset, lengthInfo.offset + 4);
+            const dataStart = lengthInfo.offset + 4;
+            const unmasked = Uint8Array.from(
+              { length: lengthInfo.payloadLen },
+              (_, i) => buffer[dataStart + i]! ^ mask[i % 4]!
+            );
+            return Buffer.from(unmasked);
+          })()
+        : buffer.subarray(
+            lengthInfo.offset,
+            lengthInfo.offset + lengthInfo.payloadLen
+          );
+
+      return parseFrom(totalNeeded, [
+        ...acc,
+        { opcode: 0x01, text: payload.toString("utf8") },
+      ]);
+    }
+
+    return parseFrom(totalNeeded, [...acc, { opcode }]);
+  };
+
+  return parseFrom(0, []);
+}
+
+export function resolveSafeStaticPathPure(
+  publicDir: string,
+  pathname: string
+): string {
+  const relativePath = pathname === "/" ? "index.html" : pathname.slice(1);
+  const safePath = path
+    .normalize(relativePath)
+    .replace(/^(\.\.(\/|\\|$))+/, "");
+  return path.join(publicDir, safePath);
+}
+
+export function createPlatformServer(): {
+  server: http.Server;
+  roomManager: PlatformRoomManager;
+} {
+  const roomManager = createPlatformRoomManager();
+  let wsClients: Readonly<Record<string, WsClient>> = {};
   const roomBotTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  function resolveEffectiveViewerId(
-    room: ReturnType<PlatformRoomManager["getRoom"]>,
-    viewerId: string | null,
-    actingId: string | null
-  ): string | null {
-    if (!viewerId) return null;
-    if (actingId) {
-      const actingPlayer = room.players.find((p) => p.id === actingId);
-      if (actingPlayer?.controllerId === viewerId) {
-        return actingId;
-      }
-    }
-    return viewerId;
+  function upsertWsClient(client: WsClient): void {
+    wsClients = {
+      ...wsClients,
+      [client.id]: client,
+    };
+  }
+
+  function removeWsClient(clientId: string): void {
+    wsClients = Object.fromEntries(
+      Object.entries(wsClients).filter(([id]) => id !== clientId)
+    );
   }
 
   function sendWsFrame(socket: Duplex, payload: unknown): void {
     if (socket.destroyed || !socket.writable) return;
-    const json = Buffer.from(JSON.stringify(payload), "utf8");
-    const len = json.length;
-    let header: Buffer;
-    if (len < 126) {
-      header = Buffer.alloc(2);
-      header[0] = 0x81; // FIN + text frame
-      header[1] = len;
-    } else if (len < 65536) {
-      header = Buffer.alloc(4);
-      header[0] = 0x81;
-      header[1] = 126;
-      header.writeUInt16BE(len, 2);
-    } else {
-      header = Buffer.alloc(10);
-      header[0] = 0x81;
-      header[1] = 127;
-      header.writeBigUInt64BE(BigInt(len), 2);
-    }
-    socket.write(Buffer.concat([header, json]));
+    socket.write(encodeWsTextFramePure(payload));
   }
 
   function broadcastLobbyRooms(): void {
     const rooms = roomManager.listRooms();
-    for (const client of wsClients) {
+    Object.values(wsClients).forEach((client) => {
       sendWsFrame(client.socket, {
         type: "LOBBY_ROOMS",
         rooms,
       });
-    }
+    });
   }
 
   function broadcastRoomState(roomId: string): void {
-    let room;
+    let room: RoomInstance;
     try {
       room = roomManager.getRoom(roomId);
     } catch {
@@ -96,9 +204,11 @@ export function createPlatformServer() {
     const engine = roomManager.registry.get(room.gameId);
     const state = room.session?.getState() ?? null;
     const actingId = state ? getRoomActingPlayerId(room.gameId, state) : null;
-    for (const client of wsClients) {
-      if (client.roomId === roomId) {
-        const effectiveViewerId = resolveEffectiveViewerId(
+
+    Object.values(wsClients)
+      .filter((client) => client.roomId === roomId)
+      .forEach((client) => {
+        const effectiveViewerId = resolveEffectiveViewerIdPure(
           room,
           client.playerId,
           actingId
@@ -119,8 +229,7 @@ export function createPlatformServer() {
           actingPlayerId: actingId,
           legalActions,
         });
-      }
-    }
+      });
   }
 
   function clearRoomBotTimer(roomId: string): void {
@@ -133,7 +242,7 @@ export function createPlatformServer() {
 
   function scheduleRoomBotTurn(roomId: string): void {
     clearRoomBotTimer(roomId);
-    let room;
+    let room: RoomInstance;
     try {
       room = roomManager.getRoom(roomId);
     } catch {
@@ -253,7 +362,7 @@ export function createPlatformServer() {
           const actingPlayerId = state
             ? getRoomActingPlayerId(room.gameId, state)
             : null;
-          const effectiveViewerId = resolveEffectiveViewerId(
+          const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             viewerId,
             actingPlayerId
@@ -400,7 +509,7 @@ export function createPlatformServer() {
           );
           const engine = roomManager.registry.get(room.gameId);
           const actingId = getRoomActingPlayerId(room.gameId, nextState);
-          const effectiveViewerId = resolveEffectiveViewerId(
+          const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             body.requesterId ?? body.playerId ?? null,
             actingId
@@ -432,7 +541,7 @@ export function createPlatformServer() {
           const actingId = result.state
             ? getRoomActingPlayerId(room.gameId, result.state)
             : null;
-          const effectiveViewerId = resolveEffectiveViewerId(
+          const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             body.requesterId ?? null,
             actingId
@@ -454,8 +563,10 @@ export function createPlatformServer() {
 
         if (subRoute === "auto-bots" && req.method === "POST") {
           const body = await readJsonBody(req);
-          const room = roomManager.getRoom(roomId);
-          room.autoStepBots = Boolean(body.enabled);
+          const room = roomManager.setRoomAutoStepBots(
+            roomId,
+            Boolean(body.enabled)
+          );
           broadcastRoomState(roomId);
           if (room.autoStepBots) {
             scheduleRoomBotTurn(roomId);
@@ -489,15 +600,14 @@ export function createPlatformServer() {
         if (subRoute === "undo" && req.method === "POST") {
           const body = await readJsonBody(req);
           clearRoomBotTimer(roomId);
-          const room = roomManager.getRoom(roomId);
           const nextState = roomManager.undoAction(
             roomId,
             body.requesterId ?? null
           );
-          room.autoStepBots = false;
+          const room = roomManager.setRoomAutoStepBots(roomId, false);
           const engine = roomManager.registry.get(room.gameId);
           const actingId = getRoomActingPlayerId(room.gameId, nextState);
-          const effectiveViewerId = resolveEffectiveViewerId(
+          const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             body.requesterId ?? null,
             actingId
@@ -523,7 +633,7 @@ export function createPlatformServer() {
           );
           const engine = roomManager.registry.get(room.gameId);
           const actingId = getRoomActingPlayerId(room.gameId, nextState);
-          const effectiveViewerId = resolveEffectiveViewerId(
+          const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             body.requesterId ?? null,
             actingId
@@ -541,11 +651,7 @@ export function createPlatformServer() {
       }
 
       // Serve static files from apps/web/public
-      const relativePath = pathname === "/" ? "index.html" : pathname.slice(1);
-      const safePath = path
-        .normalize(relativePath)
-        .replace(/^(\.\.(\/|\\|$))+/, "");
-      const filePath = path.join(PUBLIC_DIR, safePath);
+      const filePath = resolveSafeStaticPathPure(PUBLIC_DIR, pathname);
 
       if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
         const ext = path.extname(filePath);
@@ -563,14 +669,10 @@ export function createPlatformServer() {
   });
 
   server.on("close", () => {
-    for (const timer of roomBotTimers.values()) {
-      clearTimeout(timer);
-    }
+    roomBotTimers.forEach((timer) => clearTimeout(timer));
     roomBotTimers.clear();
-    for (const client of wsClients) {
-      client.socket.destroy();
-    }
-    wsClients.clear();
+    Object.values(wsClients).forEach((client) => client.socket.destroy());
+    wsClients = {};
   });
 
   // RFC 6455 WebSocket upgrade handler (zero external runtime dependency)
@@ -581,10 +683,7 @@ export function createPlatformServer() {
       return;
     }
 
-    const accept = crypto
-      .createHash("sha1")
-      .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
-      .digest("base64");
+    const accept = computeWsAcceptKeyPure(key);
 
     socket.write(
       [
@@ -596,13 +695,13 @@ export function createPlatformServer() {
       ].join("\r\n")
     );
 
-    const client: WsClient = {
-      id: `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    const clientId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    upsertWsClient({
+      id: clientId,
       socket,
       roomId: null,
       playerId: null,
-    };
-    wsClients.add(client);
+    });
 
     // Send initial lobby rooms snapshot immediately on WS connect
     sendWsFrame(socket, {
@@ -612,68 +711,48 @@ export function createPlatformServer() {
 
     socket.on("data", (buffer: Buffer) => {
       try {
-        let cursor = 0;
-        while (cursor + 2 <= buffer.length) {
-          const opcode = buffer[cursor]! & 0x0f;
-          if (opcode === 0x08) {
-            wsClients.delete(client);
+        const frames = decodeWsFramesPure(buffer);
+        for (const frame of frames) {
+          if (frame.opcode === 0x08) {
+            removeWsClient(clientId);
             socket.end();
             return;
           }
+          if (frame.opcode === 0x01 && frame.text !== undefined) {
+            const msg = JSON.parse(frame.text);
+            const curClient = wsClients[clientId];
+            if (!curClient) return;
 
-          const isMasked = Boolean(buffer[cursor + 1]! & 0x80);
-          let payloadLen = buffer[cursor + 1]! & 0x7f;
-          let offset = cursor + 2;
-          if (payloadLen === 126) {
-            if (offset + 2 > buffer.length) break;
-            payloadLen = buffer.readUInt16BE(offset);
-            offset += 2;
-          } else if (payloadLen === 127) {
-            if (offset + 8 > buffer.length) break;
-            payloadLen = Number(buffer.readBigUInt64BE(offset));
-            offset += 8;
-          }
-
-          const totalNeeded = offset + (isMasked ? 4 : 0) + payloadLen;
-          if (totalNeeded > buffer.length) break;
-
-          if (opcode === 0x01) {
-            const payload = Buffer.alloc(payloadLen);
-            if (isMasked) {
-              const mask = buffer.subarray(offset, offset + 4);
-              const dataStart = offset + 4;
-              for (let i = 0; i < payloadLen; i++) {
-                payload[i] = buffer[dataStart + i]! ^ mask[i % 4]!;
-              }
-            } else {
-              buffer.copy(payload, 0, offset, offset + payloadLen);
-            }
-
-            const msg = JSON.parse(payload.toString("utf8"));
             if (msg.type === "SUBSCRIBE_ROOM") {
-              client.roomId = msg.roomId ?? null;
-              client.playerId = msg.playerId ?? null;
-              if (client.roomId) {
-                broadcastRoomState(client.roomId);
+              const nextRoomId = msg.roomId ?? null;
+              upsertWsClient({
+                ...curClient,
+                roomId: nextRoomId,
+                playerId: msg.playerId ?? null,
+              });
+              if (nextRoomId) {
+                broadcastRoomState(nextRoomId);
               }
             } else if (msg.type === "UNSUBSCRIBE_ROOM") {
-              client.roomId = null;
-            } else if (msg.type === "DISPATCH_ACTION" && client.roomId) {
-              clearRoomBotTimer(client.roomId);
+              upsertWsClient({
+                ...curClient,
+                roomId: null,
+              });
+            } else if (msg.type === "DISPATCH_ACTION" && curClient.roomId) {
+              clearRoomBotTimer(curClient.roomId);
               roomManager.dispatchAction(
-                client.roomId,
+                curClient.roomId,
                 msg.playerId,
                 msg.action
               );
-              broadcastRoomState(client.roomId);
-              scheduleRoomBotTurn(client.roomId);
-            } else if (msg.type === "STEP_BOT" && client.roomId) {
-              clearRoomBotTimer(client.roomId);
-              roomManager.stepBot(client.roomId);
-              broadcastRoomState(client.roomId);
+              broadcastRoomState(curClient.roomId);
+              scheduleRoomBotTurn(curClient.roomId);
+            } else if (msg.type === "STEP_BOT" && curClient.roomId) {
+              clearRoomBotTimer(curClient.roomId);
+              roomManager.stepBot(curClient.roomId);
+              broadcastRoomState(curClient.roomId);
             }
           }
-          cursor = totalNeeded;
         }
       } catch (err: any) {
         sendWsFrame(socket, {
@@ -683,8 +762,8 @@ export function createPlatformServer() {
       }
     });
 
-    socket.on("close", () => wsClients.delete(client));
-    socket.on("error", () => wsClients.delete(client));
+    socket.on("close", () => removeWsClient(clientId));
+    socket.on("error", () => removeWsClient(clientId));
   });
 
   return { server, roomManager };

@@ -1,5 +1,5 @@
 /**
- * Core Game Platform Engine Contract, Game Registry, and Match Session Manager.
+ * Core Game Platform Engine Contract, Pure Functional Registry, and Pure Match Session Reducers.
  */
 
 export type BotDifficulty = "easy" | "normal" | "smart" | "master";
@@ -29,7 +29,10 @@ export interface InvariantCheckResult {
   violations: string[];
 }
 
-export interface ActionApplicationResult<TState, TEvent extends GameEvent = GameEvent> {
+export interface ActionApplicationResult<
+  TState,
+  TEvent extends GameEvent = GameEvent,
+> {
   state: TState;
   events: TEvent[];
 }
@@ -51,60 +54,32 @@ export interface GameEngine<
   TConfig,
   TAction extends { type: string },
   TEvent extends GameEvent = GameEvent,
-  TPlayerView = TState
+  TPlayerView = TState,
 > {
   readonly metadata: GameMetadata;
 
-  /**
-   * Creates the initial game state from players, game-specific configuration, and RNG seed.
-   */
   initGame(
     players: readonly PlayerDescriptor[],
     config?: Partial<TConfig>,
     seed?: number | string
   ): TState;
 
-  /**
-   * Returns all legal actions that `playerId` can currently take in `state`.
-   */
   getLegalActions(state: TState, playerId: string): TAction[];
 
-  /**
-   * Validates and applies `action` by `playerId`, returning the updated state and emitted events.
-   * Throws a descriptive Error if the action is illegal.
-   */
   applyAction(
     state: TState,
     playerId: string,
     action: TAction
   ): ActionApplicationResult<TState, TEvent>;
 
-  /**
-   * Produces a redacted view of `state` safe to send to `viewerPlayerId` over the network
-   * (or full unredacted state if `viewerPlayerId` is null / spectator with god-view).
-   */
   getPlayerView(state: TState, viewerPlayerId: string | null): TPlayerView;
 
-  /**
-   * Returns the winning player ID if the game has finished, or null if still in progress.
-   */
   getWinner(state: TState): string | null;
 
-  /**
-   * Chooses an action for an AI bot player (`playerId`), or returns null if the bot has no legal moves.
-   */
   chooseBotAction(state: TState, playerId: string): TAction | null;
 
-  /**
-   * Checks domain invariants on `state` (conservation of resources, valid board placement, VP totals).
-   */
   checkInvariants(state: TState): InvariantCheckResult;
 
-  /**
-   * Optional rule hook returning whether `action` applied by `playerId` (transitioning `prevState -> nextState`)
-   * may be undone by that player during the same turn. Actions that reveal random or hidden information
-   * (e.g. rolling dice, drawing secret cards, stealing from a hand) must return false.
-   */
   isActionUndoable?(
     prevState: TState,
     action: TAction,
@@ -114,35 +89,104 @@ export interface GameEngine<
 }
 
 /**
- * Registry of all games installed on the platform.
+ * Pure Functional Game Registry state & operations.
  */
-export class GameRegistry {
-  private engines = new Map<string, GameEngine<any, any, any, any, any>>();
+export type GameRegistryState = ReadonlyMap<
+  string,
+  GameEngine<any, any, any, any, any>
+>;
 
-  public register<TState, TConfig, TAction extends { type: string }, TEvent extends GameEvent, TView>(
-    engine: GameEngine<TState, TConfig, TAction, TEvent, TView>
-  ): void {
-    this.engines.set(engine.metadata.id, engine);
+export function createEmptyRegistryState(): GameRegistryState {
+  return new Map();
+}
+
+export function registerEnginePure<
+  TState,
+  TConfig,
+  TAction extends { type: string },
+  TEvent extends GameEvent,
+  TView,
+>(
+  registry: GameRegistryState,
+  engine: GameEngine<TState, TConfig, TAction, TEvent, TView>
+): GameRegistryState {
+  return new Map([...registry, [engine.metadata.id, engine]]);
+}
+
+export function listRegisteredGamesPure(
+  registry: GameRegistryState
+): GameMetadata[] {
+  return Array.from(registry.values()).map((e) => e.metadata);
+}
+
+export function getRegisteredEnginePure<
+  TState = any,
+  TConfig = any,
+  TAction extends { type: string } = { type: string },
+  TEvent extends GameEvent = GameEvent,
+  TView = TState,
+>(
+  registry: GameRegistryState,
+  gameId: string
+): GameEngine<TState, TConfig, TAction, TEvent, TView> {
+  const engine = registry.get(gameId);
+  if (!engine) {
+    throw new Error(
+      `Unknown gameId "${gameId}". Registered games: ${listRegisteredGamesPure(
+        registry
+      )
+        .map((g) => g.id)
+        .join(", ")}`
+    );
   }
+  return engine;
+}
 
-  public get<
+export interface GameRegistry {
+  register<
+    TState,
+    TConfig,
+    TAction extends { type: string },
+    TEvent extends GameEvent,
+    TView,
+  >(
+    engine: GameEngine<TState, TConfig, TAction, TEvent, TView>
+  ): void;
+  get<
     TState = any,
     TConfig = any,
     TAction extends { type: string } = { type: string },
     TEvent extends GameEvent = GameEvent,
-    TView = TState
-  >(gameId: string): GameEngine<TState, TConfig, TAction, TEvent, TView> {
-    const engine = this.engines.get(gameId);
-    if (!engine) {
-      throw new Error(`Unknown gameId "${gameId}". Registered games: ${this.list().map((g) => g.id).join(", ")}`);
-    }
-    return engine;
-  }
-
-  public list(): GameMetadata[] {
-    return Array.from(this.engines.values()).map((e) => e.metadata);
-  }
+    TView = TState,
+  >(
+    gameId: string
+  ): GameEngine<TState, TConfig, TAction, TEvent, TView>;
+  list(): GameMetadata[];
 }
+
+export interface GameRegistryConstructor {
+  new (initial?: GameRegistryState): GameRegistry;
+  (initial?: GameRegistryState): GameRegistry;
+}
+
+export function createGameRegistry(
+  initial: GameRegistryState = createEmptyRegistryState()
+): GameRegistry {
+  let state = initial;
+  return {
+    register: (engine) => {
+      state = registerEnginePure(state, engine);
+    },
+    get: (gameId) => getRegisteredEnginePure(state, gameId),
+    list: () => listRegisteredGamesPure(state),
+  };
+}
+
+export const GameRegistry: GameRegistryConstructor = function GameRegistry(
+  initial?: GameRegistryState
+): GameRegistry {
+  return createGameRegistry(initial);
+} as unknown as GameRegistryConstructor;
 
 export interface RecordedActionEntry<TAction> {
   step: number;
@@ -152,173 +196,372 @@ export interface RecordedActionEntry<TAction> {
 }
 
 /**
- * Stateful wrapper around a pure `GameEngine` supporting undo/redo time-travel,
- * automatic invariant checking, and bot step execution.
+ * Pure Functional MatchSession state & transition reducers.
  */
-export class MatchSession<
+export interface MatchSessionState<TState, TAction extends { type: string }> {
+  readonly snapshots: readonly TState[];
+  readonly cursor: number;
+  readonly actionLog: readonly RecordedActionEntry<TAction>[];
+  readonly enforceInvariants: boolean;
+}
+
+export function createMatchSessionState<
   TState,
   TConfig,
   TAction extends { type: string },
   TEvent extends GameEvent = GameEvent,
-  TView = TState
-> {
-  public readonly engine: GameEngine<TState, TConfig, TAction, TEvent, TView>;
-  private snapshots: TState[] = [];
-  private cursor = 0;
-  private actionLog: RecordedActionEntry<TAction>[] = [];
-  public readonly enforceInvariants: boolean;
-
-  constructor(
-    engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
-    initialState: TState,
-    enforceInvariants = true
-  ) {
-    this.engine = engine;
-    this.enforceInvariants = enforceInvariants;
-    this.snapshots = [structuredClone(initialState)];
-    this.cursor = 0;
-    if (this.enforceInvariants) {
-      const check = this.engine.checkInvariants(initialState);
-      if (!check.valid) {
-        throw new Error(`Initial state invariant violation: ${check.violations.join("; ")}`);
-      }
-    }
-  }
-
-  public getState(): TState {
-    return this.snapshots[this.cursor]!;
-  }
-
-  public getStep(): number {
-    return this.cursor;
-  }
-
-  public getTotalSteps(): number {
-    return this.snapshots.length - 1;
-  }
-
-  public getActionLog(): readonly RecordedActionEntry<TAction>[] {
-    return this.actionLog.slice(0, this.cursor);
-  }
-
-  public dispatch(playerId: string, action: TAction): ActionApplicationResult<TState, TEvent> {
-    const current = this.getState();
-    const result = this.engine.applyAction(current, playerId, action);
-
-    if (this.enforceInvariants) {
-      const check = this.engine.checkInvariants(result.state);
-      if (!check.valid) {
-        throw new Error(
-          `Invariant violation after ${action.type} by ${playerId}: ${check.violations.join("; ")}`
-        );
-      }
-    }
-
-    // Truncate future branch if we undid and dispatched a new action
-    this.snapshots = this.snapshots.slice(0, this.cursor + 1);
-    this.actionLog = this.actionLog.slice(0, this.cursor);
-
-    this.snapshots.push(structuredClone(result.state));
-    this.cursor = this.snapshots.length - 1;
-    this.actionLog.push({
-      step: this.cursor,
-      playerId,
-      action,
-      timestamp: Date.now(),
-    });
-
-    return result;
-  }
-
-  public canUndo(): boolean {
-    return this.cursor > 0;
-  }
-
-  public canRedo(): boolean {
-    return this.cursor < this.snapshots.length - 1;
-  }
-
-  /**
-   * Counts how many consecutive trailing steps belong to `actingPlayerId` and are reversible
-   * (stopping immediately at another player's action or an irreversible RNG/hidden-reveal step).
-   */
-  public getUndoableStepCount(actingPlayerId: string | null): number {
-    if (!actingPlayerId || this.cursor <= 0) {
-      return 0;
-    }
-    let count = 0;
-    for (let idx = this.cursor - 1; idx >= 0; idx--) {
-      const entry = this.actionLog[idx];
-      if (!entry || entry.playerId !== actingPlayerId) {
-        break;
-      }
-      const prevState = this.snapshots[idx]!;
-      const nextState = this.snapshots[idx + 1]!;
-      const undoable = this.engine.isActionUndoable
-        ? this.engine.isActionUndoable(
-            prevState,
-            entry.action,
-            nextState,
-            entry.playerId
-          )
-        : true;
-      if (!undoable) {
-        break;
-      }
-      count++;
-    }
-    return count;
-  }
-
-  public canPlayerUndo(actingPlayerId: string | null): boolean {
-    return this.getUndoableStepCount(actingPlayerId) > 0;
-  }
-
-  public undoForPlayer(actingPlayerId: string | null): TState {
-    if (!this.canPlayerUndo(actingPlayerId)) {
+  TView = TState,
+>(
+  engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
+  initialState: TState,
+  enforceInvariants = true
+): MatchSessionState<TState, TAction> {
+  if (enforceInvariants) {
+    const check = engine.checkInvariants(initialState);
+    if (!check.valid) {
       throw new Error(
-        "Cannot undo: only reversible actions from your current turn can be undone"
+        `Initial state invariant violation: ${check.violations.join("; ")}`
       );
     }
-    this.cursor--;
-    return this.getState();
   }
-
-  public canPlayerRedo(actingPlayerId: string | null): boolean {
-    if (!actingPlayerId || this.cursor >= this.snapshots.length - 1) {
-      return false;
-    }
-    const nextEntry = this.actionLog[this.cursor];
-    return Boolean(nextEntry && nextEntry.playerId === actingPlayerId);
-  }
-
-  public redoForPlayer(actingPlayerId: string | null): TState {
-    if (!this.canPlayerRedo(actingPlayerId)) {
-      throw new Error("Cannot redo: no undone action from your current turn");
-    }
-    this.cursor++;
-    return this.getState();
-  }
-
-  public undo(): TState {
-    if (this.canUndo()) {
-      this.cursor--;
-    }
-    return this.getState();
-  }
-
-  public redo(): TState {
-    if (this.canRedo()) {
-      this.cursor++;
-    }
-    return this.getState();
-  }
-
-  public jumpToStep(step: number): TState {
-    if (step < 0 || step >= this.snapshots.length) {
-      throw new Error(`Invalid step ${step}`);
-    }
-    this.cursor = step;
-    return this.getState();
-  }
+  return {
+    snapshots: [structuredClone(initialState)],
+    cursor: 0,
+    actionLog: [],
+    enforceInvariants,
+  };
 }
+
+export function getSessionState<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>
+): TState {
+  return session.snapshots[session.cursor]!;
+}
+
+export function getSessionStep<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>
+): number {
+  return session.cursor;
+}
+
+export function getSessionTotalSteps<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>
+): number {
+  return session.snapshots.length - 1;
+}
+
+export function getSessionActionLog<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>
+): readonly RecordedActionEntry<TAction>[] {
+  return session.actionLog.slice(0, session.cursor);
+}
+
+export function dispatchSessionActionPure<
+  TState,
+  TConfig,
+  TAction extends { type: string },
+  TEvent extends GameEvent = GameEvent,
+  TView = TState,
+>(
+  engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
+  session: MatchSessionState<TState, TAction>,
+  playerId: string,
+  action: TAction,
+  timestamp = Date.now()
+): {
+  session: MatchSessionState<TState, TAction>;
+  result: ActionApplicationResult<TState, TEvent>;
+} {
+  const current = getSessionState(session);
+  const result = engine.applyAction(current, playerId, action);
+
+  if (session.enforceInvariants) {
+    const check = engine.checkInvariants(result.state);
+    if (!check.valid) {
+      throw new Error(
+        `Invariant violation after ${action.type} by ${playerId}: ${check.violations.join("; ")}`
+      );
+    }
+  }
+
+  const nextCursor = session.cursor + 1;
+  const nextSnapshots = [
+    ...session.snapshots.slice(0, nextCursor),
+    structuredClone(result.state),
+  ];
+  const nextActionLog: readonly RecordedActionEntry<TAction>[] = [
+    ...session.actionLog.slice(0, session.cursor),
+    {
+      step: nextCursor,
+      playerId,
+      action: structuredClone(action),
+      timestamp,
+    },
+  ];
+
+  return {
+    session: {
+      ...session,
+      snapshots: nextSnapshots,
+      cursor: nextCursor,
+      actionLog: nextActionLog,
+    },
+    result,
+  };
+}
+
+export function canSessionUndo<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>
+): boolean {
+  return session.cursor > 0;
+}
+
+export function canSessionRedo<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>
+): boolean {
+  return session.cursor < session.snapshots.length - 1;
+}
+
+export function getSessionUndoableStepCount<
+  TState,
+  TConfig,
+  TAction extends { type: string },
+  TEvent extends GameEvent = GameEvent,
+  TView = TState,
+>(
+  engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
+  session: MatchSessionState<TState, TAction>,
+  actingPlayerId: string | null
+): number {
+  if (!actingPlayerId || session.cursor <= 0) {
+    return 0;
+  }
+
+  const countFromIndex = (idx: number, acc: number): number => {
+    if (idx < 0) return acc;
+    const entry = session.actionLog[idx];
+    if (!entry || entry.playerId !== actingPlayerId) {
+      return acc;
+    }
+    const prevState = session.snapshots[idx]!;
+    const nextState = session.snapshots[idx + 1]!;
+    const undoable = engine.isActionUndoable
+      ? engine.isActionUndoable(
+          prevState,
+          entry.action,
+          nextState,
+          entry.playerId
+        )
+      : true;
+    return undoable ? countFromIndex(idx - 1, acc + 1) : acc;
+  };
+
+  return countFromIndex(session.cursor - 1, 0);
+}
+
+export function canSessionPlayerUndo<
+  TState,
+  TConfig,
+  TAction extends { type: string },
+  TEvent extends GameEvent = GameEvent,
+  TView = TState,
+>(
+  engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
+  session: MatchSessionState<TState, TAction>,
+  actingPlayerId: string | null
+): boolean {
+  return getSessionUndoableStepCount(engine, session, actingPlayerId) > 0;
+}
+
+export function undoSessionForPlayerPure<
+  TState,
+  TConfig,
+  TAction extends { type: string },
+  TEvent extends GameEvent = GameEvent,
+  TView = TState,
+>(
+  engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
+  session: MatchSessionState<TState, TAction>,
+  actingPlayerId: string | null
+): MatchSessionState<TState, TAction> {
+  if (!canSessionPlayerUndo(engine, session, actingPlayerId)) {
+    throw new Error(
+      "Cannot undo: only reversible actions from your current turn can be undone"
+    );
+  }
+  return { ...session, cursor: session.cursor - 1 };
+}
+
+export function canSessionPlayerRedo<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>,
+  actingPlayerId: string | null
+): boolean {
+  if (!actingPlayerId || session.cursor >= session.snapshots.length - 1) {
+    return false;
+  }
+  const nextEntry = session.actionLog[session.cursor];
+  return Boolean(nextEntry && nextEntry.playerId === actingPlayerId);
+}
+
+export function redoSessionForPlayerPure<
+  TState,
+  TAction extends { type: string },
+>(
+  session: MatchSessionState<TState, TAction>,
+  actingPlayerId: string | null
+): MatchSessionState<TState, TAction> {
+  if (!canSessionPlayerRedo(session, actingPlayerId)) {
+    throw new Error("Cannot redo: no undone action from your current turn");
+  }
+  return { ...session, cursor: session.cursor + 1 };
+}
+
+export function undoSessionPure<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>
+): MatchSessionState<TState, TAction> {
+  return canSessionUndo(session)
+    ? { ...session, cursor: session.cursor - 1 }
+    : session;
+}
+
+export function redoSessionPure<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>
+): MatchSessionState<TState, TAction> {
+  return canSessionRedo(session)
+    ? { ...session, cursor: session.cursor + 1 }
+    : session;
+}
+
+export function jumpSessionToStepPure<TState, TAction extends { type: string }>(
+  session: MatchSessionState<TState, TAction>,
+  step: number
+): MatchSessionState<TState, TAction> {
+  if (step < 0 || step >= session.snapshots.length) {
+    throw new Error(`Invalid step ${step}`);
+  }
+  return { ...session, cursor: step };
+}
+
+export interface MatchSession<
+  TState,
+  TConfig,
+  TAction extends { type: string },
+  TEvent extends GameEvent = GameEvent,
+  TView = TState,
+> {
+  readonly engine: GameEngine<TState, TConfig, TAction, TEvent, TView>;
+  readonly enforceInvariants: boolean;
+  getState(): TState;
+  getStep(): number;
+  getTotalSteps(): number;
+  getActionLog(): readonly RecordedActionEntry<TAction>[];
+  dispatch(
+    playerId: string,
+    action: TAction
+  ): ActionApplicationResult<TState, TEvent>;
+  canUndo(): boolean;
+  canRedo(): boolean;
+  getUndoableStepCount(actingPlayerId: string | null): number;
+  canPlayerUndo(actingPlayerId: string | null): boolean;
+  undoForPlayer(actingPlayerId: string | null): TState;
+  canPlayerRedo(actingPlayerId: string | null): boolean;
+  redoForPlayer(actingPlayerId: string | null): TState;
+  undo(): TState;
+  redo(): TState;
+  jumpToStep(step: number): TState;
+}
+
+export interface MatchSessionConstructor {
+  new <
+    TState,
+    TConfig,
+    TAction extends { type: string },
+    TEvent extends GameEvent = GameEvent,
+    TView = TState,
+  >(
+    engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
+    initialState: TState,
+    enforceInvariants?: boolean
+  ): MatchSession<TState, TConfig, TAction, TEvent, TView>;
+  <
+    TState,
+    TConfig,
+    TAction extends { type: string },
+    TEvent extends GameEvent = GameEvent,
+    TView = TState,
+  >(
+    engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
+    initialState: TState,
+    enforceInvariants?: boolean
+  ): MatchSession<TState, TConfig, TAction, TEvent, TView>;
+}
+
+export function createMatchSession<
+  TState,
+  TConfig,
+  TAction extends { type: string },
+  TEvent extends GameEvent = GameEvent,
+  TView = TState,
+>(
+  engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
+  initialState: TState,
+  enforceInvariants = true
+): MatchSession<TState, TConfig, TAction, TEvent, TView> {
+  let session = createMatchSessionState(engine, initialState, enforceInvariants);
+
+  return {
+    engine,
+    enforceInvariants,
+    getState: () => getSessionState(session),
+    getStep: () => getSessionStep(session),
+    getTotalSteps: () => getSessionTotalSteps(session),
+    getActionLog: () => getSessionActionLog(session),
+    dispatch: (playerId, action) => {
+      const next = dispatchSessionActionPure(engine, session, playerId, action);
+      session = next.session;
+      return next.result;
+    },
+    canUndo: () => canSessionUndo(session),
+    canRedo: () => canSessionRedo(session),
+    getUndoableStepCount: (actingPlayerId) =>
+      getSessionUndoableStepCount(engine, session, actingPlayerId),
+    canPlayerUndo: (actingPlayerId) =>
+      canSessionPlayerUndo(engine, session, actingPlayerId),
+    undoForPlayer: (actingPlayerId) => {
+      session = undoSessionForPlayerPure(engine, session, actingPlayerId);
+      return getSessionState(session);
+    },
+    canPlayerRedo: (actingPlayerId) =>
+      canSessionPlayerRedo(session, actingPlayerId),
+    redoForPlayer: (actingPlayerId) => {
+      session = redoSessionForPlayerPure(session, actingPlayerId);
+      return getSessionState(session);
+    },
+    undo: () => {
+      session = undoSessionPure(session);
+      return getSessionState(session);
+    },
+    redo: () => {
+      session = redoSessionPure(session);
+      return getSessionState(session);
+    },
+    jumpToStep: (step) => {
+      session = jumpSessionToStepPure(session, step);
+      return getSessionState(session);
+    },
+  };
+}
+
+export const MatchSession: MatchSessionConstructor = function MatchSession<
+  TState,
+  TConfig,
+  TAction extends { type: string },
+  TEvent extends GameEvent = GameEvent,
+  TView = TState,
+>(
+  engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
+  initialState: TState,
+  enforceInvariants = true
+): MatchSession<TState, TConfig, TAction, TEvent, TView> {
+  return createMatchSession(engine, initialState, enforceInvariants);
+} as unknown as MatchSessionConstructor;

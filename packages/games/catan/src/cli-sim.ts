@@ -1,4 +1,11 @@
-import { MatchSession, type PlayerDescriptor } from "@gaming-platform/core";
+import {
+  type GameEngine,
+  type MatchSessionState,
+  type PlayerDescriptor,
+  createMatchSessionState,
+  dispatchSessionActionPure,
+  getSessionState,
+} from "@gaming-platform/core";
 import {
   CatanEngine,
   SCENARIO_CATALOG,
@@ -15,7 +22,7 @@ import {
   getAzulActingPlayerId,
 } from "@gaming-platform/azul";
 
-const SCENARIOS_TO_RUN: Array<{
+const SCENARIOS_TO_RUN: ReadonlyArray<{
   scenarioId: ScenarioId;
   playerCount: number;
   enableHarbormaster?: boolean;
@@ -29,17 +36,50 @@ const SCENARIOS_TO_RUN: Array<{
   { scenarioId: "seafarers_fog_islands", playerCount: 4, enableFriendlyRobber: true },
 ];
 
-console.log("=== 1. Catan Multi-Scenario Full-Game Bot Simulation ===");
-
-for (const spec of SCENARIOS_TO_RUN) {
-  const players: PlayerDescriptor[] = Array.from({ length: spec.playerCount }, (_, i) => ({
+function makeBotPlayers(count: number): PlayerDescriptor[] {
+  return Array.from({ length: count }, (_, i) => ({
     id: `p${i + 1}`,
     name: `Bot ${i + 1}`,
     color: "",
     isBot: true,
     botDifficulty: "smart",
   }));
+}
 
+function runSessionUntilFinishedPure<
+  TState extends { phase: string },
+  TConfig,
+  TAction extends { type: string },
+>(
+  engine: GameEngine<TState, TConfig, TAction>,
+  initialSession: MatchSessionState<TState, TAction>,
+  getActorId: (state: TState) => string | null,
+  maxSteps: number
+): { finalState: TState; steps: number } {
+  let session = initialSession;
+  let steps = 0;
+
+  while (getSessionState(session).phase !== "GAME_OVER" && steps < maxSteps) {
+    const state = getSessionState(session);
+    const actorId = getActorId(state);
+    if (!actorId) break;
+    const action = engine.chooseBotAction(state, actorId);
+    if (!action) {
+      throw new Error(
+        `No bot action found in phase ${state.phase} for ${actorId}`
+      );
+    }
+    session = dispatchSessionActionPure(engine, session, actorId, action).session;
+    steps += 1;
+  }
+
+  return { finalState: getSessionState(session), steps };
+}
+
+console.log("=== 1. Catan Multi-Scenario Full-Game Bot Simulation ===");
+
+SCENARIOS_TO_RUN.forEach((spec) => {
+  const players = makeBotPlayers(spec.playerCount);
   const initialState = CatanEngine.initGame(
     players,
     {
@@ -51,22 +91,13 @@ for (const spec of SCENARIOS_TO_RUN) {
     `sim-${spec.scenarioId}-seed-101`
   );
 
-  const session = new MatchSession(CatanEngine, initialState, true);
-  let steps = 0;
+  const { finalState, steps } = runSessionUntilFinishedPure(
+    CatanEngine,
+    createMatchSessionState(CatanEngine, initialState, true),
+    getNextActingPlayerId,
+    5000
+  );
 
-  while (session.getState().phase !== "GAME_OVER" && steps < 5000) {
-    const state = session.getState();
-    const actorId = getNextActingPlayerId(state);
-    if (!actorId) break;
-    const action = CatanEngine.chooseBotAction(state, actorId);
-    if (!action) {
-      throw new Error(`No bot action found in phase ${state.phase} for ${actorId}`);
-    }
-    session.dispatch(actorId, action);
-    steps++;
-  }
-
-  const finalState = session.getState();
   const winner = finalState.players.find((p) => p.id === finalState.winnerId);
   const standings = finalState.players
     .map(
@@ -78,30 +109,23 @@ for (const spec of SCENARIOS_TO_RUN) {
   console.log(
     `✔ [${SCENARIO_CATALOG[spec.scenarioId].name}] Winner: ${winner?.name ?? "None"} in ${finalState.turn} turns (${steps} actions) -> ${standings}`
   );
-}
+});
 
 console.log("\n=== 2. Splendor Full-Game Bot Simulation (2P, 3P, 4P) ===");
-for (const count of [2, 3, 4]) {
-  const players: PlayerDescriptor[] = Array.from({ length: count }, (_, i) => ({
-    id: `p${i + 1}`,
-    name: `Bot ${i + 1}`,
-    color: "",
-    isBot: true,
-  }));
-  const session = new MatchSession(
-    SplendorEngine,
-    SplendorEngine.initGame(players, {}, `sim-splendor-${count}p`),
-    true
+
+([2, 3, 4] as const).forEach((count) => {
+  const players = makeBotPlayers(count);
+  const initialState = SplendorEngine.initGame(
+    players,
+    {},
+    `sim-splendor-${count}p`
   );
-  let steps = 0;
-  while (session.getState().phase !== "GAME_OVER" && steps < 500) {
-    const state = session.getState();
-    const actorId = getSplendorActingPlayerId(state)!;
-    const action = SplendorEngine.chooseBotAction(state, actorId)!;
-    session.dispatch(actorId, action);
-    steps++;
-  }
-  const finalState = session.getState();
+  const { finalState, steps } = runSessionUntilFinishedPure(
+    SplendorEngine,
+    createMatchSessionState(SplendorEngine, initialState, true),
+    getSplendorActingPlayerId,
+    500
+  );
   const winner = finalState.players.find((p) => p.id === finalState.winnerId);
   const standings = finalState.players
     .map((p) => `${p.name}: ${p.points} VP (${p.purchasedCards.length} cards)`)
@@ -109,30 +133,19 @@ for (const count of [2, 3, 4]) {
   console.log(
     `✔ [Splendor ${count}P] Winner: ${winner?.name} in ${finalState.round} rounds (${steps} actions) -> ${standings}`
   );
-}
+});
 
 console.log("\n=== 3. Azul Full-Game Bot Simulation (2P, 3P, 4P) ===");
-for (const count of [2, 3, 4]) {
-  const players: PlayerDescriptor[] = Array.from({ length: count }, (_, i) => ({
-    id: `p${i + 1}`,
-    name: `Bot ${i + 1}`,
-    color: "",
-    isBot: true,
-  }));
-  const session = new MatchSession(
+
+([2, 3, 4] as const).forEach((count) => {
+  const players = makeBotPlayers(count);
+  const initialState = AzulEngine.initGame(players, {}, `sim-azul-${count}p`);
+  const { finalState, steps } = runSessionUntilFinishedPure(
     AzulEngine,
-    AzulEngine.initGame(players, {}, `sim-azul-${count}p`),
-    true
+    createMatchSessionState(AzulEngine, initialState, true),
+    getAzulActingPlayerId,
+    500
   );
-  let steps = 0;
-  while (session.getState().phase !== "GAME_OVER" && steps < 500) {
-    const state = session.getState();
-    const actorId = getAzulActingPlayerId(state)!;
-    const action = AzulEngine.chooseBotAction(state, actorId)!;
-    session.dispatch(actorId, action);
-    steps++;
-  }
-  const finalState = session.getState();
   const winner = finalState.players.find((p) => p.id === finalState.winnerId);
   const standings = finalState.players
     .map((p) => `${p.name}: ${p.score} pts (${p.completedRows} rows)`)
@@ -140,4 +153,4 @@ for (const count of [2, 3, 4]) {
   console.log(
     `✔ [Azul ${count}P] Winner: ${winner?.name} in ${finalState.round} rounds (${steps} actions) -> ${standings}`
   );
-}
+});

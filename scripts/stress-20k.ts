@@ -1,4 +1,9 @@
-import { MatchSession, type PlayerDescriptor, SeededRNG } from "@gaming-platform/core";
+import {
+  type PlayerDescriptor,
+  type SeededRNG,
+  createMatchSession,
+  createSeededRng,
+} from "@gaming-platform/core";
 import {
   type CatanAction,
   CatanEngine,
@@ -16,7 +21,7 @@ import {
   getSplendorActingPlayerId,
 } from "@gaming-platform/splendor";
 import { AzulEngine, getAzulActingPlayerId } from "@gaming-platform/azul";
-import { PlatformRoomManager } from "../apps/server/src/room-manager.ts";
+import { createPlatformRoomManager } from "../apps/server/src/room-manager.ts";
 import {
   renderCatanBoardSvg,
   renderCatanVisualHandTray,
@@ -96,7 +101,7 @@ export function runRobotIterations(targetIterations = 10000): StressReport {
         },
         `robot-catan-${matchIdx}`
       );
-      const session = new MatchSession(CatanEngine, initialState, true);
+      const session = createMatchSession(CatanEngine, initialState, true);
 
       // Track placed roads (roads can NEVER disappear once placed; only ships can move via MOVE_SHIP)
       const knownRoadEdgeIds = new Set<string>();
@@ -175,7 +180,7 @@ export function runRobotIterations(targetIterations = 10000): StressReport {
         {},
         `robot-splendor-${matchIdx}`
       );
-      const session = new MatchSession(SplendorEngine, initialState, true);
+      const session = createMatchSession(SplendorEngine, initialState, true);
       let stepsInMatch = 0;
 
       while (
@@ -213,7 +218,7 @@ export function runRobotIterations(targetIterations = 10000): StressReport {
         {},
         `robot-azul-${matchIdx}`
       );
-      const session = new MatchSession(AzulEngine, initialState, true);
+      const session = createMatchSession(AzulEngine, initialState, true);
       let stepsInMatch = 0;
 
       while (
@@ -414,8 +419,8 @@ export function runHumanMimicIterations(
   targetIterations = 10000
 ): StressReport {
   const startTime = performance.now();
-  const rng = new SeededRNG("human-mimic-10000-seed");
-  const roomManager = new PlatformRoomManager();
+  const rng = createSeededRng("human-mimic-10000-seed");
+  const roomManager = createPlatformRoomManager();
 
   let completedIterations = 0;
   let matchesStarted = 0;

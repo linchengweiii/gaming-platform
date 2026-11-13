@@ -1,12 +1,16 @@
 import {
   type AxialCoord,
+  type EdgeId,
   type HexBoardTopology,
   type HexId,
-  SeededRNG,
+  type RngState,
+  type SeededRNG,
+  type VertexId,
   axialDistance,
   buildHexBoardTopology,
   generateHexRadiusCoords,
   hexId,
+  shufflePure,
 } from "@gaming-platform/core";
 import type {
   CatanConfig,
@@ -94,20 +98,33 @@ export const SCENARIO_CATALOG: Record<ScenarioId, ScenarioDescriptor> = {
   },
 };
 
-const STANDARD_TERRAINS: TerrainType[] = [
-  "forest", "forest", "forest", "forest",
-  "pasture", "pasture", "pasture", "pasture",
-  "fields", "fields", "fields", "fields",
-  "hills", "hills", "hills",
-  "mountains", "mountains", "mountains",
+const STANDARD_TERRAINS: readonly TerrainType[] = [
+  "forest",
+  "forest",
+  "forest",
+  "forest",
+  "pasture",
+  "pasture",
+  "pasture",
+  "pasture",
+  "fields",
+  "fields",
+  "fields",
+  "fields",
+  "hills",
+  "hills",
+  "hills",
+  "mountains",
+  "mountains",
+  "mountains",
   "desert",
 ];
 
-const STANDARD_NUMBERS: number[] = [
+const STANDARD_NUMBERS: readonly number[] = [
   2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12,
 ];
 
-const STANDARD_HARBORS: HarborType[] = [
+const STANDARD_HARBORS: readonly HarborType[] = [
   "generic",
   "brick",
   "generic",
@@ -119,7 +136,7 @@ const STANDARD_HARBORS: HarborType[] = [
   "ore",
 ];
 
-const BIG_ISLAND_EXTRA_COORDS: AxialCoord[] = [
+const BIG_ISLAND_EXTRA_COORDS: readonly AxialCoord[] = [
   { q: 0, r: -3 },
   { q: 1, r: -3 },
   { q: 2, r: -3 },
@@ -133,109 +150,151 @@ const BIG_ISLAND_EXTRA_COORDS: AxialCoord[] = [
   { q: -1, r: 3 },
 ];
 
-const BIG_ISLAND_TERRAINS: TerrainType[] = [
+const BIG_ISLAND_TERRAINS: readonly TerrainType[] = [
   ...STANDARD_TERRAINS,
-  "forest", "forest",
-  "pasture", "pasture",
-  "fields", "fields",
-  "hills", "hills",
-  "mountains", "mountains",
+  "forest",
+  "forest",
+  "pasture",
+  "pasture",
+  "fields",
+  "fields",
+  "hills",
+  "hills",
+  "mountains",
+  "mountains",
   "desert",
 ];
 
-const BIG_ISLAND_NUMBERS: number[] = [
+const BIG_ISLAND_NUMBERS: readonly number[] = [
   ...STANDARD_NUMBERS,
-  2, 3, 4, 5, 6, 8, 9, 10, 11, 12,
+  2,
+  3,
+  4,
+  5,
+  6,
+  8,
+  9,
+  10,
+  11,
+  12,
 ];
 
-const BIG_ISLAND_HARBORS: HarborType[] = [
+const BIG_ISLAND_HARBORS: readonly HarborType[] = [
   ...STANDARD_HARBORS,
   "generic",
   "wool",
 ];
 
-/**
- * Assigns number tokens to productive land hexes while trying to avoid adjacent 6/8 red tokens.
- */
-function assignBalancedNumbers(
-  productiveHexes: HexTile[],
-  numbersPool: readonly number[],
-  rng: SeededRNG,
-  balanced: boolean
-): void {
-  let bestAssignment = rng.shuffle(numbersPool);
-
-  if (balanced) {
-    let bestRedConflicts = Infinity;
-    for (let attempt = 0; attempt < 60; attempt++) {
-      const candidate = rng.shuffle(numbersPool);
-      let conflicts = 0;
-      for (let i = 0; i < productiveHexes.length; i++) {
-        const n1 = candidate[i]!;
-        if (n1 !== 6 && n1 !== 8) continue;
-        for (let j = i + 1; j < productiveHexes.length; j++) {
-          const n2 = candidate[j]!;
-          if (n2 !== 6 && n2 !== 8) continue;
-          const h1 = productiveHexes[i]!;
-          const h2 = productiveHexes[j]!;
-          if (axialDistance(h1, h2) === 1) {
-            conflicts++;
-          }
-        }
-      }
-      if (conflicts < bestRedConflicts) {
-        bestRedConflicts = conflicts;
-        bestAssignment = candidate;
-        if (conflicts === 0) break;
-      }
+function countAdjacentRedConflicts(
+  productiveHexes: readonly HexTile[],
+  candidateNumbers: readonly number[]
+): number {
+  return productiveHexes.reduce((outerSum, h1, i) => {
+    const n1 = candidateNumbers[i]!;
+    if (n1 !== 6 && n1 !== 8) {
+      return outerSum;
     }
-  }
-
-  for (let i = 0; i < productiveHexes.length; i++) {
-    productiveHexes[i]!.numberToken = bestAssignment[i] ?? 5;
-  }
+    const innerConflicts = productiveHexes
+      .slice(i + 1)
+      .filter((h2, offset) => {
+        const n2 = candidateNumbers[i + 1 + offset]!;
+        return (n2 === 6 || n2 === 8) && axialDistance(h1, h2) === 1;
+      }).length;
+    return outerSum + innerConflicts;
+  }, 0);
 }
 
 /**
- * Places harbors evenly along coastal edges of starting islands (`islandId === 1` or setup-eligible land).
+ * Pure number-token assignment returning updated `hexes` map and `rngState` without mutating inputs.
  */
-function placeCoastalHarbors(
-  topology: HexBoardTopology,
-  hexes: Record<HexId, HexTile>,
-  harborTypes: readonly HarborType[],
-  rng: SeededRNG
-): Harbor[] {
-  // Find all edges that border at least one setup-eligible land hex AND either open void or a sea hex
-  const candidateEdgeIds: string[] = [];
-  for (const eId of topology.edgeOrder) {
-    const edge = topology.edges[eId]!;
-    const adjHexes = edge.adjacentHexIds.map((id) => hexes[id]!).filter(Boolean);
-    const hasSetupLand = adjHexes.some(
-      (h) => h.allowSetupSettlement && h.terrain !== "sea" && h.terrain !== "fog"
-    );
-    if (!hasSetupLand) continue;
+function assignBalancedNumbersPure(
+  hexes: Readonly<Record<HexId, HexTile>>,
+  productiveIds: readonly HexId[],
+  numbersPool: readonly number[],
+  rngState: RngState,
+  balanced: boolean
+): readonly [Record<HexId, HexTile>, RngState] {
+  const productiveHexes = productiveIds.map((id) => hexes[id]!);
+  const [initialAssignment, rngAfterInitial] = shufflePure(
+    rngState,
+    numbersPool
+  );
 
-    const isCoastal =
-      adjHexes.length === 1 || adjHexes.some((h) => h.terrain === "sea");
-    if (isCoastal) {
-      candidateEdgeIds.push(eId);
+  const searchBalanced = (
+    attempt: number,
+    bestAssignment: readonly number[],
+    bestConflicts: number,
+    curRng: RngState
+  ): readonly [readonly number[], RngState] => {
+    if (!balanced || attempt >= 60) {
+      return [bestAssignment, curRng];
     }
-  }
+    const [candidate, nextRng] = shufflePure(curRng, numbersPool);
+    const conflicts = countAdjacentRedConflicts(productiveHexes, candidate);
+    const nextBest =
+      conflicts < bestConflicts ? candidate : bestAssignment;
+    const nextMinConflicts = Math.min(bestConflicts, conflicts);
+    if (conflicts === 0) {
+      return [candidate, nextRng];
+    }
+    return searchBalanced(attempt + 1, nextBest, nextMinConflicts, nextRng);
+  };
 
-  // Sort candidate edges clockwise by angle around the center of the setup land hexes
-  let sumX = 0;
-  let sumY = 0;
-  let count = 0;
-  for (const eId of candidateEdgeIds) {
-    const e = topology.edges[eId]!;
-    sumX += e.midX;
-    sumY += e.midY;
-    count++;
-  }
+  const [chosenNumbers, finalRng] = searchBalanced(
+    0,
+    initialAssignment,
+    Infinity,
+    rngAfterInitial
+  );
+
+  const updatedHexes = productiveIds.reduce<Record<HexId, HexTile>>(
+    (acc, id, idx) => ({
+      ...acc,
+      [id]: {
+        ...acc[id]!,
+        numberToken: chosenNumbers[idx] ?? 5,
+      },
+    }),
+    { ...hexes }
+  );
+
+  return [updatedHexes, finalRng];
+}
+
+/**
+ * Pure harbor placement along coastal edges of setup-eligible land hexes.
+ */
+function placeCoastalHarborsPure(
+  topology: HexBoardTopology,
+  hexes: Readonly<Record<HexId, HexTile>>,
+  harborTypes: readonly HarborType[],
+  rngState: RngState
+): readonly [Harbor[], RngState] {
+  const candidateEdgeIds = topology.edgeOrder.filter((eId) => {
+    const edge = topology.edges[eId]!;
+    const adjHexes = edge.adjacentHexIds
+      .map((id) => hexes[id])
+      .filter((h): h is HexTile => Boolean(h));
+    const hasSetupLand = adjHexes.some(
+      (h) =>
+        h.allowSetupSettlement && h.terrain !== "sea" && h.terrain !== "fog"
+    );
+    if (!hasSetupLand) return false;
+    return adjHexes.length === 1 || adjHexes.some((h) => h.terrain === "sea");
+  });
+
+  const { sumX, sumY } = candidateEdgeIds.reduce(
+    (acc, eId) => {
+      const e = topology.edges[eId]!;
+      return { sumX: acc.sumX + e.midX, sumY: acc.sumY + e.midY };
+    },
+    { sumX: 0, sumY: 0 }
+  );
+  const count = candidateEdgeIds.length;
   const centerX = count > 0 ? sumX / count : 0;
   const centerY = count > 0 ? sumY / count : 0;
 
-  candidateEdgeIds.sort((a, b) => {
+  const sortedCandidates = [...candidateEdgeIds].sort((a, b) => {
     const ea = topology.edges[a]!;
     const eb = topology.edges[b]!;
     const angA = Math.atan2(ea.midY - centerY, ea.midX - centerX);
@@ -243,41 +302,56 @@ function placeCoastalHarbors(
     return angA - angB;
   });
 
-  const shuffledTypes = rng.shuffle(harborTypes);
-  const targetCount = Math.min(shuffledTypes.length, candidateEdgeIds.length);
-  const usedVertices = new Set<string>();
-  const harbors: Harbor[] = [];
-
-  const stride = candidateEdgeIds.length / targetCount;
-  for (let i = 0; i < targetCount; i++) {
-    const startIdx = Math.floor(i * stride);
-    let chosenEdgeId: string | null = null;
-    for (let offset = 0; offset < candidateEdgeIds.length; offset++) {
-      const idx = (startIdx + offset) % candidateEdgeIds.length;
-      const eId = candidateEdgeIds[idx]!;
-      const edge = topology.edges[eId]!;
-      if (!usedVertices.has(edge.v1) && !usedVertices.has(edge.v2)) {
-        chosenEdgeId = eId;
-        break;
-      }
-    }
-    if (!chosenEdgeId) continue;
-
-    const edge = topology.edges[chosenEdgeId]!;
-    usedVertices.add(edge.v1);
-    usedVertices.add(edge.v2);
-    const seaHex = edge.adjacentHexIds.find((id) => hexes[id]?.terrain === "sea");
-
-    harbors.push({
-      id: `harbor-${i + 1}`,
-      type: shuffledTypes[i]!,
-      edgeId: chosenEdgeId,
-      vertexIds: [edge.v1, edge.v2],
-      seaHexId: seaHex,
-    });
+  const [shuffledTypes, nextRng] = shufflePure(rngState, harborTypes);
+  const targetCount = Math.min(shuffledTypes.length, sortedCandidates.length);
+  if (targetCount === 0) {
+    return [[], nextRng];
   }
 
-  return harbors;
+  const stride = sortedCandidates.length / targetCount;
+  const indices = Array.from({ length: targetCount }, (_, i) => i);
+  const offsets = Array.from(
+    { length: sortedCandidates.length },
+    (_, offset) => offset
+  );
+
+  const { harbors } = indices.reduce<{
+    usedVertices: ReadonlySet<VertexId>;
+    harbors: Harbor[];
+  }>(
+    (acc, i) => {
+      const startIdx = Math.floor(i * stride);
+      const chosenEdgeId: EdgeId | undefined = offsets
+        .map((offset) => sortedCandidates[(startIdx + offset) % sortedCandidates.length]!)
+        .find((eId) => {
+          const edge = topology.edges[eId]!;
+          return !acc.usedVertices.has(edge.v1) && !acc.usedVertices.has(edge.v2);
+        });
+
+      if (!chosenEdgeId) {
+        return acc;
+      }
+
+      const edge = topology.edges[chosenEdgeId]!;
+      const seaHex = edge.adjacentHexIds.find(
+        (id) => hexes[id]?.terrain === "sea"
+      );
+      const harbor: Harbor = {
+        id: `harbor-${i + 1}`,
+        type: shuffledTypes[i]!,
+        edgeId: chosenEdgeId,
+        vertexIds: [edge.v1, edge.v2],
+        seaHexId: seaHex,
+      };
+      return {
+        usedVertices: new Set([...acc.usedVertices, edge.v1, edge.v2]),
+        harbors: [...acc.harbors, harbor],
+      };
+    },
+    { usedVertices: new Set<VertexId>(), harbors: [] }
+  );
+
+  return [harbors, nextRng];
 }
 
 export interface GeneratedBoard {
@@ -289,158 +363,22 @@ export interface GeneratedBoard {
   fogPool: FogRevealTile[];
 }
 
-export function generateCatanBoard(config: CatanConfig, rng: SeededRNG): GeneratedBoard {
-  switch (config.scenarioId) {
-    case "big_island_5_6":
-      return generateBigIslandBoard(config, rng);
-    case "seafarers_new_shores":
-      return generateSeafarersNewShoresBoard(config, rng);
-    case "seafarers_four_islands":
-      return generateSeafarersFourIslandsBoard(config, rng);
-    case "seafarers_fog_islands":
-      return generateSeafarersFogIslandsBoard(config, rng);
-    case "standard":
-    default:
-      return generateStandardBoard(config, rng);
-  }
-}
-
-function generateStandardBoard(config: CatanConfig, rng: SeededRNG): GeneratedBoard {
-  const coords = generateHexRadiusCoords(2);
-  const topology = buildHexBoardTopology(coords);
-  const shuffledTerrains = rng.shuffle(STANDARD_TERRAINS);
-
-  const hexes: Record<HexId, HexTile> = {};
-  const productiveHexes: HexTile[] = [];
-  let robberHexId = hexId(0, 0);
-
-  for (let i = 0; i < coords.length; i++) {
-    const { q, r } = coords[i]!;
-    const id = hexId(q, r);
-    const terrain = shuffledTerrains[i]!;
-    const tile: HexTile = {
-      id,
-      q,
-      r,
-      terrain,
-      numberToken: null,
-      islandId: 1,
-      allowSetupSettlement: true,
-    };
-    hexes[id] = tile;
-    if (terrain === "desert") {
-      robberHexId = id;
-    } else {
-      productiveHexes.push(tile);
-    }
-  }
-
-  assignBalancedNumbers(productiveHexes, STANDARD_NUMBERS, rng, config.balancedNumbers);
-  const harbors = placeCoastalHarbors(topology, hexes, STANDARD_HARBORS, rng);
-
-  return {
-    topology,
-    hexes,
-    harbors,
-    robberHexId,
-    pirateHexId: null,
-    fogPool: [],
-  };
-}
-
-function generateBigIslandBoard(config: CatanConfig, rng: SeededRNG): GeneratedBoard {
-  const coords = [...generateHexRadiusCoords(2), ...BIG_ISLAND_EXTRA_COORDS];
-  const topology = buildHexBoardTopology(coords);
-  const shuffledTerrains = rng.shuffle(BIG_ISLAND_TERRAINS);
-
-  const hexes: Record<HexId, HexTile> = {};
-  const productiveHexes: HexTile[] = [];
-  let robberHexId = hexId(0, 0);
-
-  for (let i = 0; i < coords.length; i++) {
-    const { q, r } = coords[i]!;
-    const id = hexId(q, r);
-    const terrain = shuffledTerrains[i]!;
-    const tile: HexTile = {
-      id,
-      q,
-      r,
-      terrain,
-      numberToken: null,
-      islandId: 1,
-      allowSetupSettlement: true,
-    };
-    hexes[id] = tile;
-    if (terrain === "desert") {
-      robberHexId = id;
-    } else {
-      productiveHexes.push(tile);
-    }
-  }
-
-  assignBalancedNumbers(productiveHexes, BIG_ISLAND_NUMBERS, rng, config.balancedNumbers);
-  const harbors = placeCoastalHarbors(topology, hexes, BIG_ISLAND_HARBORS, rng);
-
-  return {
-    topology,
-    hexes,
-    harbors,
-    robberHexId,
-    pirateHexId: null,
-    fogPool: [],
-  };
-}
-
-/**
- * Seafarers Scenario 1: Heading for New Shores
- * Radius-3 map (37 hexes):
- * - Main home island (14 land hexes on the West/Center, islandId = 1, allowSetupSettlement = true)
- * - 3 Offshore foreign islands on the East/North/South ring (8 land hexes including 2 Gold River hexes,
- *   islandId = 2, 3, 4, allowSetupSettlement = false -> +2 Bonus VP when settled!)
- * - 15 Sea hexes separating the main island from the offshore islands.
- */
-function generateSeafarersNewShoresBoard(config: CatanConfig, rng: SeededRNG): GeneratedBoard {
-  const coords = generateHexRadiusCoords(3);
-  const topology = buildHexBoardTopology(coords);
-
-  // Main island (14 coords on West/Center)
-  const mainIslandSet = new Set<HexId>([
-    hexId(-1, 0), hexId(0, 0), hexId(-1, 1), hexId(0, 1), hexId(0, -1), hexId(1, -1),
-    hexId(-2, 0), hexId(-2, 1), hexId(-2, 2), hexId(-1, 2), hexId(-1, -1), hexId(1, 0),
-    hexId(-3, 1), hexId(-3, 2),
-  ]);
-
-  // 3 offshore islands on the East/North/South outer ring
-  const island2Set = new Set<HexId>([hexId(2, -3), hexId(3, -3), hexId(3, -2)]);
-  const island3Set = new Set<HexId>([hexId(3, 0), hexId(2, 1), hexId(1, 2)]);
-  const island4Set = new Set<HexId>([hexId(-1, 3), hexId(0, 3)]);
-
-  const mainTerrains = rng.shuffle<TerrainType>([
-    "forest", "forest", "forest",
-    "pasture", "pasture", "pasture",
-    "fields", "fields", "fields",
-    "hills", "hills",
-    "mountains", "mountains",
-    "desert",
-  ]);
-  const mainNumbers = [2, 3, 4, 4, 5, 5, 6, 8, 9, 9, 10, 10, 11];
-
-  const foreignTerrains = rng.shuffle<TerrainType>([
-    "gold", "gold", "mountains", "hills", "fields", "pasture", "forest", "mountains",
-  ]);
-  const foreignNumbers = rng.shuffle([4, 5, 6, 8, 9, 10, 11, 12]);
-
-  const hexes: Record<HexId, HexTile> = {};
-  const mainProductive: HexTile[] = [];
-  let mainIdx = 0;
-  let foreignIdx = 0;
-  let robberHexId = hexId(-1, 0);
-  let pirateHexId = hexId(2, -1);
-
-  for (const { q, r } of coords) {
-    const id = hexId(q, r);
-    if (mainIslandSet.has(id)) {
-      const terrain = mainTerrains[mainIdx++]!;
+function buildSingleIslandHexes(
+  coords: readonly AxialCoord[],
+  shuffledTerrains: readonly TerrainType[]
+): {
+  hexes: Record<HexId, HexTile>;
+  productiveIds: HexId[];
+  robberHexId: HexId;
+} {
+  return coords.reduce<{
+    hexes: Record<HexId, HexTile>;
+    productiveIds: HexId[];
+    robberHexId: HexId;
+  }>(
+    (acc, { q, r }, i) => {
+      const id = hexId(q, r);
+      const terrain = shuffledTerrains[i]!;
       const tile: HexTile = {
         id,
         q,
@@ -450,28 +388,212 @@ function generateSeafarersNewShoresBoard(config: CatanConfig, rng: SeededRNG): G
         islandId: 1,
         allowSetupSettlement: true,
       };
-      hexes[id] = tile;
-      if (terrain === "desert") {
-        robberHexId = id;
-      } else {
-        mainProductive.push(tile);
-      }
-    } else if (island2Set.has(id) || island3Set.has(id) || island4Set.has(id)) {
-      const islandId = island2Set.has(id) ? 2 : island3Set.has(id) ? 3 : 4;
-      const terrain = foreignTerrains[foreignIdx]!;
-      const numberToken = foreignNumbers[foreignIdx]!;
-      foreignIdx++;
-      hexes[id] = {
-        id,
-        q,
-        r,
-        terrain,
-        numberToken,
-        islandId,
-        allowSetupSettlement: false,
+      return {
+        hexes: { ...acc.hexes, [id]: tile },
+        productiveIds:
+          terrain === "desert" ? acc.productiveIds : [...acc.productiveIds, id],
+        robberHexId: terrain === "desert" ? id : acc.robberHexId,
       };
-    } else {
-      hexes[id] = {
+    },
+    { hexes: {}, productiveIds: [], robberHexId: hexId(0, 0) }
+  );
+}
+
+function generateStandardBoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
+  const coords = generateHexRadiusCoords(2);
+  const topology = buildHexBoardTopology(coords);
+  const [shuffledTerrains, rng1] = shufflePure(rng0, STANDARD_TERRAINS);
+  const { hexes: rawHexes, productiveIds, robberHexId } = buildSingleIslandHexes(
+    coords,
+    shuffledTerrains
+  );
+  const [hexes, rng2] = assignBalancedNumbersPure(
+    rawHexes,
+    productiveIds,
+    STANDARD_NUMBERS,
+    rng1,
+    config.balancedNumbers
+  );
+  const [harbors, rng3] = placeCoastalHarborsPure(
+    topology,
+    hexes,
+    STANDARD_HARBORS,
+    rng2
+  );
+
+  return [
+    {
+      topology,
+      hexes,
+      harbors,
+      robberHexId,
+      pirateHexId: null,
+      fogPool: [],
+    },
+    rng3,
+  ];
+}
+
+function generateBigIslandBoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
+  const coords = [...generateHexRadiusCoords(2), ...BIG_ISLAND_EXTRA_COORDS];
+  const topology = buildHexBoardTopology(coords);
+  const [shuffledTerrains, rng1] = shufflePure(rng0, BIG_ISLAND_TERRAINS);
+  const { hexes: rawHexes, productiveIds, robberHexId } = buildSingleIslandHexes(
+    coords,
+    shuffledTerrains
+  );
+  const [hexes, rng2] = assignBalancedNumbersPure(
+    rawHexes,
+    productiveIds,
+    BIG_ISLAND_NUMBERS,
+    rng1,
+    config.balancedNumbers
+  );
+  const [harbors, rng3] = placeCoastalHarborsPure(
+    topology,
+    hexes,
+    BIG_ISLAND_HARBORS,
+    rng2
+  );
+
+  return [
+    {
+      topology,
+      hexes,
+      harbors,
+      robberHexId,
+      pirateHexId: null,
+      fogPool: [],
+    },
+    rng3,
+  ];
+}
+
+function generateSeafarersNewShoresBoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
+  const coords = generateHexRadiusCoords(3);
+  const topology = buildHexBoardTopology(coords);
+
+  const mainIslandSet: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(-1, 0),
+    hexId(0, 0),
+    hexId(-1, 1),
+    hexId(0, 1),
+    hexId(0, -1),
+    hexId(1, -1),
+    hexId(-2, 0),
+    hexId(-2, 1),
+    hexId(-2, 2),
+    hexId(-1, 2),
+    hexId(-1, -1),
+    hexId(1, 0),
+    hexId(-3, 1),
+    hexId(-3, 2),
+  ]);
+  const island2Set: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(2, -3),
+    hexId(3, -3),
+    hexId(3, -2),
+  ]);
+  const island3Set: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(3, 0),
+    hexId(2, 1),
+    hexId(1, 2),
+  ]);
+  const island4Set: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(-1, 3),
+    hexId(0, 3),
+  ]);
+
+  const [mainTerrains, rng1] = shufflePure<TerrainType>(rng0, [
+    "forest",
+    "forest",
+    "forest",
+    "pasture",
+    "pasture",
+    "pasture",
+    "fields",
+    "fields",
+    "fields",
+    "hills",
+    "hills",
+    "mountains",
+    "mountains",
+    "desert",
+  ]);
+  const mainNumbers = [2, 3, 4, 4, 5, 5, 6, 8, 9, 9, 10, 10, 11] as const;
+
+  const [foreignTerrains, rng2] = shufflePure<TerrainType>(rng1, [
+    "gold",
+    "gold",
+    "mountains",
+    "hills",
+    "fields",
+    "pasture",
+    "forest",
+    "mountains",
+  ]);
+  const [foreignNumbers, rng3] = shufflePure(rng2, [
+    4, 5, 6, 8, 9, 10, 11, 12,
+  ]);
+
+  const laidOut = coords.reduce<{
+    hexes: Record<HexId, HexTile>;
+    mainProductiveIds: HexId[];
+    mainIdx: number;
+    foreignIdx: number;
+    robberHexId: HexId;
+  }>(
+    (acc, { q, r }) => {
+      const id = hexId(q, r);
+      if (mainIslandSet.has(id)) {
+        const terrain = mainTerrains[acc.mainIdx]!;
+        const tile: HexTile = {
+          id,
+          q,
+          r,
+          terrain,
+          numberToken: null,
+          islandId: 1,
+          allowSetupSettlement: true,
+        };
+        return {
+          hexes: { ...acc.hexes, [id]: tile },
+          mainProductiveIds:
+            terrain === "desert"
+              ? acc.mainProductiveIds
+              : [...acc.mainProductiveIds, id],
+          mainIdx: acc.mainIdx + 1,
+          foreignIdx: acc.foreignIdx,
+          robberHexId: terrain === "desert" ? id : acc.robberHexId,
+        };
+      }
+      if (island2Set.has(id) || island3Set.has(id) || island4Set.has(id)) {
+        const islandId = island2Set.has(id) ? 2 : island3Set.has(id) ? 3 : 4;
+        const tile: HexTile = {
+          id,
+          q,
+          r,
+          terrain: foreignTerrains[acc.foreignIdx]!,
+          numberToken: foreignNumbers[acc.foreignIdx]!,
+          islandId,
+          allowSetupSettlement: false,
+        };
+        return {
+          ...acc,
+          hexes: { ...acc.hexes, [id]: tile },
+          foreignIdx: acc.foreignIdx + 1,
+        };
+      }
+      const seaTile: HexTile = {
         id,
         q,
         r,
@@ -480,83 +602,145 @@ function generateSeafarersNewShoresBoard(config: CatanConfig, rng: SeededRNG): G
         islandId: 0,
         allowSetupSettlement: false,
       };
+      return {
+        ...acc,
+        hexes: { ...acc.hexes, [id]: seaTile },
+      };
+    },
+    {
+      hexes: {},
+      mainProductiveIds: [],
+      mainIdx: 0,
+      foreignIdx: 0,
+      robberHexId: hexId(-1, 0),
     }
-  }
+  );
 
-  assignBalancedNumbers(mainProductive, mainNumbers, rng, config.balancedNumbers);
-  const harbors = placeCoastalHarbors(topology, hexes, STANDARD_HARBORS, rng);
-
-  return {
+  const [hexes, rng4] = assignBalancedNumbersPure(
+    laidOut.hexes,
+    laidOut.mainProductiveIds,
+    mainNumbers,
+    rng3,
+    config.balancedNumbers
+  );
+  const [harbors, rng5] = placeCoastalHarborsPure(
     topology,
     hexes,
-    harbors,
-    robberHexId,
-    pirateHexId,
-    fogPool: [],
-  };
+    STANDARD_HARBORS,
+    rng4
+  );
+
+  return [
+    {
+      topology,
+      hexes,
+      harbors,
+      robberHexId: laidOut.robberHexId,
+      pirateHexId: hexId(2, -1),
+      fogPool: [],
+    },
+    rng5,
+  ];
 }
 
-/**
- * Seafarers Scenario 2: The Four Islands
- * Radius-3 map (37 hexes) split by sea channels (`q === 0` or `r === 0`) into 4 distinct islands!
- * Players may build setup settlements on any island; settling on a new island after setup grants +2 VP.
- */
-function generateSeafarersFourIslandsBoard(config: CatanConfig, rng: SeededRNG): GeneratedBoard {
+function generateSeafarersFourIslandsBoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
   const coords = generateHexRadiusCoords(3);
   const topology = buildHexBoardTopology(coords);
 
   const island1Coords = [
-    hexId(-2, -1), hexId(-1, -1), hexId(-2, 0), hexId(-1, -2), hexId(-3, 0),
-  ];
+    hexId(-2, -1),
+    hexId(-1, -1),
+    hexId(-2, 0),
+    hexId(-1, -2),
+    hexId(-3, 0),
+  ] as const;
   const island2Coords = [
-    hexId(1, -2), hexId(2, -2), hexId(1, -3), hexId(2, -3), hexId(3, -3), hexId(2, -1),
-  ];
+    hexId(1, -2),
+    hexId(2, -2),
+    hexId(1, -3),
+    hexId(2, -3),
+    hexId(3, -3),
+    hexId(2, -1),
+  ] as const;
   const island3Coords = [
-    hexId(-3, 2), hexId(-2, 2), hexId(-3, 3), hexId(-2, 3), hexId(-1, 2), hexId(-2, 1),
-  ];
+    hexId(-3, 2),
+    hexId(-2, 2),
+    hexId(-3, 3),
+    hexId(-2, 3),
+    hexId(-1, 2),
+    hexId(-2, 1),
+  ] as const;
   const island4Coords = [
-    hexId(1, 1), hexId(2, 1), hexId(1, 2), hexId(2, 0), hexId(3, 0),
-  ];
+    hexId(1, 1),
+    hexId(2, 1),
+    hexId(1, 2),
+    hexId(2, 0),
+    hexId(3, 0),
+  ] as const;
 
-  const islandMap = new Map<HexId, number>();
-  island1Coords.forEach((id) => islandMap.set(id, 1));
-  island2Coords.forEach((id) => islandMap.set(id, 2));
-  island3Coords.forEach((id) => islandMap.set(id, 3));
-  island4Coords.forEach((id) => islandMap.set(id, 4));
+  const islandMap: ReadonlyMap<HexId, number> = new Map<HexId, number>([
+    ...island1Coords.map((id) => [id, 1] as const),
+    ...island2Coords.map((id) => [id, 2] as const),
+    ...island3Coords.map((id) => [id, 3] as const),
+    ...island4Coords.map((id) => [id, 4] as const),
+  ]);
 
-  const landTerrains = rng.shuffle<TerrainType>([
-    "forest", "forest", "forest", "forest", "forest",
-    "pasture", "pasture", "pasture", "pasture", "pasture",
-    "fields", "fields", "fields", "fields",
-    "hills", "hills", "hills", "hills",
-    "mountains", "mountains", "mountains", "mountains",
+  const [landTerrains, rng1] = shufflePure<TerrainType>(rng0, [
+    "forest",
+    "forest",
+    "forest",
+    "forest",
+    "forest",
+    "pasture",
+    "pasture",
+    "pasture",
+    "pasture",
+    "pasture",
+    "fields",
+    "fields",
+    "fields",
+    "fields",
+    "hills",
+    "hills",
+    "hills",
+    "hills",
+    "mountains",
+    "mountains",
+    "mountains",
+    "mountains",
   ]);
   const landNumbers = [
     2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12, 4, 5, 9, 10,
-  ];
+  ] as const;
 
-  const hexes: Record<HexId, HexTile> = {};
-  const productive: HexTile[] = [];
-  let landIdx = 0;
-
-  for (const { q, r } of coords) {
-    const id = hexId(q, r);
-    const islandId = islandMap.get(id) ?? 0;
-    if (islandId > 0) {
-      const terrain = landTerrains[landIdx++]!;
-      const tile: HexTile = {
-        id,
-        q,
-        r,
-        terrain,
-        numberToken: null,
-        islandId,
-        allowSetupSettlement: true,
-      };
-      hexes[id] = tile;
-      productive.push(tile);
-    } else {
-      hexes[id] = {
+  const laidOut = coords.reduce<{
+    hexes: Record<HexId, HexTile>;
+    productiveIds: HexId[];
+    landIdx: number;
+  }>(
+    (acc, { q, r }) => {
+      const id = hexId(q, r);
+      const islandId = islandMap.get(id) ?? 0;
+      if (islandId > 0) {
+        const tile: HexTile = {
+          id,
+          q,
+          r,
+          terrain: landTerrains[acc.landIdx]!,
+          numberToken: null,
+          islandId,
+          allowSetupSettlement: true,
+        };
+        return {
+          hexes: { ...acc.hexes, [id]: tile },
+          productiveIds: [...acc.productiveIds, id],
+          landIdx: acc.landIdx + 1,
+        };
+      }
+      const seaTile: HexTile = {
         id,
         q,
         r,
@@ -565,90 +749,140 @@ function generateSeafarersFourIslandsBoard(config: CatanConfig, rng: SeededRNG):
         islandId: 0,
         allowSetupSettlement: false,
       };
-    }
-  }
+      return {
+        ...acc,
+        hexes: { ...acc.hexes, [id]: seaTile },
+      };
+    },
+    { hexes: {}, productiveIds: [], landIdx: 0 }
+  );
 
-  assignBalancedNumbers(productive, landNumbers, rng, config.balancedNumbers);
-  const harbors = placeCoastalHarbors(topology, hexes, STANDARD_HARBORS, rng);
-
-  return {
+  const [hexes, rng2] = assignBalancedNumbersPure(
+    laidOut.hexes,
+    laidOut.productiveIds,
+    landNumbers,
+    rng1,
+    config.balancedNumbers
+  );
+  const [harbors, rng3] = placeCoastalHarborsPure(
     topology,
     hexes,
-    harbors,
-    robberHexId: island1Coords[0]!,
-    pirateHexId: hexId(0, 0),
-    fogPool: [],
-  };
+    STANDARD_HARBORS,
+    rng2
+  );
+
+  return [
+    {
+      topology,
+      hexes,
+      harbors,
+      robberHexId: island1Coords[0],
+      pirateHexId: hexId(0, 0),
+      fogPool: [],
+    },
+    rng3,
+  ];
 }
 
-/**
- * Seafarers Scenario 3: The Fog Islands
- * Two starting islands on the West & East edges separated by a mystery fog belt in the center.
- * Building a road or ship adjacent to a `fog` hex reveals its terrain + number token and awards 1 resource!
- */
-function generateSeafarersFogIslandsBoard(config: CatanConfig, rng: SeededRNG): GeneratedBoard {
+function generateSeafarersFogIslandsBoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
   const coords = generateHexRadiusCoords(3);
   const topology = buildHexBoardTopology(coords);
 
-  const westIsland = new Set<HexId>([
-    hexId(-3, 0), hexId(-3, 1), hexId(-3, 2), hexId(-3, 3),
-    hexId(-2, 0), hexId(-2, 1), hexId(-2, 2), hexId(-2, 3),
+  const westIsland: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(-3, 0),
+    hexId(-3, 1),
+    hexId(-3, 2),
+    hexId(-3, 3),
+    hexId(-2, 0),
+    hexId(-2, 1),
+    hexId(-2, 2),
+    hexId(-2, 3),
   ]);
-  const eastIsland = new Set<HexId>([
-    hexId(3, -3), hexId(3, -2), hexId(3, -1), hexId(3, 0),
-    hexId(2, -3), hexId(2, -2), hexId(2, -1), hexId(2, 0),
+  const eastIsland: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(3, -3),
+    hexId(3, -2),
+    hexId(3, -1),
+    hexId(3, 0),
+    hexId(2, -3),
+    hexId(2, -2),
+    hexId(2, -1),
+    hexId(2, 0),
   ]);
-  const fogBelt = new Set<HexId>([
-    hexId(0, -2), hexId(0, -1), hexId(0, 0), hexId(0, 1), hexId(0, 2),
-    hexId(-1, 0), hexId(1, 0),
+  const fogBelt: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(0, -2),
+    hexId(0, -1),
+    hexId(0, 0),
+    hexId(0, 1),
+    hexId(0, 2),
+    hexId(-1, 0),
+    hexId(1, 0),
   ]);
 
-  const startTerrains = rng.shuffle<TerrainType>([
-    "forest", "forest", "forest",
-    "pasture", "pasture", "pasture",
-    "fields", "fields", "fields",
-    "hills", "hills", "hills",
-    "mountains", "mountains", "mountains",
+  const [startTerrains, rng1] = shufflePure<TerrainType>(rng0, [
+    "forest",
+    "forest",
+    "forest",
+    "pasture",
+    "pasture",
+    "pasture",
+    "fields",
+    "fields",
+    "fields",
+    "hills",
+    "hills",
+    "hills",
+    "mountains",
+    "mountains",
+    "mountains",
     "desert",
   ]);
-  const startNumbers = [3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11];
+  const startNumbers = [3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11] as const;
 
-  const hexes: Record<HexId, HexTile> = {};
-  const productive: HexTile[] = [];
-  let idx = 0;
-  let robberHexId = hexId(-2, 1);
-
-  for (const { q, r } of coords) {
-    const id = hexId(q, r);
-    if (westIsland.has(id) || eastIsland.has(id)) {
-      const terrain = startTerrains[idx++]!;
-      const tile: HexTile = {
-        id,
-        q,
-        r,
-        terrain,
-        numberToken: null,
-        islandId: westIsland.has(id) ? 1 : 2,
-        allowSetupSettlement: true,
-      };
-      hexes[id] = tile;
-      if (terrain === "desert") {
-        robberHexId = id;
-      } else {
-        productive.push(tile);
+  const laidOut = coords.reduce<{
+    hexes: Record<HexId, HexTile>;
+    productiveIds: HexId[];
+    idx: number;
+    robberHexId: HexId;
+  }>(
+    (acc, { q, r }) => {
+      const id = hexId(q, r);
+      if (westIsland.has(id) || eastIsland.has(id)) {
+        const terrain = startTerrains[acc.idx]!;
+        const tile: HexTile = {
+          id,
+          q,
+          r,
+          terrain,
+          numberToken: null,
+          islandId: westIsland.has(id) ? 1 : 2,
+          allowSetupSettlement: true,
+        };
+        return {
+          hexes: { ...acc.hexes, [id]: tile },
+          productiveIds:
+            terrain === "desert"
+              ? acc.productiveIds
+              : [...acc.productiveIds, id],
+          idx: acc.idx + 1,
+          robberHexId: terrain === "desert" ? id : acc.robberHexId,
+        };
       }
-    } else if (fogBelt.has(id)) {
-      hexes[id] = {
-        id,
-        q,
-        r,
-        terrain: "fog",
-        numberToken: null,
-        islandId: 3,
-        allowSetupSettlement: false,
-      };
-    } else {
-      hexes[id] = {
+      if (fogBelt.has(id)) {
+        const fogTile: HexTile = {
+          id,
+          q,
+          r,
+          terrain: "fog",
+          numberToken: null,
+          islandId: 3,
+          allowSetupSettlement: false,
+        };
+        return { ...acc, hexes: { ...acc.hexes, [id]: fogTile } };
+      }
+      const seaTile: HexTile = {
         id,
         q,
         r,
@@ -657,12 +891,20 @@ function generateSeafarersFogIslandsBoard(config: CatanConfig, rng: SeededRNG): 
         islandId: 0,
         allowSetupSettlement: false,
       };
-    }
-  }
+      return { ...acc, hexes: { ...acc.hexes, [id]: seaTile } };
+    },
+    { hexes: {}, productiveIds: [], idx: 0, robberHexId: hexId(-2, 1) }
+  );
 
-  assignBalancedNumbers(productive, startNumbers, rng, config.balancedNumbers);
+  const [hexes, rng2] = assignBalancedNumbersPure(
+    laidOut.hexes,
+    laidOut.productiveIds,
+    startNumbers,
+    rng1,
+    config.balancedNumbers
+  );
 
-  const fogPool: FogRevealTile[] = rng.shuffle<FogRevealTile>([
+  const [fogPool, rng3] = shufflePure<FogRevealTile>(rng2, [
     { terrain: "gold", numberToken: 6 },
     { terrain: "gold", numberToken: 8 },
     { terrain: "mountains", numberToken: 5 },
@@ -672,36 +914,85 @@ function generateSeafarersFogIslandsBoard(config: CatanConfig, rng: SeededRNG): 
     { terrain: "pasture", numberToken: 11 },
   ]);
 
-  const harbors = placeCoastalHarbors(topology, hexes, STANDARD_HARBORS, rng);
-
-  return {
+  const [harbors, rng4] = placeCoastalHarborsPure(
     topology,
     hexes,
-    harbors,
-    robberHexId,
-    pirateHexId: hexId(-1, -1),
-    fogPool,
-  };
+    STANDARD_HARBORS,
+    rng3
+  );
+
+  return [
+    {
+      topology,
+      hexes,
+      harbors,
+      robberHexId: laidOut.robberHexId,
+      pirateHexId: hexId(-1, -1),
+      fogPool,
+    },
+    rng4,
+  ];
 }
 
-/**
- * Generates the shuffled Development Card deck for the given player count / scenario.
- * Base (25 cards): 14 Knights, 5 VP, 2 Road Building, 2 Year of Plenty, 2 Monopoly.
- * 5–6 Player Extension (34 cards): 20 Knights, 5 VP, 3 Road Building, 3 Year of Plenty, 3 Monopoly.
- */
-export function createDevCardDeck(isExpanded: boolean, rng: SeededRNG): DevCardType[] {
-  const deck: DevCardType[] = [];
+export function generateCatanBoardPure(
+  config: CatanConfig,
+  rngState: RngState
+): readonly [GeneratedBoard, RngState] {
+  switch (config.scenarioId) {
+    case "big_island_5_6":
+      return generateBigIslandBoardPure(config, rngState);
+    case "seafarers_new_shores":
+      return generateSeafarersNewShoresBoardPure(config, rngState);
+    case "seafarers_four_islands":
+      return generateSeafarersFourIslandsBoardPure(config, rngState);
+    case "seafarers_fog_islands":
+      return generateSeafarersFogIslandsBoardPure(config, rngState);
+    case "standard":
+    default:
+      return generateStandardBoardPure(config, rngState);
+  }
+}
+
+export function generateCatanBoard(
+  config: CatanConfig,
+  rng: SeededRNG
+): GeneratedBoard {
+  // Delegate through `rng.shuffle` / `fromState` parity by advancing `rng`
+  const [board, nextState] = generateCatanBoardPure(config, rng.getState());
+  while (rng.getState() !== nextState) {
+    rng.nextFloat();
+  }
+  return board;
+}
+
+export function createDevCardDeckPure(
+  isExpanded: boolean,
+  rngState: RngState
+): readonly [DevCardType[], RngState] {
   const knights = isExpanded ? 20 : 14;
   const progressEach = isExpanded ? 3 : 2;
   const vps = 5;
 
-  for (let i = 0; i < knights; i++) deck.push("knight");
-  for (let i = 0; i < vps; i++) deck.push("victory_point");
-  for (let i = 0; i < progressEach; i++) {
-    deck.push("road_building");
-    deck.push("year_of_plenty");
-    deck.push("monopoly");
-  }
+  const deck: DevCardType[] = [
+    ...Array.from({ length: knights }, (): DevCardType => "knight"),
+    ...Array.from({ length: vps }, (): DevCardType => "victory_point"),
+    ...Array.from({ length: progressEach }, (): DevCardType[] => [
+      "road_building",
+      "year_of_plenty",
+      "monopoly",
+    ]).flat(),
+  ];
 
-  return rng.shuffle(deck);
+  return shufflePure(rngState, deck);
+}
+
+export function createDevCardDeck(
+  isExpanded: boolean,
+  rng: SeededRNG
+): DevCardType[] {
+  const [deck, nextState] = createDevCardDeckPure(isExpanded, rng.getState());
+  while (rng.getState() !== nextState) {
+    rng.nextFloat();
+  }
+  return deck;
 }

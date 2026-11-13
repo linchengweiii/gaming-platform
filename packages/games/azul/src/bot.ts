@@ -5,11 +5,15 @@ import {
   scoreWallPlacement,
 } from "./rules.ts";
 import {
+  AZUL_COLORS,
   type AzulAction,
   type AzulPlayerState,
   type AzulState,
+  type AzulTileColor,
   FLOOR_PENALTIES,
 } from "./types.ts";
+
+const FIVE_INDICES = [0, 1, 2, 3, 4] as const;
 
 export interface AzulMasterWeights {
   placedTileWeight: number;
@@ -30,7 +34,7 @@ export interface AzulMasterWeights {
   opponentDenialBonus: number;
 }
 
-export let AZUL_MASTER_WEIGHTS: AzulMasterWeights = {
+export const DEFAULT_AZUL_MASTER_WEIGHTS: Readonly<AzulMasterWeights> = {
   placedTileWeight: 2.631,
   floorPenaltyWeight: 2.433,
   firstMarkerCleanBonus: 1.476,
@@ -49,6 +53,10 @@ export let AZUL_MASTER_WEIGHTS: AzulMasterWeights = {
   opponentDenialBonus: 1.958,
 };
 
+export let AZUL_MASTER_WEIGHTS: AzulMasterWeights = {
+  ...DEFAULT_AZUL_MASTER_WEIGHTS,
+};
+
 export function setMasterAzulBotWeights(
   overrides: Partial<AzulMasterWeights>
 ): void {
@@ -58,18 +66,57 @@ export function setMasterAzulBotWeights(
   };
 }
 
+function withWallTile(
+  wall: readonly (readonly (AzulTileColor | null)[])[],
+  row: number,
+  col: number,
+  color: AzulTileColor
+): (AzulTileColor | null)[][] {
+  return wall.map((rCells, rIdx) =>
+    rIdx === row
+      ? rCells.map((cell, cIdx) => (cIdx === col ? color : cell))
+      : [...rCells]
+  );
+}
+
 function computeMarginalFloorPenalty(
   currentFloorLen: number,
   addedFloorItems: number
 ): number {
-  let penalty = 0;
-  for (let i = 0; i < addedFloorItems; i++) {
-    const slot = currentFloorLen + i;
-    if (slot < FLOOR_PENALTIES.length) {
-      penalty += Math.abs(FLOOR_PENALTIES[slot]!);
-    }
-  }
-  return penalty;
+  return Array.from({ length: addedFloorItems }, (_, i) => currentFloorLen + i)
+    .filter((slot) => slot < FLOOR_PENALTIES.length)
+    .reduce((sum, slot) => sum + Math.abs(FLOOR_PENALTIES[slot]!), 0);
+}
+
+function projectRoundWallPlacements(
+  player: AzulPlayerState,
+  overrideRow?: number,
+  overrideColor?: AzulTileColor,
+  overrideComplete?: boolean
+): { wall: (AzulTileColor | null)[][]; roundPts: number } {
+  return FIVE_INDICES.reduce<{
+    wall: (AzulTileColor | null)[][];
+    roundPts: number;
+  }>(
+    (acc, r) => {
+      const l = player.patternLines[r];
+      const color = r === overrideRow ? (overrideColor ?? null) : l.color;
+      const isComplete =
+        r === overrideRow
+          ? Boolean(overrideComplete)
+          : Boolean(l.color && l.count === l.capacity);
+      if (!color || !isComplete) {
+        return acc;
+      }
+      const cIdx = getWallColumnForColor(r, color);
+      const nextWall = withWallTile(acc.wall, r, cIdx, color);
+      return {
+        wall: nextWall,
+        roundPts: acc.roundPts + scoreWallPlacement(nextWall, r, cIdx),
+      };
+    },
+    { wall: player.wall.map((r) => [...r]), roundPts: 0 }
+  );
 }
 
 function computeProjectedEndgameTotal(
@@ -79,44 +126,43 @@ function computeProjectedEndgameTotal(
   overrideComplete?: boolean,
   extraFloorItems = 0
 ): number {
-  const simWall = p.wall.map((r) => [...r]);
-  let roundPts = 0;
-  for (let r = 0; r < 5; r++) {
-    const l = p.patternLines[r]!;
-    const color = r === overrideRow ? overrideColor ?? null : l.color;
-    const isComplete =
-      r === overrideRow
-        ? Boolean(overrideComplete)
-        : Boolean(l.color && l.count === l.capacity);
-    if (color && isComplete) {
-      const cIdx = getWallColumnForColor(r, color);
-      simWall[r]![cIdx] = color;
-      roundPts += scoreWallPlacement(simWall, r, cIdx);
-    }
-  }
-  const floorLen = p.floorLine.length + extraFloorItems;
-  let floorPen = 0;
-  for (let i = 0; i < Math.min(floorLen, FLOOR_PENALTIES.length); i++) {
-    floorPen += Math.abs(FLOOR_PENALTIES[i]!);
-  }
-  let bonus = 0;
-  for (let r = 0; r < 5; r++) {
-    if (simWall[r]!.every((c) => c !== null)) bonus += 2;
-  }
-  for (let c = 0; c < 5; c++) {
-    if (simWall.every((row) => row[c] !== null)) bonus += 7;
-  }
-  const colorCounts = new Map<string, number>();
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 5; c++) {
-      const cell = simWall[r]![c];
-      if (cell) colorCounts.set(cell, (colorCounts.get(cell) ?? 0) + 1);
-    }
-  }
-  for (const cnt of colorCounts.values()) {
-    if (cnt === 5) bonus += 10;
-  }
-  return Math.max(0, p.score + roundPts - floorPen) + bonus;
+  const { wall: simWall, roundPts } = projectRoundWallPlacements(
+    p,
+    overrideRow,
+    overrideColor,
+    overrideComplete
+  );
+  const floorLen = Math.min(
+    p.floorLine.length + extraFloorItems,
+    FLOOR_PENALTIES.length
+  );
+  const floorPen = FLOOR_PENALTIES.slice(0, floorLen).reduce(
+    (sum, pen) => sum + Math.abs(pen),
+    0
+  );
+
+  const rowBonus =
+    FIVE_INDICES.filter((r) => simWall[r]!.every((c) => c !== null)).length * 2;
+  const colBonus =
+    FIVE_INDICES.filter((c) => simWall.every((row) => row[c] !== null)).length *
+    7;
+  const colorBonus =
+    AZUL_COLORS.filter(
+      (color) =>
+        FIVE_INDICES.reduce<number>(
+          (sum, r) =>
+            sum +
+            FIVE_INDICES.filter((c) => simWall[r]![c] === color).length,
+          0
+        ) === 5
+    ).length * 10;
+
+  return (
+    Math.max(0, p.score + roundPts - floorPen) +
+    rowBonus +
+    colBonus +
+    colorBonus
+  );
 }
 
 function evaluateDraftAction(
@@ -181,9 +227,8 @@ function evaluateDraftAction(
   );
 
   if (difficulty === "smart") {
-    const simWall = player.wall.map((r) => [...r]);
     const col = getWallColumnForColor(row, action.color);
-    simWall[row]![col] = action.color;
+    const simWall = withWallTile(player.wall, row, col, action.color);
     const wallScore = scoreWallPlacement(simWall, row, col);
     const filledInRow = simWall[row]!.filter((c) => c !== null).length;
     return (
@@ -194,128 +239,114 @@ function evaluateDraftAction(
     );
   }
 
-  const projectedWall = player.wall.map((r) => [...r]);
-  let baseRoundWallPts = 0;
-  for (let r = 0; r < 5; r++) {
-    const l = player.patternLines[r]!;
-    if (l.color && l.count === l.capacity) {
-      const cIdx = getWallColumnForColor(r, l.color);
-      projectedWall[r]![cIdx] = l.color;
-      baseRoundWallPts += scoreWallPlacement(projectedWall, r, cIdx);
-    }
-  }
-
-  const afterWall = player.wall.map((r) => [...r]);
-  let afterRoundWallPts = 0;
-  for (let r = 0; r < 5; r++) {
-    const l = player.patternLines[r]!;
-    const color = r === row ? action.color : l.color;
-    const isComplete =
-      r === row ? completesLine : Boolean(l.color && l.count === l.capacity);
-    if (color && isComplete) {
-      const cIdx = getWallColumnForColor(r, color);
-      afterWall[r]![cIdx] = color;
-      afterRoundWallPts += scoreWallPlacement(afterWall, r, cIdx);
-    }
-  }
+  const { wall: projectedWall, roundPts: baseRoundWallPts } =
+    projectRoundWallPlacements(player);
+  const { wall: afterWall, roundPts: afterRoundWallPts } =
+    projectRoundWallPlacements(player, row, action.color, completesLine);
 
   const col = getWallColumnForColor(row, action.color);
   const marginalWallGain = afterRoundWallPts - baseRoundWallPts;
 
-  let score =
-    placed * mw.placedTileWeight - exactFloorPenalty * mw.floorPenaltyWeight;
+  const basePlacementScore =
+    placed * mw.placedTileWeight -
+    exactFloorPenalty * mw.floorPenaltyWeight +
+    (takesFirstMarker && curFloorLen === 0 ? mw.firstMarkerCleanBonus : 0);
 
-  if (takesFirstMarker && curFloorLen === 0) {
-    score += mw.firstMarkerCleanBonus;
-  }
+  const completionOrFutureBonus = completesLine
+    ? mw.completeLineBaseBonus + marginalWallGain * mw.marginalWallGainWeight
+    : (() => {
+        const remainingFromFactories = state.factories.reduce(
+          (sum, factory, fIdx) =>
+            action.source.kind === "factory" &&
+            action.source.factoryIndex === fIdx
+              ? sum
+              : sum + factory.filter((c) => c === action.color).length,
+          0
+        );
+        const remainingFromCenter =
+          action.source.kind !== "center"
+            ? state.centerPool.filter((c) => c === action.color).length
+            : 0;
+        const remainingSameColor = remainingFromFactories + remainingFromCenter;
 
-  if (completesLine) {
-    score += mw.completeLineBaseBonus + marginalWallGain * mw.marginalWallGainWeight;
-  } else {
-    let remainingSameColor = 0;
-    for (let f = 0; f < state.factories.length; f++) {
-      if (action.source.kind === "factory" && action.source.factoryIndex === f) {
-        continue;
-      }
-      remainingSameColor += state.factories[f]!.filter(
-        (c) => c === action.color
-      ).length;
-    }
-    if (action.source.kind !== "center") {
-      remainingSameColor += state.centerPool.filter(
-        (c) => c === action.color
-      ).length;
-    }
+        const stillNeeded = space - placed;
+        const hypoWall = withWallTile(afterWall, row, col, action.color);
+        const futureWallScore = scoreWallPlacement(hypoWall, row, col);
 
-    const stillNeeded = space - placed;
-    const hypoWall = afterWall.map((r) => [...r]);
-    hypoWall[row]![col] = action.color;
-    const futureWallScore = scoreWallPlacement(hypoWall, row, col);
-
-    if (stillNeeded > remainingSameColor) {
-      score +=
-        futureWallScore * mw.strandedFutureWallWeight -
-        stillNeeded * mw.strandedStillNeededPenalty;
-    } else {
-      score += futureWallScore * mw.reachableFutureWallWeight;
-    }
-  }
+        return stillNeeded > remainingSameColor
+          ? futureWallScore * mw.strandedFutureWallWeight -
+              stillNeeded * mw.strandedStillNeededPenalty
+          : futureWallScore * mw.reachableFutureWallWeight;
+      })();
 
   const targetWall = completesLine ? afterWall : projectedWall;
   const filledInRow = targetWall[row]!.filter((c) => c !== null).length;
   const filledInCol = targetWall.filter((r) => r[col] !== null).length;
-  let colorCountOnWall = 0;
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 5; c++) {
-      if (targetWall[r]![c] === action.color) colorCountOnWall++;
-    }
-  }
+  const colorCountOnWall = FIVE_INDICES.reduce<number>(
+    (sum, r) =>
+      sum +
+      FIVE_INDICES.filter((c) => targetWall[r]![c] === action.color).length,
+    0
+  );
 
-  if (completesLine) {
-    if (filledInCol === 5) score += mw.colFiveBonus;
-    else if (filledInCol === 4) score += mw.colFourBonus;
+  const endgameSetBonus = completesLine
+    ? (filledInCol === 5
+        ? mw.colFiveBonus
+        : filledInCol === 4
+          ? mw.colFourBonus
+          : 0) +
+      (colorCountOnWall === 5
+        ? mw.colorFiveBonus
+        : colorCountOnWall === 4
+          ? mw.colorFourBonus
+          : 0) +
+      (filledInRow === 5
+        ? (() => {
+            const myFinal = computeProjectedEndgameTotal(
+              player,
+              row,
+              action.color,
+              true,
+              floorItems
+            );
+            const maxOppFinal = Math.max(
+              0,
+              ...state.players
+                .filter((p) => p.id !== player.id)
+                .map((p) => computeProjectedEndgameTotal(p))
+            );
+            return myFinal >= maxOppFinal
+              ? mw.rowEndgameWinBonus
+              : -mw.rowEndgameBehindPenalty;
+          })()
+        : 0)
+    : 0;
 
-    if (colorCountOnWall === 5) score += mw.colorFiveBonus;
-    else if (colorCountOnWall === 4) score += mw.colorFourBonus;
+  const centerColBonus =
+    col >= 1 && col <= 3 ? mw.centerColSynergyBonus : 0;
 
-    if (filledInRow === 5) {
-      const myFinal = computeProjectedEndgameTotal(
-        player,
-        row,
-        action.color,
-        true,
-        floorItems
-      );
-      const maxOppFinal = Math.max(
-        0,
-        ...state.players
-          .filter((p) => p.id !== player.id)
-          .map((p) => computeProjectedEndgameTotal(p))
-      );
-      if (myFinal >= maxOppFinal) {
-        score += mw.rowEndgameWinBonus;
-      } else {
-        score -= mw.rowEndgameBehindPenalty;
-      }
-    }
-  }
+  const denialBonus = state.players
+    .filter((opp) => opp.id !== player.id)
+    .reduce(
+      (sum, opp) =>
+        sum +
+        opp.patternLines.filter(
+          (oppLine) =>
+            oppLine.color === action.color &&
+            oppLine.count > 0 &&
+            oppLine.capacity - oppLine.count === count
+        ).length *
+          mw.opponentDenialBonus,
+      0
+    );
 
-  if (col >= 1 && col <= 3) score += mw.centerColSynergyBonus;
-
-  for (const opp of state.players) {
-    if (opp.id === player.id) continue;
-    for (const oppLine of opp.patternLines) {
-      if (
-        oppLine.color === action.color &&
-        oppLine.count > 0 &&
-        oppLine.capacity - oppLine.count === count
-      ) {
-        score += mw.opponentDenialBonus;
-      }
-    }
-  }
-
-  return score;
+  return (
+    basePlacementScore +
+    completionOrFutureBonus +
+    endgameSetBonus +
+    centerColBonus +
+    denialBonus
+  );
 }
 
 export function chooseAzulBotAction(
@@ -329,16 +360,11 @@ export function chooseAzulBotAction(
   const player = state.players.find((p) => p.id === playerId)!;
   const difficulty: BotDifficulty = player.botDifficulty ?? "smart";
 
-  let bestAction = legal[0]!;
-  let bestScore = -Infinity;
-
-  for (const act of legal) {
-    const s = evaluateDraftAction(state, player, act, difficulty);
-    if (s > bestScore) {
-      bestScore = s;
-      bestAction = act;
-    }
-  }
-
-  return bestAction;
+  return legal.reduce<{ act: AzulAction; score: number } | null>(
+    (best, act) => {
+      const score = evaluateDraftAction(state, player, act, difficulty);
+      return best === null || score > best.score ? { act, score } : best;
+    },
+    null
+  )!.act;
 }

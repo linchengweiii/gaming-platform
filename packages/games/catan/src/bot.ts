@@ -167,20 +167,17 @@ export function setMasterCatanBotWeights(
  * Computes relative board-wide scarcity multipliers (>= 0.75, <= 2.35) for each resource.
  */
 function computeBoardScarcity(state: CatanState): Record<ResourceType, number> {
-  const totalPips: Record<ResourceType, number> = {
-    brick: 0,
-    lumber: 0,
-    wool: 0,
-    grain: 0,
-    ore: 0,
-  };
-
-  for (const h of Object.values(state.hexes)) {
-    const res = TERRAIN_TO_RESOURCE[h.terrain];
-    if (res && h.numberToken) {
-      totalPips[res] += NUMBER_TOKEN_PIPS[h.numberToken] ?? 0;
-    }
-  }
+  const totalPips = Object.values(state.hexes).reduce<Record<ResourceType, number>>(
+    (acc, h) => {
+      const res = TERRAIN_TO_RESOURCE[h.terrain];
+      if (!res || !h.numberToken) return acc;
+      return {
+        ...acc,
+        [res]: acc[res] + (NUMBER_TOKEN_PIPS[h.numberToken] ?? 0),
+      };
+    },
+    { brick: 0, lumber: 0, wool: 0, grain: 0, ore: 0 }
+  );
 
   const avg =
     (totalPips.brick +
@@ -190,18 +187,16 @@ function computeBoardScarcity(state: CatanState): Record<ResourceType, number> {
       totalPips.ore) /
       5 || 10;
 
-  const scarcity: Record<ResourceType, number> = {
-    brick: 1,
-    lumber: 1,
-    wool: 1,
-    grain: 1,
-    ore: 1,
-  };
-  for (const r of RESOURCES) {
-    const ratio = avg / Math.max(2.5, totalPips[r]);
-    scarcity[r] = Math.max(0.75, Math.min(2.35, ratio));
-  }
-  return scarcity;
+  return RESOURCES.reduce<Record<ResourceType, number>>(
+    (acc, r) => {
+      const ratio = avg / Math.max(2.5, totalPips[r]);
+      return {
+        ...acc,
+        [r]: Math.max(0.75, Math.min(2.35, ratio)),
+      };
+    },
+    { brick: 1, lumber: 1, wool: 1, grain: 1, ore: 1 }
+  );
 }
 
 /**
@@ -212,35 +207,39 @@ function computePlayerProductionPips(
   playerId: string,
   ignoreRobber = false
 ): Record<ResourceType, number> {
-  const prod: Record<ResourceType, number> = {
-    brick: 0,
-    lumber: 0,
-    wool: 0,
-    grain: 0,
-    ore: 0,
-  };
-
-  for (const [vId, b] of Object.entries(state.buildings)) {
-    if (b.ownerId !== playerId) continue;
-    const mult = b.type === "city" ? 2 : 1;
-    const vNode = state.topology.vertices[vId];
-    if (!vNode) continue;
-    for (const hId of vNode.adjacentHexIds) {
-      if (!ignoreRobber && hId === state.robberHexId) continue;
-      const tile = state.hexes[hId];
-      if (!tile || !tile.numberToken) continue;
-      const pips = NUMBER_TOKEN_PIPS[tile.numberToken] ?? 0;
-      const res = TERRAIN_TO_RESOURCE[tile.terrain];
-      if (res) {
-        prod[res] += pips * mult;
-      } else if (tile.terrain === "gold") {
-        for (const r of RESOURCES) {
-          prod[r] += (pips * mult) / 5;
-        }
-      }
-    }
-  }
-  return prod;
+  return Object.entries(state.buildings).reduce<Record<ResourceType, number>>(
+    (prod, [vId, b]) => {
+      if (b.ownerId !== playerId) return prod;
+      const mult = b.type === "city" ? 2 : 1;
+      const vNode = state.topology.vertices[vId];
+      if (!vNode) return prod;
+      return vNode.adjacentHexIds.reduce<Record<ResourceType, number>>(
+        (inner, hId) => {
+          if (!ignoreRobber && hId === state.robberHexId) return inner;
+          const tile = state.hexes[hId];
+          if (!tile || !tile.numberToken) return inner;
+          const pips = NUMBER_TOKEN_PIPS[tile.numberToken] ?? 0;
+          const res = TERRAIN_TO_RESOURCE[tile.terrain];
+          if (res) {
+            return { ...inner, [res]: inner[res] + pips * mult };
+          }
+          if (tile.terrain === "gold") {
+            const goldShare = (pips * mult) / 5;
+            return {
+              brick: inner.brick + goldShare,
+              lumber: inner.lumber + goldShare,
+              wool: inner.wool + goldShare,
+              grain: inner.grain + goldShare,
+              ore: inner.ore + goldShare,
+            };
+          }
+          return inner;
+        },
+        prod
+      );
+    },
+    { brick: 0, lumber: 0, wool: 0, grain: 0, ore: 0 }
+  );
 }
 
 /**
@@ -949,62 +948,65 @@ function chooseOptimalDiscardAction(
   }
 
   if (diff === "normal") {
-    const remHand: ResourceMap = { ...player.resources };
-    const discard: Partial<ResourceMap> = {};
-    let left = needed;
-    while (left > 0) {
-      let bestRes: ResourceType = "wool";
-      let bestCnt = -1;
-      for (const r of RESOURCES) {
-        if (remHand[r] > bestCnt) {
-          bestCnt = remHand[r];
-          bestRes = r;
-        }
-      }
-      if (bestCnt <= 0) break;
-      remHand[bestRes]--;
-      discard[bestRes] = (discard[bestRes] ?? 0) + 1;
-      left--;
-    }
-    return { type: "DISCARD_CARDS", resources: discard };
+    const greedyResult = Array.from({ length: needed }).reduce<{
+      remHand: ResourceMap;
+      discard: Partial<ResourceMap>;
+    }>(
+      (acc) => {
+        const best = RESOURCES.reduce<{ res: ResourceType; cnt: number }>(
+          (b, r) =>
+            acc.remHand[r] > b.cnt ? { res: r, cnt: acc.remHand[r] } : b,
+          { res: "wool", cnt: -1 }
+        );
+        if (best.cnt <= 0) return acc;
+        return {
+          remHand: {
+            ...acc.remHand,
+            [best.res]: acc.remHand[best.res] - 1,
+          },
+          discard: {
+            ...acc.discard,
+            [best.res]: (acc.discard[best.res] ?? 0) + 1,
+          },
+        };
+      },
+      { remHand: { ...player.resources }, discard: {} }
+    );
+    return { type: "DISCARD_CARDS", resources: greedyResult.discard };
   }
 
   const scarcity = computeBoardScarcity(state);
   const prod = computePlayerProductionPips(state, player.id);
-
-  let bestKeepScore = -Infinity;
-  let bestDiscard: Partial<ResourceMap> | null = null;
-
-  const currentDiscard: ResourceMap = emptyResources();
   const resList = RESOURCES;
 
-  function dfs(idx: number, rem: number): void {
+  function searchBestDiscard(
+    idx: number,
+    rem: number,
+    partialDiscard: ResourceMap
+  ): { bestScore: number; bestDiscard: ResourceMap | null } {
     if (idx === 4) {
       const rLast = resList[4]!;
-      if (rem <= player.resources[rLast]) {
-        currentDiscard[rLast] = rem;
-        const kept: ResourceMap = {
-          brick: player.resources.brick - currentDiscard.brick,
-          lumber: player.resources.lumber - currentDiscard.lumber,
-          wool: player.resources.wool - currentDiscard.wool,
-          grain: player.resources.grain - currentDiscard.grain,
-          ore: player.resources.ore - currentDiscard.ore,
-        };
-        const score = evaluateHandStrategicValue(
-          state,
-          player,
-          kept,
-          weights,
-          scarcity,
-          prod,
-          false
-        );
-        if (score > bestKeepScore) {
-          bestKeepScore = score;
-          bestDiscard = { ...currentDiscard };
-        }
+      if (rem > player.resources[rLast]) {
+        return { bestScore: -Infinity, bestDiscard: null };
       }
-      return;
+      const fullDiscard: ResourceMap = { ...partialDiscard, [rLast]: rem };
+      const kept: ResourceMap = {
+        brick: player.resources.brick - fullDiscard.brick,
+        lumber: player.resources.lumber - fullDiscard.lumber,
+        wool: player.resources.wool - fullDiscard.wool,
+        grain: player.resources.grain - fullDiscard.grain,
+        ore: player.resources.ore - fullDiscard.ore,
+      };
+      const score = evaluateHandStrategicValue(
+        state,
+        player,
+        kept,
+        weights,
+        scarcity,
+        prod,
+        false
+      );
+      return { bestScore: score, bestDiscard: fullDiscard };
     }
 
     const r = resList[idx]!;
@@ -1014,24 +1016,32 @@ function chooseOptimalDiscardAction(
       rem -
         resList
           .slice(idx + 1)
-          .reduce((acc, rk) => acc + player.resources[rk], 0)
+          .reduce<number>((acc, rk) => acc + player.resources[rk], 0)
     );
-    for (let take = minTake; take <= maxTake; take++) {
-      currentDiscard[r] = take;
-      dfs(idx + 1, rem - take);
-    }
-    currentDiscard[r] = 0;
+
+    return Array.from(
+      { length: Math.max(0, maxTake - minTake + 1) },
+      (_, offset) => minTake + offset
+    ).reduce<{ bestScore: number; bestDiscard: ResourceMap | null }>(
+      (acc, take) => {
+        const sub = searchBestDiscard(idx + 1, rem - take, {
+          ...partialDiscard,
+          [r]: take,
+        });
+        return sub.bestScore > acc.bestScore ? sub : acc;
+      },
+      { bestScore: -Infinity, bestDiscard: null }
+    );
   }
 
-  dfs(0, needed);
-
-  if (bestDiscard) {
-    const cleaned: Partial<ResourceMap> = {};
-    for (const r of RESOURCES) {
-      if ((bestDiscard[r] ?? 0) > 0) {
-        cleaned[r] = bestDiscard[r];
-      }
-    }
+  const solved = searchBestDiscard(0, needed, emptyResources());
+  if (solved.bestDiscard) {
+    const cleaned = Object.fromEntries(
+      RESOURCES.filter((r) => solved.bestDiscard![r] > 0).map((r) => [
+        r,
+        solved.bestDiscard![r],
+      ])
+    ) as Partial<ResourceMap>;
     return { type: "DISCARD_CARDS", resources: cleaned };
   }
 
@@ -2258,99 +2268,113 @@ function chooseMasterFirstSettlementWithSnakeRollout(
     }
   }
 
-  let bestAct = topCandidates[0]!.act;
-  let bestCombined = -Infinity;
+  return topCandidates.reduce<{ act: CatanAction; bestCombined: number }>(
+    (best, cand) => {
+      const initialBuildings: CatanState["buildings"] = {
+        ...state.buildings,
+        [cand.act.vertexId]: { ownerId: playerId, type: "settlement" },
+      };
 
-  for (const cand of topCandidates) {
-    const simBuildings: CatanState["buildings"] = {
-      ...state.buildings,
-      [cand.act.vertexId]: { ownerId: playerId, type: "settlement" },
-    };
-    const simState: CatanState = {
-      ...state,
-      buildings: simBuildings,
-      phase: "SETUP_SETTLEMENT_1",
-    };
-
-    const isStillOpen = (vId: string): boolean =>
-      !simBuildings[vId] &&
-      state.topology.vertices[vId]!.adjacentVertexIds.every(
-        (nb) => !simBuildings[nb]
-      );
-
-    for (const step of snakeSteps) {
-      simState.phase = step.phase;
-      let oppBestV: string | null = null;
-      let oppBestS = -Infinity;
-      for (const vId of legalPool) {
-        if (!isStillOpen(vId)) continue;
-        const os = evaluateVertexScore(
-          simState,
-          vId,
-          step.oppId,
-          CATAN_BOT_WEIGHTS.smart,
-          scarcity
+      const isOpenIn = (
+        buildings: CatanState["buildings"],
+        vId: string
+      ): boolean =>
+        !buildings[vId] &&
+        state.topology.vertices[vId]!.adjacentVertexIds.every(
+          (nb) => !buildings[nb]
         );
-        if (os > oppBestS) {
-          oppBestS = os;
-          oppBestV = vId;
-        }
-      }
-      if (oppBestV) {
-        simBuildings[oppBestV] = { ownerId: step.oppId, type: "settlement" };
-      }
-    }
 
-    simState.phase = "SETUP_SETTLEMENT_2";
-    let bestS2 = -20;
-    let bestV2: string | null = null;
-    for (const vId of legalPool) {
-      if (!isStillOpen(vId)) continue;
-      const s2 = evaluateVertexScore(
-        simState,
-        vId,
-        playerId,
-        weights,
-        scarcity
+      const postSnakeBuildings = snakeSteps.reduce<CatanState["buildings"]>(
+        (curBuildings, step) => {
+          const stepState: CatanState = {
+            ...state,
+            buildings: curBuildings,
+            phase: step.phase,
+          };
+          const oppPick = legalPool.reduce<{
+            vId: string | null;
+            score: number;
+          }>(
+            (oppBest, vId) => {
+              if (!isOpenIn(curBuildings, vId)) return oppBest;
+              const os = evaluateVertexScore(
+                stepState,
+                vId,
+                step.oppId,
+                CATAN_BOT_WEIGHTS.smart,
+                scarcity
+              );
+              return os > oppBest.score ? { vId, score: os } : oppBest;
+            },
+            { vId: null, score: -Infinity }
+          );
+          return oppPick.vId
+            ? {
+                ...curBuildings,
+                [oppPick.vId]: { ownerId: step.oppId, type: "settlement" },
+              }
+            : curBuildings;
+        },
+        initialBuildings
       );
-      if (s2 > bestS2) {
-        bestS2 = s2;
-        bestV2 = vId;
-      }
-    }
 
-    // Evaluate full 2-settlement empire coherence (City/OWS engine vs Road/Settlement engine)
-    let empireSynergy = 0;
-    if (bestV2) {
-      const pairPips = emptyResources();
-      for (const sv of [cand.act.vertexId, bestV2]) {
-        for (const hId of state.topology.vertices[sv]?.adjacentHexIds ?? []) {
-          const tile = state.hexes[hId];
-          const res = tile ? TERRAIN_TO_RESOURCE[tile.terrain] : null;
-          if (res && tile?.numberToken) {
-            pairPips[res] += NUMBER_TOKEN_PIPS[tile.numberToken] ?? 0;
-          }
-        }
-      }
-      if (pairPips.ore >= 4 && pairPips.grain >= 4) {
-        empireSynergy += 3.2;
-      }
-      if (pairPips.brick >= 4 && pairPips.lumber >= 4 && pairPips.grain >= 3) {
-        empireSynergy += 2.2;
-      }
-      if (pairPips.ore >= 4 && pairPips.grain === 0) {
-        empireSynergy -= 4.0;
-      }
-    }
+      const secondRoundState: CatanState = {
+        ...state,
+        buildings: postSnakeBuildings,
+        phase: "SETUP_SETTLEMENT_2",
+      };
 
-    const combined = cand.s1 * 0.56 + bestS2 * 0.58 + empireSynergy;
-    if (combined > bestCombined) {
-      bestCombined = combined;
-      bestAct = cand.act;
-    }
-  }
+      const secondPick = legalPool.reduce<{ vId: string | null; score: number }>(
+        (myBest, vId) => {
+          if (!isOpenIn(postSnakeBuildings, vId)) return myBest;
+          const s2 = evaluateVertexScore(
+            secondRoundState,
+            vId,
+            playerId,
+            weights,
+            scarcity
+          );
+          return s2 > myBest.score ? { vId, score: s2 } : myBest;
+        },
+        { vId: null, score: -20 }
+      );
 
-  return bestAct;
+      const empireSynergy = secondPick.vId
+        ? (() => {
+            const pairPips = [cand.act.vertexId, secondPick.vId].reduce<ResourceMap>(
+              (pipsAcc, sv) =>
+                (state.topology.vertices[sv]?.adjacentHexIds ?? []).reduce<ResourceMap>(
+                  (inner, hId) => {
+                    const tile = state.hexes[hId];
+                    const res = tile ? TERRAIN_TO_RESOURCE[tile.terrain] : null;
+                    if (!res || !tile?.numberToken) return inner;
+                    return {
+                      ...inner,
+                      [res]:
+                        inner[res] + (NUMBER_TOKEN_PIPS[tile.numberToken] ?? 0),
+                    };
+                  },
+                  pipsAcc
+                ),
+              emptyResources()
+            );
+            return (
+              (pairPips.ore >= 4 && pairPips.grain >= 4 ? 3.2 : 0) +
+              (pairPips.brick >= 4 && pairPips.lumber >= 4 && pairPips.grain >= 3
+                ? 2.2
+                : 0) -
+              (pairPips.ore >= 4 && pairPips.grain === 0 ? 4.0 : 0)
+            );
+          })()
+        : 0;
+
+      const combined = cand.s1 * 0.56 + secondPick.score * 0.58 + empireSynergy;
+      return combined > best.bestCombined
+        ? { act: cand.act, bestCombined: combined }
+        : best;
+    },
+    { act: topCandidates[0]!.act, bestCombined: -Infinity }
+  ).act;
 }
 
 /**

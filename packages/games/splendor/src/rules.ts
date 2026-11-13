@@ -2,7 +2,9 @@ import {
   type GameEvent,
   type InvariantCheckResult,
   type PlayerDescriptor,
-  SeededRNG,
+  createRngState,
+  nextIntPure,
+  shufflePure,
 } from "@gaming-platform/core";
 import { SPLENDOR_CARDS, SPLENDOR_NOBLES } from "./cards.ts";
 import {
@@ -21,6 +23,8 @@ import {
   type TokenMap,
 } from "./types.ts";
 
+const CARD_TIERS: readonly CardTier[] = [1, 2, 3];
+
 export function emptyGemMap(): GemMap {
   return { emerald: 0, diamond: 0, sapphire: 0, onyx: 0, ruby: 0 };
 }
@@ -30,17 +34,74 @@ export function emptyTokenMap(): TokenMap {
 }
 
 export function totalTokens(tokens: Partial<TokenMap>): number {
-  let sum = 0;
-  for (const c of ALL_TOKEN_COLORS) {
-    sum += tokens[c] ?? 0;
-  }
-  return sum;
+  return ALL_TOKEN_COLORS.reduce((sum, c) => sum + (tokens[c] ?? 0), 0);
 }
 
 export function getInitialGemBankCount(playerCount: number): number {
   if (playerCount === 2) return 4;
   if (playerCount === 3) return 5;
   return 7;
+}
+
+function addTokenMaps(
+  base: TokenMap,
+  deltas: Partial<Record<TokenColor, number>>
+): TokenMap {
+  return {
+    emerald: base.emerald + (deltas.emerald ?? 0),
+    diamond: base.diamond + (deltas.diamond ?? 0),
+    sapphire: base.sapphire + (deltas.sapphire ?? 0),
+    onyx: base.onyx + (deltas.onyx ?? 0),
+    ruby: base.ruby + (deltas.ruby ?? 0),
+    gold: base.gold + (deltas.gold ?? 0),
+  };
+}
+
+function subtractTokenMaps(
+  base: TokenMap,
+  deltas: Partial<Record<TokenColor, number>>
+): TokenMap {
+  return {
+    emerald: base.emerald - (deltas.emerald ?? 0),
+    diamond: base.diamond - (deltas.diamond ?? 0),
+    sapphire: base.sapphire - (deltas.sapphire ?? 0),
+    onyx: base.onyx - (deltas.onyx ?? 0),
+    ruby: base.ruby - (deltas.ruby ?? 0),
+    gold: base.gold - (deltas.gold ?? 0),
+  };
+}
+
+function incrementGemBonus(bonuses: GemMap, color: GemColor): GemMap {
+  return { ...bonuses, [color]: bonuses[color] + 1 };
+}
+
+function replacePlayerAt(
+  players: readonly SplendorPlayerState[],
+  index: number,
+  updated: SplendorPlayerState
+): SplendorPlayerState[] {
+  return players.map((p, idx) => (idx === index ? updated : p));
+}
+
+function appendSplendorEvent(
+  state: SplendorState,
+  events: readonly GameEvent[],
+  type: string,
+  message: string,
+  playerId?: string
+): { state: SplendorState; events: GameEvent[] } {
+  const evt: GameEvent = {
+    id: `evt-${state.eventLog.length}`,
+    timestamp: state.eventLog.length,
+    turn: state.turn,
+    playerId,
+    type,
+    message,
+  };
+  return {
+    state: { ...state, eventLog: [...state.eventLog, evt] },
+    events: [...events, evt],
+  };
 }
 
 /**
@@ -51,20 +112,24 @@ export function computeCardPurchasePayment(
   player: SplendorPlayerState,
   card: SplendorCard
 ): { affordable: boolean; payment: TokenMap; goldShortfall: number } {
-  const payment = emptyTokenMap();
-  let goldNeeded = 0;
+  const { coloredPayment, goldNeeded } = GEM_COLORS.reduce<{
+    coloredPayment: GemMap;
+    goldNeeded: number;
+  }>(
+    (acc, color) => {
+      const discounted = Math.max(0, card.cost[color] - player.bonuses[color]);
+      const payColor = Math.min(player.tokens[color], discounted);
+      return {
+        coloredPayment: { ...acc.coloredPayment, [color]: payColor },
+        goldNeeded: acc.goldNeeded + (discounted - payColor),
+      };
+    },
+    { coloredPayment: emptyGemMap(), goldNeeded: 0 }
+  );
 
-  for (const color of GEM_COLORS) {
-    const discounted = Math.max(0, card.cost[color] - player.bonuses[color]);
-    const payColor = Math.min(player.tokens[color], discounted);
-    payment[color] = payColor;
-    goldNeeded += discounted - payColor;
-  }
-
-  payment.gold = goldNeeded;
   return {
     affordable: goldNeeded <= player.tokens.gold,
-    payment,
+    payment: { ...coloredPayment, gold: goldNeeded },
     goldShortfall: Math.max(0, goldNeeded - player.tokens.gold),
   };
 }
@@ -73,13 +138,9 @@ export function qualifiesForNoble(
   player: SplendorPlayerState,
   noble: SplendorNoble
 ): boolean {
-  for (const color of GEM_COLORS) {
-    const req = noble.requirements[color] ?? 0;
-    if (player.bonuses[color] < req) {
-      return false;
-    }
-  }
-  return true;
+  return GEM_COLORS.every(
+    (color) => player.bonuses[color] >= (noble.requirements[color] ?? 0)
+  );
 }
 
 export function initSplendorGame(
@@ -91,7 +152,7 @@ export function initSplendorGame(
     throw new Error("Splendor requires 2 to 4 players");
   }
 
-  const rng = new SeededRNG(seed);
+  const rng0 = createRngState(seed);
   const resolvedConfig: SplendorConfig = {
     targetPoints: config?.targetPoints ?? 15,
     maxTurns: config?.maxTurns ?? 300,
@@ -109,9 +170,19 @@ export function initSplendorGame(
     gold: 5,
   };
 
-  const tier1All = rng.shuffle(SPLENDOR_CARDS.filter((c) => c.tier === 1));
-  const tier2All = rng.shuffle(SPLENDOR_CARDS.filter((c) => c.tier === 2));
-  const tier3All = rng.shuffle(SPLENDOR_CARDS.filter((c) => c.tier === 3));
+  const [tier1All, rng1] = shufflePure(
+    rng0,
+    SPLENDOR_CARDS.filter((c) => c.tier === 1)
+  );
+  const [tier2All, rng2] = shufflePure(
+    rng1,
+    SPLENDOR_CARDS.filter((c) => c.tier === 2)
+  );
+  const [tier3All, rng3] = shufflePure(
+    rng2,
+    SPLENDOR_CARDS.filter((c) => c.tier === 3)
+  );
+  const [shuffledNobles, rng4] = shufflePure(rng3, SPLENDOR_NOBLES);
 
   const market: Record<CardTier, SplendorCard[]> = {
     1: tier1All.slice(0, 4),
@@ -125,7 +196,7 @@ export function initSplendorGame(
     3: tier3All.slice(4),
   };
 
-  const nobles = rng.shuffle(SPLENDOR_NOBLES).slice(0, players.length + 1);
+  const nobles = shuffledNobles.slice(0, players.length + 1);
 
   const playerStates: SplendorPlayerState[] = players.map((p) => ({
     id: p.id,
@@ -141,20 +212,24 @@ export function initSplendorGame(
     points: 0,
   }));
 
-  const startingPlayerIndex =
+  const [startingPlayerIndex, finalRngState] =
     typeof resolvedConfig.startingPlayerIndex === "number" &&
     Number.isFinite(resolvedConfig.startingPlayerIndex)
-      ? ((Math.trunc(resolvedConfig.startingPlayerIndex) % playerStates.length) +
-          playerStates.length) %
-        playerStates.length
+      ? [
+          ((Math.trunc(resolvedConfig.startingPlayerIndex) %
+            playerStates.length) +
+            playerStates.length) %
+            playerStates.length,
+          rng4,
+        ]
       : resolvedConfig.randomizeStartingPlayer
-        ? rng.nextInt(0, playerStates.length - 1)
-        : 0;
+        ? nextIntPure(rng4, 0, playerStates.length - 1)
+        : [0, rng4];
 
   return {
     gameId: "splendor",
     config: resolvedConfig,
-    rngState: rng.getState(),
+    rngState: finalRngState,
     turn: 1,
     round: 1,
     phase: "MAIN_ACTION",
@@ -180,6 +255,20 @@ export function initSplendorGame(
   };
 }
 
+function threeColorCombinations(
+  colors: readonly GemColor[]
+): Array<Partial<GemMap>> {
+  return colors.flatMap((c1, i) =>
+    colors
+      .slice(i + 1)
+      .flatMap((c2, jOffset) =>
+        colors
+          .slice(i + 1 + jOffset + 1)
+          .map((c3) => ({ [c1]: 1, [c2]: 1, [c3]: 1 }))
+      )
+  );
+}
+
 export function getSplendorLegalActions(
   state: SplendorState,
   playerId: string
@@ -197,139 +286,157 @@ export function getSplendorLegalActions(
 
   if (state.phase === "RETURN_TOKENS") {
     const excess = totalTokens(activePlayer.tokens) - 10;
-    if (excess <= 0) return [];
-    return generateTokenReturnActions(activePlayer.tokens, excess);
+    return excess <= 0
+      ? []
+      : generateTokenReturnActions(activePlayer.tokens, excess);
   }
 
-  // MAIN_ACTION phase
-  const actions: SplendorAction[] = [];
+  const marketPurchases: SplendorAction[] = CARD_TIERS.flatMap((tier) =>
+    state.market[tier]
+      .filter((card) => computeCardPurchasePayment(activePlayer, card).affordable)
+      .map((card): SplendorAction => ({ type: "PURCHASE_CARD", cardId: card.id }))
+  );
 
-  // 1. PURCHASE_CARD (from market or reserved hand)
-  for (const tier of [1, 2, 3] as const) {
-    for (const card of state.market[tier]) {
-      if (computeCardPurchasePayment(activePlayer, card).affordable) {
-        actions.push({ type: "PURCHASE_CARD", cardId: card.id });
-      }
-    }
-  }
-  for (const card of activePlayer.reservedCards) {
-    if (computeCardPurchasePayment(activePlayer, card).affordable) {
-      actions.push({ type: "PURCHASE_CARD", cardId: card.id });
-    }
-  }
+  const reservedPurchases: SplendorAction[] = activePlayer.reservedCards
+    .filter((card) => computeCardPurchasePayment(activePlayer, card).affordable)
+    .map((card): SplendorAction => ({ type: "PURCHASE_CARD", cardId: card.id }));
 
-  // 2. TAKE_GEMS:
-  // (a) 2 of the same color (requires >= 4 in bank)
-  for (const color of GEM_COLORS) {
-    if (state.bank[color] >= 4) {
-      actions.push({ type: "TAKE_GEMS", gems: { [color]: 2 } });
-    }
-  }
-  // (b) Up to 3 different colors available in bank
+  const doubleGemTakes: SplendorAction[] = GEM_COLORS.filter(
+    (color) => state.bank[color] >= 4
+  ).map((color): SplendorAction => ({ type: "TAKE_GEMS", gems: { [color]: 2 } }));
+
   const availableColors = GEM_COLORS.filter((c) => state.bank[c] > 0);
-  if (availableColors.length >= 3) {
-    for (let i = 0; i < availableColors.length; i++) {
-      for (let j = i + 1; j < availableColors.length; j++) {
-        for (let k = j + 1; k < availableColors.length; k++) {
-          actions.push({
-            type: "TAKE_GEMS",
-            gems: {
-              [availableColors[i]!]: 1,
-              [availableColors[j]!]: 1,
-              [availableColors[k]!]: 1,
+  const distinctGemTakes: SplendorAction[] =
+    availableColors.length >= 3
+      ? threeColorCombinations(availableColors).map(
+          (gems): SplendorAction => ({ type: "TAKE_GEMS", gems })
+        )
+      : availableColors.length === 2
+        ? [
+            {
+              type: "TAKE_GEMS",
+              gems: {
+                [availableColors[0]!]: 1,
+                [availableColors[1]!]: 1,
+              },
             },
-          });
-        }
-      }
-    }
-  } else if (availableColors.length === 2) {
-    actions.push({
-      type: "TAKE_GEMS",
-      gems: {
-        [availableColors[0]!]: 1,
-        [availableColors[1]!]: 1,
-      },
-    });
-  } else if (availableColors.length === 1) {
-    actions.push({
-      type: "TAKE_GEMS",
-      gems: {
-        [availableColors[0]!]: 1,
-      },
-    });
-  }
+          ]
+        : availableColors.length === 1
+          ? [
+              {
+                type: "TAKE_GEMS",
+                gems: { [availableColors[0]!]: 1 },
+              },
+            ]
+          : [];
 
-  // 3. RESERVE_CARD (if player holds < 3 reserved cards)
-  if (activePlayer.reservedCards.length < 3) {
-    for (const tier of [1, 2, 3] as const) {
-      for (const card of state.market[tier]) {
-        actions.push({ type: "RESERVE_CARD", cardId: card.id });
-      }
-      if (state.decks[tier].length > 0) {
-        actions.push({ type: "RESERVE_CARD", deckTier: tier });
-      }
-    }
-  }
+  const reserveActions: SplendorAction[] =
+    activePlayer.reservedCards.length < 3
+      ? CARD_TIERS.flatMap((tier) => [
+          ...state.market[tier].map(
+            (card): SplendorAction => ({ type: "RESERVE_CARD", cardId: card.id })
+          ),
+          ...(state.decks[tier].length > 0
+            ? [{ type: "RESERVE_CARD" as const, deckTier: tier }]
+            : []),
+        ])
+      : [];
 
-  if (actions.length === 0) {
-    actions.push({ type: "PASS_TURN" });
-  }
+  const actions: SplendorAction[] = [
+    ...marketPurchases,
+    ...reservedPurchases,
+    ...doubleGemTakes,
+    ...distinctGemTakes,
+    ...reserveActions,
+  ];
 
-  return actions;
+  return actions.length > 0 ? actions : [{ type: "PASS_TURN" }];
 }
 
 function generateTokenReturnActions(
   hand: TokenMap,
   excess: number
 ): Array<{ type: "RETURN_TOKENS"; tokens: Partial<TokenMap> }> {
-  const results: Array<{ type: "RETURN_TOKENS"; tokens: Partial<TokenMap> }> = [];
-  const seen = new Set<string>();
-
-  // Generate combinations of `excess` tokens to return (excess is at most 3)
-  function backtrack(idx: number, rem: number, current: Partial<TokenMap>): void {
+  const enumerate = (
+    idx: number,
+    rem: number,
+    current: Partial<TokenMap>
+  ): Array<Partial<TokenMap>> => {
     if (rem === 0) {
-      const key = JSON.stringify(current);
-      if (!seen.has(key)) {
-        seen.add(key);
-        results.push({ type: "RETURN_TOKENS", tokens: { ...current } });
-      }
-      return;
+      return [current];
     }
-    if (idx >= ALL_TOKEN_COLORS.length) return;
+    if (idx >= ALL_TOKEN_COLORS.length) {
+      return [];
+    }
     const color = ALL_TOKEN_COLORS[idx]!;
     const maxTake = Math.min(hand[color], rem);
-    for (let take = maxTake; take >= 0; take--) {
-      if (take > 0) {
-        current[color] = take;
-      } else {
-        delete current[color];
-      }
-      backtrack(idx + 1, rem - take, current);
-      delete current[color];
-    }
-  }
+    const takeCounts = Array.from(
+      { length: maxTake + 1 },
+      (_, step) => maxTake - step
+    );
+    return takeCounts.flatMap((take) =>
+      enumerate(
+        idx + 1,
+        rem - take,
+        take > 0 ? { ...current, [color]: take } : current
+      )
+    );
+  };
 
-  backtrack(0, excess, {});
-  return results;
+  const uniqueByKey = enumerate(0, excess, {}).reduce<{
+    seen: ReadonlySet<string>;
+    items: Array<{ type: "RETURN_TOKENS"; tokens: Partial<TokenMap> }>;
+  }>(
+    (acc, combo) => {
+      const key = JSON.stringify(combo);
+      if (acc.seen.has(key)) return acc;
+      return {
+        seen: new Set([...acc.seen, key]),
+        items: [...acc.items, { type: "RETURN_TOKENS", tokens: combo }],
+      };
+    },
+    { seen: new Set<string>(), items: [] }
+  );
+
+  return uniqueByKey.items;
 }
 
-function pushEvent(
-  state: SplendorState,
-  emitted: GameEvent[],
-  type: string,
-  message: string,
-  playerId?: string
-): void {
-  const evt: GameEvent = {
-    id: `evt-${state.eventLog.length}`,
-    timestamp: state.eventLog.length,
-    turn: state.turn,
-    playerId,
-    type,
-    message,
+function takeMarketCardAndRefill(
+  market: Record<CardTier, SplendorCard[]>,
+  decks: Record<CardTier, SplendorCard[]>,
+  tier: CardTier,
+  cardIndex: number
+): {
+  card: SplendorCard;
+  market: Record<CardTier, SplendorCard[]>;
+  decks: Record<CardTier, SplendorCard[]>;
+} {
+  const tierMarket = market[tier];
+  const tierDeck = decks[tier];
+  const card = tierMarket[cardIndex]!;
+  const withoutCard = tierMarket.filter((_, idx) => idx !== cardIndex);
+  const drawn = tierDeck.length > 0 ? tierDeck[tierDeck.length - 1]! : null;
+  const nextTierMarket = drawn ? [...withoutCard, drawn] : withoutCard;
+  const nextTierDeck = drawn ? tierDeck.slice(0, -1) : tierDeck;
+
+  return {
+    card,
+    market: { ...market, [tier]: nextTierMarket },
+    decks: { ...decks, [tier]: nextTierDeck },
   };
-  state.eventLog.push(evt);
-  emitted.push(evt);
+}
+
+function findMarketCardLocation(
+  market: Record<CardTier, SplendorCard[]>,
+  cardId: string
+): { tier: CardTier; index: number } | null {
+  for (const tier of CARD_TIERS) {
+    const index = market[tier].findIndex((c) => c.id === cardId);
+    if (index !== -1) {
+      return { tier, index };
+    }
+  }
+  return null;
 }
 
 export function applySplendorAction(
@@ -337,192 +444,255 @@ export function applySplendorAction(
   playerId: string,
   action: SplendorAction
 ): { state: SplendorState; events: GameEvent[] } {
-  const state = structuredClone(currentState);
-  const emitted: GameEvent[] = [];
-  const player = state.players[state.activePlayerIndex]!;
-
+  const player = currentState.players[currentState.activePlayerIndex]!;
   if (player.id !== playerId) {
     throw new Error("Not your turn");
   }
 
   switch (action.type) {
     case "TAKE_GEMS": {
-      if (state.phase !== "MAIN_ACTION") {
+      if (currentState.phase !== "MAIN_ACTION") {
         throw new Error("Cannot take gems now");
       }
-      const entries = GEM_COLORS.map((c) => [c, action.gems[c] ?? 0] as const).filter(
-        ([, amt]) => amt > 0
-      );
+      const entries = GEM_COLORS.map(
+        (c) => [c, action.gems[c] ?? 0] as const
+      ).filter(([, amt]) => amt > 0);
       if (entries.length === 0) {
         throw new Error("Must select at least 1 gem");
       }
 
       if (entries.length === 1 && entries[0]![1] === 2) {
         const [color] = entries[0]!;
-        if (state.bank[color] < 4) {
+        if (currentState.bank[color] < 4) {
           throw new Error(`Cannot take 2 ${color} when bank has fewer than 4`);
         }
-        state.bank[color] -= 2;
-        player.tokens[color] += 2;
-        pushEvent(
-          state,
-          emitted,
+        const delta = { [color]: 2 };
+        const updatedPlayer: SplendorPlayerState = {
+          ...player,
+          tokens: addTokenMaps(player.tokens, delta),
+        };
+        const afterTake: SplendorState = {
+          ...currentState,
+          bank: subtractTokenMaps(currentState.bank, delta),
+          players: replacePlayerAt(
+            currentState.players,
+            currentState.activePlayerIndex,
+            updatedPlayer
+          ),
+        };
+        const logged = appendSplendorEvent(
+          afterTake,
+          [],
           "GEMS_TAKEN",
           `${player.name} took 2 ${color} tokens.`,
           playerId
         );
-      } else {
-        const availableInBank = GEM_COLORS.filter((c) => state.bank[c] > 0).length;
-        const maxDistinct = Math.min(3, availableInBank);
-        if (entries.length > 3 || entries.some(([, amt]) => amt !== 1)) {
-          throw new Error("Can only take 1 each of up to 3 different gem colors");
-        }
-        if (entries.length < maxDistinct && totalTokens(player.tokens) + entries.length < 10) {
-          // Allow taking fewer than 3 if bank has fewer than 3 colors
-          throw new Error(`Must take ${maxDistinct} different gem colors when available`);
-        }
-        for (const [color] of entries) {
-          if (state.bank[color] < 1) {
-            throw new Error(`Bank has no ${color} tokens`);
-          }
-          state.bank[color] -= 1;
-          player.tokens[color] += 1;
-        }
-        pushEvent(
-          state,
-          emitted,
-          "GEMS_TAKEN",
-          `${player.name} took ${entries.map(([c]) => c).join(", ")}.`,
-          playerId
-        );
+        return resolvePostMainAction(logged.state, logged.events);
       }
 
-      resolvePostMainAction(state, player, emitted);
-      break;
+      const availableInBank = GEM_COLORS.filter(
+        (c) => currentState.bank[c] > 0
+      ).length;
+      const maxDistinct = Math.min(3, availableInBank);
+      if (entries.length > 3 || entries.some(([, amt]) => amt !== 1)) {
+        throw new Error("Can only take 1 each of up to 3 different gem colors");
+      }
+      if (
+        entries.length < maxDistinct &&
+        totalTokens(player.tokens) + entries.length < 10
+      ) {
+        throw new Error(
+          `Must take ${maxDistinct} different gem colors when available`
+        );
+      }
+      for (const [color] of entries) {
+        if (currentState.bank[color] < 1) {
+          throw new Error(`Bank has no ${color} tokens`);
+        }
+      }
+
+      const delta = Object.fromEntries(entries) as Partial<
+        Record<TokenColor, number>
+      >;
+      const updatedPlayer: SplendorPlayerState = {
+        ...player,
+        tokens: addTokenMaps(player.tokens, delta),
+      };
+      const afterTake: SplendorState = {
+        ...currentState,
+        bank: subtractTokenMaps(currentState.bank, delta),
+        players: replacePlayerAt(
+          currentState.players,
+          currentState.activePlayerIndex,
+          updatedPlayer
+        ),
+      };
+      const logged = appendSplendorEvent(
+        afterTake,
+        [],
+        "GEMS_TAKEN",
+        `${player.name} took ${entries.map(([c]) => c).join(", ")}.`,
+        playerId
+      );
+      return resolvePostMainAction(logged.state, logged.events);
     }
 
     case "RESERVE_CARD": {
-      if (state.phase !== "MAIN_ACTION") {
+      if (currentState.phase !== "MAIN_ACTION") {
         throw new Error("Cannot reserve card now");
       }
       if (player.reservedCards.length >= 3) {
         throw new Error("Cannot hold more than 3 reserved cards");
       }
 
-      let reservedCard: SplendorCard | null = null;
-      if (action.cardId) {
-        for (const tier of [1, 2, 3] as const) {
-          const idx = state.market[tier].findIndex((c) => c.id === action.cardId);
-          if (idx !== -1) {
-            reservedCard = state.market[tier][idx]!;
-            state.market[tier].splice(idx, 1);
-            if (state.decks[tier].length > 0) {
-              state.market[tier].push(state.decks[tier].pop()!);
-            }
-            break;
+      const drawSelection = (): {
+        card: SplendorCard;
+        market: Record<CardTier, SplendorCard[]>;
+        decks: Record<CardTier, SplendorCard[]>;
+      } => {
+        if (action.cardId) {
+          const loc = findMarketCardLocation(
+            currentState.market,
+            action.cardId
+          );
+          if (!loc) {
+            throw new Error("Target card to reserve not found");
           }
+          return takeMarketCardAndRefill(
+            currentState.market,
+            currentState.decks,
+            loc.tier,
+            loc.index
+          );
         }
-      } else if (action.deckTier) {
-        const deck = state.decks[action.deckTier];
-        if (!deck || deck.length === 0) {
-          throw new Error(`Tier ${action.deckTier} deck is empty`);
+        if (action.deckTier) {
+          const deck = currentState.decks[action.deckTier];
+          if (!deck || deck.length === 0) {
+            throw new Error(`Tier ${action.deckTier} deck is empty`);
+          }
+          return {
+            card: deck[deck.length - 1]!,
+            market: currentState.market,
+            decks: {
+              ...currentState.decks,
+              [action.deckTier]: deck.slice(0, -1),
+            },
+          };
         }
-        reservedCard = deck.pop()!;
-      }
-
-      if (!reservedCard) {
         throw new Error("Target card to reserve not found");
-      }
+      };
 
-      player.reservedCards.push(reservedCard);
-      let gotGold = false;
-      if (state.bank.gold > 0) {
-        state.bank.gold -= 1;
-        player.tokens.gold += 1;
-        gotGold = true;
-      }
-
-      pushEvent(
-        state,
-        emitted,
+      const { card: reservedCard, market, decks } = drawSelection();
+      const gotGold = currentState.bank.gold > 0;
+      const goldDelta = gotGold ? { gold: 1 } : {};
+      const updatedPlayer: SplendorPlayerState = {
+        ...player,
+        reservedCards: [...player.reservedCards, reservedCard],
+        tokens: addTokenMaps(player.tokens, goldDelta),
+      };
+      const afterReserve: SplendorState = {
+        ...currentState,
+        market,
+        decks,
+        bank: subtractTokenMaps(currentState.bank, goldDelta),
+        players: replacePlayerAt(
+          currentState.players,
+          currentState.activePlayerIndex,
+          updatedPlayer
+        ),
+      };
+      const logged = appendSplendorEvent(
+        afterReserve,
+        [],
         "CARD_RESERVED",
         `${player.name} reserved a Tier ${reservedCard.tier} card${gotGold ? " and took 1 Gold joker" : ""}.`,
         playerId
       );
-
-      resolvePostMainAction(state, player, emitted);
-      break;
+      return resolvePostMainAction(logged.state, logged.events);
     }
 
     case "PURCHASE_CARD": {
-      if (state.phase !== "MAIN_ACTION") {
+      if (currentState.phase !== "MAIN_ACTION") {
         throw new Error("Cannot purchase card now");
       }
 
-      let targetCard: SplendorCard | null = null;
-      let fromMarketTier: CardTier | null = null;
-      let marketIdx = -1;
-      let reservedIdx = -1;
+      const marketLoc = findMarketCardLocation(
+        currentState.market,
+        action.cardId
+      );
+      const reservedIdx = marketLoc
+        ? -1
+        : player.reservedCards.findIndex((c) => c.id === action.cardId);
 
-      for (const tier of [1, 2, 3] as const) {
-        const idx = state.market[tier].findIndex((c) => c.id === action.cardId);
-        if (idx !== -1) {
-          targetCard = state.market[tier][idx]!;
-          fromMarketTier = tier;
-          marketIdx = idx;
-          break;
-        }
-      }
-
-      if (!targetCard) {
-        reservedIdx = player.reservedCards.findIndex((c) => c.id === action.cardId);
-        if (reservedIdx !== -1) {
-          targetCard = player.reservedCards[reservedIdx]!;
-        }
-      }
+      const targetCard = marketLoc
+        ? currentState.market[marketLoc.tier][marketLoc.index]!
+        : reservedIdx !== -1
+          ? player.reservedCards[reservedIdx]!
+          : null;
 
       if (!targetCard) {
-        throw new Error(`Card ${action.cardId} not found in market or reserved hand`);
+        throw new Error(
+          `Card ${action.cardId} not found in market or reserved hand`
+        );
       }
 
-      const { affordable, payment } = computeCardPurchasePayment(player, targetCard);
+      const { affordable, payment } = computeCardPurchasePayment(
+        player,
+        targetCard
+      );
       if (!affordable) {
         throw new Error("Cannot afford this card");
       }
 
-      // Pay tokens back to bank
-      for (const color of ALL_TOKEN_COLORS) {
-        player.tokens[color] -= payment[color];
-        state.bank[color] += payment[color];
-      }
+      const marketUpdate = marketLoc
+        ? takeMarketCardAndRefill(
+            currentState.market,
+            currentState.decks,
+            marketLoc.tier,
+            marketLoc.index
+          )
+        : {
+            market: currentState.market,
+            decks: currentState.decks,
+          };
 
-      if (fromMarketTier !== null) {
-        state.market[fromMarketTier].splice(marketIdx, 1);
-        if (state.decks[fromMarketTier].length > 0) {
-          state.market[fromMarketTier].push(state.decks[fromMarketTier].pop()!);
-        }
-      } else {
-        player.reservedCards.splice(reservedIdx, 1);
-      }
+      const nextReservedCards = marketLoc
+        ? player.reservedCards
+        : player.reservedCards.filter((_, idx) => idx !== reservedIdx);
 
-      player.purchasedCards.push(targetCard);
-      player.bonuses[targetCard.bonus] += 1;
-      player.points += targetCard.points;
+      const updatedPlayer: SplendorPlayerState = {
+        ...player,
+        tokens: subtractTokenMaps(player.tokens, payment),
+        reservedCards: nextReservedCards,
+        purchasedCards: [...player.purchasedCards, targetCard],
+        bonuses: incrementGemBonus(player.bonuses, targetCard.bonus),
+        points: player.points + targetCard.points,
+      };
 
-      pushEvent(
-        state,
-        emitted,
+      const afterPurchase: SplendorState = {
+        ...currentState,
+        bank: addTokenMaps(currentState.bank, payment),
+        market: marketUpdate.market,
+        decks: marketUpdate.decks,
+        players: replacePlayerAt(
+          currentState.players,
+          currentState.activePlayerIndex,
+          updatedPlayer
+        ),
+      };
+
+      const logged = appendSplendorEvent(
+        afterPurchase,
+        [],
         "CARD_PURCHASED",
         `${player.name} purchased a Tier ${targetCard.tier} ${targetCard.bonus} card (+${targetCard.points} VP).`,
         playerId
       );
-
-      resolvePostMainAction(state, player, emitted);
-      break;
+      return resolvePostMainAction(logged.state, logged.events);
     }
 
     case "RETURN_TOKENS": {
-      if (state.phase !== "RETURN_TOKENS") {
+      if (currentState.phase !== "RETURN_TOKENS") {
         throw new Error("Not in token return phase");
       }
       const excess = totalTokens(player.tokens) - 10;
@@ -536,184 +706,236 @@ export function applySplendorAction(
           throw new Error(`Invalid return amount for ${color}`);
         }
       }
-      for (const color of ALL_TOKEN_COLORS) {
-        const amt = action.tokens[color] ?? 0;
-        player.tokens[color] -= amt;
-        state.bank[color] += amt;
-      }
 
-      pushEvent(
-        state,
-        emitted,
+      const updatedPlayer: SplendorPlayerState = {
+        ...player,
+        tokens: subtractTokenMaps(player.tokens, action.tokens),
+      };
+      const afterReturn: SplendorState = {
+        ...currentState,
+        bank: addTokenMaps(currentState.bank, action.tokens),
+        players: replacePlayerAt(
+          currentState.players,
+          currentState.activePlayerIndex,
+          updatedPlayer
+        ),
+      };
+      const logged = appendSplendorEvent(
+        afterReturn,
+        [],
         "TOKENS_RETURNED",
         `${player.name} returned ${excess} excess token(s) to stay at 10.`,
         playerId
       );
-
-      resolveNoblesAndAdvanceTurn(state, player, emitted);
-      break;
+      return resolveNoblesAndAdvanceTurn(logged.state, logged.events);
     }
 
     case "SELECT_NOBLE": {
-      if (state.phase !== "SELECT_NOBLE") {
+      if (currentState.phase !== "SELECT_NOBLE") {
         throw new Error("Not in noble selection phase");
       }
-      if (!state.eligibleNobleIds.includes(action.nobleId)) {
+      if (!currentState.eligibleNobleIds.includes(action.nobleId)) {
         throw new Error(`Noble ${action.nobleId} is not eligible`);
       }
-      const idx = state.nobles.findIndex((n) => n.id === action.nobleId);
-      const noble = state.nobles[idx]!;
-      state.nobles.splice(idx, 1);
-      player.nobles.push(noble);
-      player.points += noble.points;
-      state.eligibleNobleIds = [];
-
-      pushEvent(
-        state,
-        emitted,
+      const noble = currentState.nobles.find((n) => n.id === action.nobleId)!;
+      const updatedPlayer: SplendorPlayerState = {
+        ...player,
+        nobles: [...player.nobles, noble],
+        points: player.points + noble.points,
+      };
+      const afterNoble: SplendorState = {
+        ...currentState,
+        nobles: currentState.nobles.filter((n) => n.id !== action.nobleId),
+        eligibleNobleIds: [],
+        players: replacePlayerAt(
+          currentState.players,
+          currentState.activePlayerIndex,
+          updatedPlayer
+        ),
+      };
+      const logged = appendSplendorEvent(
+        afterNoble,
+        [],
         "NOBLE_VISITED",
         `👑 Noble ${noble.name} visited ${player.name} (+${noble.points} VP)!`,
         playerId
       );
-
-      finishTurnTransition(state, player, emitted);
-      break;
+      return finishTurnTransition(logged.state, logged.events);
     }
 
     case "PASS_TURN": {
-      pushEvent(state, emitted, "TURN_PASSED", `${player.name} passed.`, playerId);
-      resolveNoblesAndAdvanceTurn(state, player, emitted);
-      break;
+      const logged = appendSplendorEvent(
+        currentState,
+        [],
+        "TURN_PASSED",
+        `${player.name} passed.`,
+        playerId
+      );
+      return resolveNoblesAndAdvanceTurn(logged.state, logged.events);
     }
   }
-
-  return { state, events: emitted };
 }
 
 function resolvePostMainAction(
   state: SplendorState,
-  player: SplendorPlayerState,
-  emitted: GameEvent[]
-): void {
-  if (totalTokens(player.tokens) > 10) {
-    state.phase = "RETURN_TOKENS";
-    return;
+  events: readonly GameEvent[]
+): { state: SplendorState; events: GameEvent[] } {
+  const activePlayer = state.players[state.activePlayerIndex]!;
+  if (totalTokens(activePlayer.tokens) > 10) {
+    return {
+      state: { ...state, phase: "RETURN_TOKENS" },
+      events: [...events],
+    };
   }
-  resolveNoblesAndAdvanceTurn(state, player, emitted);
+  return resolveNoblesAndAdvanceTurn(state, events);
 }
 
 function resolveNoblesAndAdvanceTurn(
   state: SplendorState,
-  player: SplendorPlayerState,
-  emitted: GameEvent[]
-): void {
+  events: readonly GameEvent[]
+): { state: SplendorState; events: GameEvent[] } {
+  const player = state.players[state.activePlayerIndex]!;
   const matching = state.nobles.filter((n) => qualifiesForNoble(player, n));
   if (matching.length === 1) {
     const noble = matching[0]!;
-    state.nobles = state.nobles.filter((n) => n.id !== noble.id);
-    player.nobles.push(noble);
-    player.points += noble.points;
-    pushEvent(
-      state,
-      emitted,
+    const updatedPlayer: SplendorPlayerState = {
+      ...player,
+      nobles: [...player.nobles, noble],
+      points: player.points + noble.points,
+    };
+    const withNoble: SplendorState = {
+      ...state,
+      nobles: state.nobles.filter((n) => n.id !== noble.id),
+      players: replacePlayerAt(
+        state.players,
+        state.activePlayerIndex,
+        updatedPlayer
+      ),
+    };
+    const logged = appendSplendorEvent(
+      withNoble,
+      events,
       "NOBLE_VISITED",
       `👑 Noble ${noble.name} visited ${player.name} (+${noble.points} VP)!`,
       player.id
     );
-    finishTurnTransition(state, player, emitted);
-  } else if (matching.length > 1) {
-    state.eligibleNobleIds = matching.map((n) => n.id);
-    state.phase = "SELECT_NOBLE";
-  } else {
-    finishTurnTransition(state, player, emitted);
+    return finishTurnTransition(logged.state, logged.events);
   }
+
+  if (matching.length > 1) {
+    return {
+      state: {
+        ...state,
+        eligibleNobleIds: matching.map((n) => n.id),
+        phase: "SELECT_NOBLE",
+      },
+      events: [...events],
+    };
+  }
+
+  return finishTurnTransition(state, events);
 }
 
 function finishTurnTransition(
   state: SplendorState,
-  player: SplendorPlayerState,
-  emitted: GameEvent[]
-): void {
-  if (player.points >= state.config.targetPoints) {
-    state.finalRoundTriggered = true;
-  }
+  events: readonly GameEvent[]
+): { state: SplendorState; events: GameEvent[] } {
+  const player = state.players[state.activePlayerIndex]!;
+  const finalRoundTriggered =
+    state.finalRoundTriggered || player.points >= state.config.targetPoints;
 
   const startIdx = state.startingPlayerIndex ?? 0;
   const nextIdx = (state.activePlayerIndex + 1) % state.players.length;
   const isLastPlayerInRound = nextIdx === startIdx;
+
   if (
-    (state.finalRoundTriggered && isLastPlayerInRound) ||
+    (finalRoundTriggered && isLastPlayerInRound) ||
     state.turn >= state.config.maxTurns
   ) {
-    // Determine winner: highest points, tie-broken by fewest purchased cards!
-    const sorted = [...state.players].sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points;
-      return a.purchasedCards.length - b.purchasedCards.length;
-    });
+    const sorted = [...state.players].sort((a, b) =>
+      b.points !== a.points
+        ? b.points - a.points
+        : a.purchasedCards.length - b.purchasedCards.length
+    );
     const winner = sorted[0]!;
-    state.winnerId = winner.id;
-    state.phase = "GAME_OVER";
-    pushEvent(
-      state,
-      emitted,
+    const finishedState: SplendorState = {
+      ...state,
+      finalRoundTriggered,
+      winnerId: winner.id,
+      phase: "GAME_OVER",
+    };
+    return appendSplendorEvent(
+      finishedState,
+      events,
       "GAME_OVER",
       `🏆 ${winner.name} wins Splendor with ${winner.points} Prestige Points (${winner.purchasedCards.length} cards)!`,
       winner.id
     );
-    return;
   }
 
-  state.activePlayerIndex = nextIdx;
-  state.turn += 1;
-  if (state.activePlayerIndex === startIdx) {
-    state.round += 1;
-  }
-  state.phase = "MAIN_ACTION";
+  return {
+    state: {
+      ...state,
+      finalRoundTriggered,
+      activePlayerIndex: nextIdx,
+      turn: state.turn + 1,
+      round: nextIdx === startIdx ? state.round + 1 : state.round,
+      phase: "MAIN_ACTION",
+    },
+    events: [...events],
+  };
 }
 
-export function checkSplendorInvariants(state: SplendorState): InvariantCheckResult {
-  const violations: string[] = [];
+export function checkSplendorInvariants(
+  state: SplendorState
+): InvariantCheckResult {
   const expectedGemTotal = getInitialGemBankCount(state.players.length);
 
-  for (const color of GEM_COLORS) {
-    if (state.bank[color] < 0) {
-      violations.push(`Negative bank ${color}: ${state.bank[color]}`);
-    }
-    let playerSum = 0;
-    for (const p of state.players) {
-      if (p.tokens[color] < 0) {
-        violations.push(`Player ${p.id} has negative ${color}`);
-      }
-      playerSum += p.tokens[color];
-    }
-    if (state.bank[color] + playerSum !== expectedGemTotal) {
-      violations.push(
-        `Token conservation violated for ${color}: ${state.bank[color]} + ${playerSum} !== ${expectedGemTotal}`
-      );
-    }
-  }
+  const gemViolations = GEM_COLORS.flatMap((color) => {
+    const bankNeg =
+      state.bank[color] < 0
+        ? [`Negative bank ${color}: ${state.bank[color]}`]
+        : [];
+    const playerNegs = state.players
+      .filter((p) => p.tokens[color] < 0)
+      .map((p) => `Player ${p.id} has negative ${color}`);
+    const playerSum = state.players.reduce((s, p) => s + p.tokens[color], 0);
+    const conservation =
+      state.bank[color] + playerSum !== expectedGemTotal
+        ? [
+            `Token conservation violated for ${color}: ${state.bank[color]} + ${playerSum} !== ${expectedGemTotal}`,
+          ]
+        : [];
+    return [...bankNeg, ...playerNegs, ...conservation];
+  });
 
   const goldSum =
     state.bank.gold + state.players.reduce((s, p) => s + p.tokens.gold, 0);
-  if (goldSum !== 5) {
-    violations.push(`Gold conservation violated: ${goldSum} !== 5`);
-  }
+  const goldViolations =
+    goldSum !== 5 ? [`Gold conservation violated: ${goldSum} !== 5`] : [];
 
-  for (const p of state.players) {
-    if (p.reservedCards.length > 3) {
-      violations.push(`Player ${p.id} has > 3 reserved cards`);
-    }
-    if (state.phase !== "RETURN_TOKENS" && totalTokens(p.tokens) > 10) {
-      violations.push(`Player ${p.id} holds ${totalTokens(p.tokens)} > 10 tokens outside RETURN_TOKENS phase`);
-    }
+  const playerViolations = state.players.flatMap((p) => {
+    const reservedErr =
+      p.reservedCards.length > 3
+        ? [`Player ${p.id} has > 3 reserved cards`]
+        : [];
+    const tokenLimitErr =
+      state.phase !== "RETURN_TOKENS" && totalTokens(p.tokens) > 10
+        ? [
+            `Player ${p.id} holds ${totalTokens(p.tokens)} > 10 tokens outside RETURN_TOKENS phase`,
+          ]
+        : [];
     const calcPoints =
       p.purchasedCards.reduce((s, c) => s + c.points, 0) +
       p.nobles.reduce((s, n) => s + n.points, 0);
-    if (p.points !== calcPoints) {
-      violations.push(`Player ${p.id} points mismatch: ${p.points} !== ${calcPoints}`);
-    }
-  }
+    const pointsErr =
+      p.points !== calcPoints
+        ? [`Player ${p.id} points mismatch: ${p.points} !== ${calcPoints}`]
+        : [];
+    return [...reservedErr, ...tokenLimitErr, ...pointsErr];
+  });
 
+  const violations = [...gemViolations, ...goldViolations, ...playerViolations];
   return {
     valid: violations.length === 0,
     violations,

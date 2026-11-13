@@ -1,7 +1,9 @@
 import {
   type BotDifficulty,
   type PlayerDescriptor,
-  SeededRNG,
+  createRngState,
+  nextFloatPure,
+  pickPure,
 } from "@gaming-platform/core";
 import {
   CATAN_BOT_WEIGHTS,
@@ -452,7 +454,7 @@ export function optimizeMasterWeights(
   duelBoards = 84,
   mixedBoards = 56
 ): CatanBotWeights {
-  const rng = new SeededRNG("catan-master-optimizer-stage4");
+  let rngState = createRngState("catan-master-optimizer-stage4");
   let champion: CatanBotWeights = { ...CATAN_BOT_WEIGHTS.master };
   setMasterCatanBotWeights(champion);
 
@@ -500,12 +502,16 @@ export function optimizeMasterWeights(
     const sigma = Math.max(0.03, 0.14 * (1 - gen / (generations + 4)));
     const candidate: CatanBotWeights = { ...champion };
 
-    const numMutate =
-      gen % 2 === 0 ? 1 : 2 + Math.floor(rng.nextFloat() * 3);
+    const [mutRand, nextRng0] =
+      gen % 2 === 0 ? [0, rngState] : nextFloatPure(rngState);
+    rngState = nextRng0;
+    const numMutate = gen % 2 === 0 ? 1 : 2 + Math.floor(mutRand * 3);
     for (let m = 0; m < numMutate; m++) {
-      const key = rng.pick(tunableKeys);
+      const [key, nextRng1] = pickPure(rngState, tunableKeys);
+      const [deltaRand, nextRng2] = nextFloatPure(nextRng1);
+      rngState = nextRng2;
       const cur = candidate[key];
-      const delta = (rng.nextFloat() * 2 - 1) * sigma;
+      const delta = (deltaRand * 2 - 1) * sigma;
       candidate[key] = Number(Math.max(0.05, cur * (1 + delta)).toFixed(3));
     }
 
@@ -543,7 +549,7 @@ export function optimizeSplendorMasterWeights(
   duelBoards = 90,
   mixedBoards = 60
 ): SplendorMasterWeights {
-  const rng = new SeededRNG("splendor-master-optimizer-stage4");
+  let rngState = createRngState("splendor-master-optimizer-stage4");
   let champion: SplendorMasterWeights = { ...SPLENDOR_MASTER_WEIGHTS };
   setMasterSplendorBotWeights(champion);
 
@@ -569,10 +575,15 @@ export function optimizeSplendorMasterWeights(
   for (let gen = 1; gen <= generations; gen++) {
     const sigma = Math.max(0.035, 0.2 * (1 - gen / (generations + 4)));
     const candidate: SplendorMasterWeights = { ...champion };
-    const numMutate = gen % 2 === 0 ? 1 : 2 + Math.floor(rng.nextFloat() * 3);
+    const [mutRand, nextRng0] =
+      gen % 2 === 0 ? [0, rngState] : nextFloatPure(rngState);
+    rngState = nextRng0;
+    const numMutate = gen % 2 === 0 ? 1 : 2 + Math.floor(mutRand * 3);
     for (let m = 0; m < numMutate; m++) {
-      const k = rng.pick(keys);
-      const delta = (rng.nextFloat() * 2 - 1) * sigma;
+      const [k, nextRng1] = pickPure(rngState, keys);
+      const [deltaRand, nextRng2] = nextFloatPure(nextRng1);
+      rngState = nextRng2;
+      const delta = (deltaRand * 2 - 1) * sigma;
       candidate[k] = Number(Math.max(0.03, candidate[k] * (1 + delta)).toFixed(3));
     }
 
@@ -601,7 +612,7 @@ export function optimizeAzulMasterWeights(
   duelBoards = 100,
   mixedBoards = 70
 ): AzulMasterWeights {
-  const rng = new SeededRNG("azul-master-optimizer-stage4");
+  let rngState = createRngState("azul-master-optimizer-stage4");
   let champion: AzulMasterWeights = { ...AZUL_MASTER_WEIGHTS };
   setMasterAzulBotWeights(champion);
 
@@ -627,10 +638,15 @@ export function optimizeAzulMasterWeights(
   for (let gen = 1; gen <= generations; gen++) {
     const sigma = Math.max(0.035, 0.22 * (1 - gen / (generations + 4)));
     const candidate: AzulMasterWeights = { ...champion };
-    const numMutate = gen % 2 === 0 ? 1 : 2 + Math.floor(rng.nextFloat() * 3);
+    const [mutRand, nextRng0] =
+      gen % 2 === 0 ? [0, rngState] : nextFloatPure(rngState);
+    rngState = nextRng0;
+    const numMutate = gen % 2 === 0 ? 1 : 2 + Math.floor(mutRand * 3);
     for (let m = 0; m < numMutate; m++) {
-      const k = rng.pick(keys);
-      const delta = (rng.nextFloat() * 2 - 1) * sigma;
+      const [k, nextRng1] = pickPure(rngState, keys);
+      const [deltaRand, nextRng2] = nextFloatPure(nextRng1);
+      rngState = nextRng2;
+      const delta = (deltaRand * 2 - 1) * sigma;
       candidate[k] = Number(Math.max(0.03, candidate[k] * (1 + delta)).toFixed(3));
     }
 

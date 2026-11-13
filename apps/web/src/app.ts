@@ -1,7 +1,8 @@
 import {
   type BotDifficulty,
-  MatchSession,
+  type MatchSession,
   type PlayerDescriptor,
+  createMatchSession,
 } from "@gaming-platform/core";
 import {
   BUILDING_COSTS,
@@ -67,8 +68,8 @@ import {
   renderAzulPlayerCard,
 } from "./azul-view.ts";
 
-type SupportedGameId = "catan" | "splendor" | "azul";
-type AppViewMode = "login" | "lobby" | "room_setup" | "in_game";
+export type SupportedGameId = "catan" | "splendor" | "azul";
+export type AppViewMode = "login" | "lobby" | "room_setup" | "in_game";
 
 export interface MultiGamePlatformAppOptions {
   startAtLogin?: boolean;
@@ -76,16 +77,16 @@ export interface MultiGamePlatformAppOptions {
   staticHostOnly?: boolean;
 }
 
-interface GuestSession {
-  id: string;
-  name: string;
-  mode: "guest";
+export interface GuestSession {
+  readonly id: string;
+  readonly name: string;
+  readonly mode: "guest";
 }
 
 const GUEST_STORAGE_KEY = "ga_guest_session";
 const DEVICE_GUESTS_STORAGE_KEY = "ga_device_guests";
 
-type BuildMode =
+export type BuildMode =
   | null
   | "road"
   | "ship"
@@ -98,7 +99,19 @@ type BuildMode =
   | "year_of_plenty"
   | "monopoly";
 
-interface ClientRoom {
+export interface BoardSpotSelection {
+  readonly kind: "edge" | "vertex" | "hex";
+  readonly id: string;
+}
+
+export interface ClientRoomConfig {
+  scenarioId: ScenarioId;
+  enableHarbormaster: boolean;
+  enableCityWalls: boolean;
+  enableFriendlyRobber: boolean;
+}
+
+export interface ClientRoom {
   roomId: string;
   name: string;
   gameId: SupportedGameId;
@@ -113,12 +126,7 @@ interface ClientRoom {
   startingPlayerMode: string; // "random" | "first" | playerId
   autoStepBots: boolean;
   players: PlayerDescriptor[];
-  config: {
-    scenarioId: ScenarioId;
-    enableHarbormaster: boolean;
-    enableCityWalls: boolean;
-    enableFriendlyRobber: boolean;
-  };
+  config: ClientRoomConfig;
   seed: string;
   matchCounter: number;
   session: MatchSession<any, any, any> | null;
@@ -128,6 +136,74 @@ interface ClientRoom {
   undoableSteps: number;
   canRedo: boolean;
   step: number;
+}
+
+export interface CreateLocalRoomOptions {
+  readonly name: string;
+  readonly gameId: SupportedGameId;
+  readonly ownerId: string;
+  readonly ownerName: string;
+  readonly isOfflineLocal?: boolean;
+  readonly botCount?: number;
+  readonly allBots?: boolean;
+  readonly botDifficulty?: BotDifficulty;
+  readonly startingPlayerMode?: string;
+  readonly scenarioId?: ScenarioId;
+  readonly enableHarbormaster?: boolean;
+  readonly enableCityWalls?: boolean;
+  readonly enableFriendlyRobber?: boolean;
+  readonly autoStart?: boolean;
+}
+
+export interface AppModel {
+  readonly viewMode: AppViewMode;
+  readonly lobbyGameFilter: "all" | SupportedGameId;
+  readonly lobbyHeroEnteredOnce: boolean;
+  readonly loginHeroEnteredOnce: boolean;
+  readonly useServerBackend: boolean;
+  readonly staticHostOnly: boolean;
+  readonly serverReachable: boolean;
+  readonly isAuthenticated: boolean;
+  readonly addingAdditionalGuest: boolean;
+  readonly returnViewAfterAddGuest: AppViewMode;
+  readonly loginDraftName: string;
+  readonly loginErrorMsg: string;
+  readonly currentUserId: string;
+  readonly currentUserName: string;
+  readonly deviceGuests: GuestSession[];
+  readonly localFriendDraftName: string;
+  readonly hidePassAndPlayHand: boolean;
+  readonly createRoomName: string;
+  readonly createRoomGameId: SupportedGameId;
+  readonly createRoomMode: "online" | "offline";
+  readonly rooms: Readonly<Record<string, ClientRoom>>;
+  readonly roomOrder: readonly string[];
+  readonly nextRoomNum: number;
+  readonly activeRoomId: string;
+  readonly buildMode: BuildMode;
+  readonly selectedBoardSpot: BoardSpotSelection | null;
+  readonly setupEdgeKind: "road" | "ship";
+  readonly robberOrPirateMode: "robber" | "pirate";
+  readonly selectedMoveFromEdgeId: string | null;
+  readonly discardSelection: ResourceMap;
+  readonly tradeGiveRes: ResourceType;
+  readonly tradeReceiveRes: ResourceType;
+  readonly maritimeGive: ResourceMap;
+  readonly maritimeWant: ResourceMap;
+  readonly domesticGive: ResourceMap;
+  readonly domesticWant: ResourceMap;
+  readonly domesticTargetPlayerId: string;
+  readonly yopRes1: ResourceType;
+  readonly yopRes2: ResourceType;
+  readonly monoRes: ResourceType;
+  readonly splendorDraftGems: Partial<Record<GemColor, number>>;
+  readonly azulSelectedDraft: {
+    readonly source: AzulDraftSource;
+    readonly color: AzulTileColor;
+  } | null;
+  readonly autoPlayBots: boolean;
+  readonly autoRespondBotsToHuman: boolean;
+  readonly autoPlaySpeedMs: number;
 }
 
 const BOT_DIFFICULTY_META: Record<
@@ -156,7 +232,11 @@ const BOT_DIFFICULTY_META: Record<
   },
 };
 
-const USER_PROFILES: Array<{ id: string; name: string; roleHint: string }> = [
+const USER_PROFILES: ReadonlyArray<{
+  readonly id: string;
+  readonly name: string;
+  readonly roleHint: string;
+}> = [
   { id: "p1", name: "Player 1 (You)", roleHint: "Host seat" },
   { id: "guest-2", name: "Guest 2", roleHint: "Guest seat" },
   { id: "guest-3", name: "Guest 3", roleHint: "Guest seat" },
@@ -186,7 +266,7 @@ interface DropdownSpec {
   title?: string;
 }
 
-function escapeAttr(raw: string): string {
+export function escapeAttr(raw: string): string {
   return raw
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
@@ -194,7 +274,7 @@ function escapeAttr(raw: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function renderDropdown(spec: DropdownSpec): string {
+export function renderDropdown(spec: DropdownSpec): string {
   const selectedOpt =
     spec.options.find((o) => o.value === spec.value) ?? spec.options[0]!;
   const classes = [
@@ -275,1777 +355,1098 @@ const BRAND_MARK_SVG = `
   </svg>
 `;
 
-function formatPhaseLabel(phase: string): string {
+export function formatPhaseLabel(phase: string): string {
   const clean = phase.replace(/_/g, " ").toLowerCase();
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
-class MultiGamePlatformApp {
-  private root: HTMLElement;
-  private viewMode: AppViewMode = "lobby";
-  private lobbyGameFilter: "all" | SupportedGameId = "all";
-  private lobbyHeroEnteredOnce = false;
-  private loginHeroEnteredOnce = false;
+/**
+ * Pure Functional Core: Selectors & State Reducers
+ */
+export function getEngineForGamePure(gameId: SupportedGameId): any {
+  if (gameId === "splendor") return SplendorEngine;
+  if (gameId === "azul") return AzulEngine;
+  return CatanEngine;
+}
 
-  // Guest session, multi-host device profiles & server realtime sync state
-  private useServerBackend = false;
-  private staticHostOnly = false;
-  private serverReachable = true;
-  private isAuthenticated = true;
-  private addingAdditionalGuest = false;
-  private returnViewAfterAddGuest: AppViewMode = "lobby";
-  private loginDraftName = "";
-  private loginErrorMsg = "";
-  private currentUserId = "p1";
-  private currentUserName = "Player 1 (You)";
-  private deviceGuests: GuestSession[] = [];
-  private localFriendDraftName = "";
-  private hidePassAndPlayHand = false;
-  private ws: WebSocket | null = null;
-  private wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private setupSyncTimer: ReturnType<typeof setTimeout> | null = null;
+export function getActingPlayerIdPure(
+  gameId: SupportedGameId,
+  state: any
+): string | null {
+  if (gameId === "splendor") return getSplendorActingPlayerId(state);
+  if (gameId === "azul") return getAzulActingPlayerId(state);
+  return getNextActingPlayerId(state);
+}
 
-  // New Room creation form state in Lobby
-  private createRoomName = "Catan harbour table";
-  private createRoomGameId: SupportedGameId = "catan";
-  private createRoomMode: "online" | "offline" = "online";
-
-  // Client-side Room Registry
-  private rooms = new Map<string, ClientRoom>();
-  private nextRoomNum = 1;
-  private activeRoomId: string = "room-1";
-
-  // In-game Catan UI interaction state
-  private buildMode: BuildMode = null;
-  private selectedBoardSpot: {
-    kind: "edge" | "vertex" | "hex";
-    id: string;
-  } | null = null;
-  private setupEdgeKind: "road" | "ship" = "road";
-  private robberOrPirateMode: "robber" | "pirate" = "robber";
-  private selectedMoveFromEdgeId: string | null = null;
-  private discardSelection: ResourceMap = emptyResources();
-  private tradeGiveRes: ResourceType = "brick";
-  private tradeReceiveRes: ResourceType = "ore";
-  private maritimeGive: ResourceMap = emptyResources();
-  private maritimeWant: ResourceMap = emptyResources();
-  private domesticGive: ResourceMap = emptyResources();
-  private domesticWant: ResourceMap = emptyResources();
-  private domesticTargetPlayerId: string = "all";
-  private yopRes1: ResourceType = "grain";
-  private yopRes2: ResourceType = "ore";
-  private monoRes: ResourceType = "ore";
-
-  // Splendor UI state
-  private splendorDraftGems: Partial<Record<GemColor, number>> = {};
-
-  // Azul UI state
-  private azulSelectedDraft: {
-    source: AzulDraftSource;
-    color: AzulTileColor;
-  } | null = null;
-
-  // Bot simulation & auto-response timers
-  private autoPlayBots = false;
-  private autoRespondBotsToHuman = true;
-  private autoPlaySpeedMs = 150;
-  private autoPlayTimer: ReturnType<typeof setInterval> | null = null;
-  private botResponseTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  constructor(root: HTMLElement, options?: MultiGamePlatformAppOptions) {
-    this.root = root;
-    const isStaticHost =
-      Boolean(options?.staticHostOnly) ||
-      (typeof document !== "undefined" &&
-        Boolean(document.documentElement?.hasAttribute("data-static-only"))) ||
-      (typeof window !== "undefined" &&
-        Boolean(window.location?.hostname?.endsWith(".github.io")));
-    const isBrowserHttp =
-      !options?.forceLocalMode &&
-      typeof window !== "undefined" &&
-      typeof fetch === "function" &&
-      Boolean(window.location?.protocol?.startsWith("http"));
-
-    this.staticHostOnly = isStaticHost;
-    this.useServerBackend = isBrowserHttp && !isStaticHost;
-    this.serverReachable = !isStaticHost;
-    this.createRoomMode = this.useServerBackend ? "online" : "offline";
-    this.loginDraftName = `Guest ${100 + Math.floor(Math.random() * 900)}`;
-
-    this.deviceGuests = this.loadDeviceGuests();
-    const savedGuest = this.loadSavedGuestSession();
-    if (savedGuest) {
-      this.currentUserId = savedGuest.id;
-      this.currentUserName = savedGuest.name;
-      this.loginDraftName = savedGuest.name;
-      this.upsertDeviceGuest(savedGuest);
-      this.isAuthenticated = true;
-      this.viewMode = "lobby";
-    } else if (options?.startAtLogin !== undefined) {
-      this.isAuthenticated = !options.startAtLogin;
-      this.viewMode = options.startAtLogin ? "login" : "lobby";
-      if (this.isAuthenticated) {
-        this.upsertDeviceGuest({
-          id: this.currentUserId,
-          name: this.currentUserName,
-          mode: "guest",
-        });
-      }
-    } else if (isBrowserHttp || isStaticHost) {
-      this.isAuthenticated = false;
-      this.viewMode = "login";
-    } else {
-      this.upsertDeviceGuest({
-        id: this.currentUserId,
-        name: this.currentUserName,
-        mode: "guest",
-      });
-    }
-
-    if (!this.useServerBackend && !this.staticHostOnly) {
-      this.seedInitialLobbyRooms();
-    }
-    this.registerGlobalDropdownDismiss();
-    this.render();
-
-    if (this.useServerBackend && this.isAuthenticated) {
-      void this.fetchLobbyRooms();
-    }
+export function getRoomBoundsPure(room: {
+  readonly gameId: SupportedGameId;
+  readonly config: { readonly scenarioId: ScenarioId };
+}): { minPlayers: number; maxPlayers: number } {
+  if (room.gameId === "catan") {
+    const sc = SCENARIO_CATALOG[room.config.scenarioId];
+    return { minPlayers: sc.minPlayers, maxPlayers: sc.maxPlayers };
   }
+  return { minPlayers: 2, maxPlayers: 4 };
+}
 
-  private roomUsesServer(room: ClientRoom): boolean {
-    return this.useServerBackend && !room.isOfflineLocal;
+export function roomUsesServerPure(
+  model: Pick<AppModel, "useServerBackend">,
+  room: Pick<ClientRoom, "isOfflineLocal">
+): boolean {
+  return model.useServerBackend && !room.isOfflineLocal;
+}
+
+export function getRoomByIdPure(
+  model: Readonly<AppModel>,
+  roomId: string
+): ClientRoom | undefined {
+  return model.rooms[roomId];
+}
+
+export function getRoomListPure(
+  model: Readonly<AppModel>
+): readonly ClientRoom[] {
+  return model.roomOrder
+    .map((id) => model.rooms[id])
+    .filter((r): r is ClientRoom => Boolean(r));
+}
+
+export function getActiveRoomPure(model: Readonly<AppModel>): ClientRoom {
+  return model.rooms[model.activeRoomId] ?? getRoomListPure(model)[0]!;
+}
+
+export function getRoomStatePure(
+  model: Pick<AppModel, "useServerBackend">,
+  room: ClientRoom
+): any | null {
+  if (roomUsesServerPure(model, room)) {
+    return room.remoteState;
   }
+  return room.session?.getState() ?? null;
+}
 
-  private loadDeviceGuests(): GuestSession[] {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = window.localStorage?.getItem(DEVICE_GUESTS_STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (g): g is GuestSession =>
-            Boolean(g && typeof g.id === "string" && typeof g.name === "string")
-        );
-      }
-    } catch {
-      // Ignore storage errors
-    }
-    return [];
+export function canControlPlayerOnDevicePure(
+  model: Pick<AppModel, "useServerBackend" | "currentUserId">,
+  room: ClientRoom,
+  playerId: string | null
+): boolean {
+  if (!playerId) return false;
+  const seat = room.players.find((p) => p.id === playerId);
+  if (!seat) return false;
+  if (seat.isBot) {
+    return Boolean(room.allBots);
   }
-
-  private saveDeviceGuests(): void {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage?.setItem(
-        DEVICE_GUESTS_STORAGE_KEY,
-        JSON.stringify(this.deviceGuests)
-      );
-    } catch {
-      // Ignore storage errors
-    }
-  }
-
-  private upsertDeviceGuest(session: GuestSession): void {
-    const idx = this.deviceGuests.findIndex((g) => g.id === session.id);
-    if (idx >= 0) {
-      this.deviceGuests[idx] = session;
-    } else {
-      this.deviceGuests.push(session);
-    }
-    this.saveDeviceGuests();
-  }
-
-  private loadSavedGuestSession(): GuestSession | null {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = window.sessionStorage?.getItem(GUEST_STORAGE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as GuestSession;
-      if (parsed && parsed.id && parsed.name) {
-        return parsed;
-      }
-    } catch {
-      // Ignore storage errors
-    }
-    return null;
-  }
-
-  private saveGuestSession(session: GuestSession): void {
-    if (typeof window === "undefined") return;
-    try {
-      window.sessionStorage?.setItem(
-        GUEST_STORAGE_KEY,
-        JSON.stringify(session)
-      );
-    } catch {
-      // Ignore storage errors
-    }
-  }
-
-  private clearGuestSession(): void {
-    if (typeof window === "undefined") return;
-    try {
-      window.sessionStorage?.removeItem(GUEST_STORAGE_KEY);
-    } catch {
-      // Ignore storage errors
-    }
-  }
-
-  public signInAsGuest(rawName?: string, existingGuestId?: string): boolean {
-    const clean = (rawName ?? this.loginDraftName).trim();
-    if (!clean) {
-      this.loginErrorMsg = "Enter a guest display name to continue.";
-      this.render();
-      return false;
-    }
-
-    const matchedById = existingGuestId
-      ? this.deviceGuests.find((g) => g.id === existingGuestId)
-      : undefined;
-    const matchedByName = !matchedById
-      ? this.deviceGuests.find(
-          (g) => g.name.toLowerCase() === clean.slice(0, 28).toLowerCase()
-        )
-      : undefined;
-
-    const session: GuestSession = matchedById
-      ? { id: matchedById.id, name: clean.slice(0, 28), mode: "guest" }
-      : matchedByName
-        ? { id: matchedByName.id, name: clean.slice(0, 28), mode: "guest" }
-        : {
-            id: `guest-${Math.random().toString(36).slice(2, 8)}-${Date.now() % 10000}`,
-            name: clean.slice(0, 28),
-            mode: "guest",
-          };
-
-    this.currentUserId = session.id;
-    this.currentUserName = session.name;
-    this.loginDraftName = session.name;
-    this.loginErrorMsg = "";
-    this.isAuthenticated = true;
-    this.addingAdditionalGuest = false;
-    this.saveGuestSession(session);
-    this.upsertDeviceGuest(session);
-
-    if (!this.useServerBackend && this.rooms.size > 0) {
-      const first = this.rooms.get("room-1");
-      if (first && first.status === "lobby" && first.ownerId === "p1") {
-        first.ownerId = this.currentUserId;
-        first.ownerName = this.currentUserName;
-        first.humanPlayers = [
-          {
-            id: this.currentUserId,
-            name: this.currentUserName,
-            color: PLAYER_COLORS[0]!,
-            isBot: false,
-          },
-        ];
-        this.rebuildRoomSeats(first);
-      }
-    }
-
-    this.viewMode = "lobby";
-    this.render();
-
-    if (this.useServerBackend) {
-      void this.fetchLobbyRooms();
-    }
+  if (!roomUsesServerPure(model, room) && room.isOfflineLocal) {
     return true;
   }
+  return (
+    playerId === model.currentUserId ||
+    seat.controllerId === model.currentUserId
+  );
+}
 
-  public startSoloGameFromLogin(rawName?: string): boolean {
-    const fallbackName = (rawName ?? this.loginDraftName).trim() || "Player 1";
-    const ok = this.signInAsGuest(fallbackName);
-    if (!ok) return false;
-    this.createRoomMode = "offline";
-    const room = this.createLocalRoom({
-      name: `${this.currentUserName}'s solo table`,
-      gameId: this.createRoomGameId,
-      ownerId: this.currentUserId,
-      ownerName: this.currentUserName,
-      isOfflineLocal: true,
-      botCount: 3,
-      startingPlayerMode: "random",
-      autoStart: false,
-    });
-    this.activeRoomId = room.roomId;
-    this.viewMode = "room_setup";
-    this.resetSubModes();
-    this.render();
-    return true;
+export function setRoomInModelPure(
+  model: Readonly<AppModel>,
+  room: ClientRoom
+): AppModel {
+  const exists = Object.prototype.hasOwnProperty.call(model.rooms, room.roomId);
+  return {
+    ...model,
+    rooms: {
+      ...model.rooms,
+      [room.roomId]: room,
+    },
+    roomOrder: exists ? model.roomOrder : [...model.roomOrder, room.roomId],
+  };
+}
+
+export function updateRoomInModelPure(
+  model: Readonly<AppModel>,
+  roomId: string,
+  updater: (room: ClientRoom) => ClientRoom
+): AppModel {
+  const existing = model.rooms[roomId];
+  if (!existing) return model;
+  return setRoomInModelPure(model, updater(existing));
+}
+
+export function removeRoomFromModelPure(
+  model: Readonly<AppModel>,
+  roomId: string
+): AppModel {
+  if (!Object.prototype.hasOwnProperty.call(model.rooms, roomId)) {
+    return model;
+  }
+  const nextOrder = model.roomOrder.filter((id) => id !== roomId);
+  const nextRooms = Object.fromEntries(
+    nextOrder
+      .map((id) => [id, model.rooms[id]!] as const)
+      .filter((entry) => Boolean(entry[1]))
+  );
+  return {
+    ...model,
+    rooms: nextRooms,
+    roomOrder: nextOrder,
+  };
+}
+
+export function upsertDeviceGuestListPure(
+  deviceGuests: readonly GuestSession[],
+  session: GuestSession
+): GuestSession[] {
+  const idx = deviceGuests.findIndex((g) => g.id === session.id);
+  if (idx >= 0) {
+    return deviceGuests.map((g, i) => (i === idx ? session : g));
+  }
+  return [...deviceGuests, session];
+}
+
+export function rebuildRoomSeatsPure(room: Readonly<ClientRoom>): ClientRoom {
+  if (room.status === "in_progress") {
+    return { ...room };
   }
 
-  public startOfflineLocalFromLogin(rawName?: string): boolean {
-    const fallbackName = (rawName ?? this.loginDraftName).trim() || "Player 1";
-    const ok = this.signInAsGuest(fallbackName);
-    if (!ok) return false;
-    this.createRoomMode = "offline";
-    const room = this.createLocalRoom({
-      name: `${this.currentUserName}'s local table`,
-      gameId: this.createRoomGameId,
-      ownerId: this.currentUserId,
-      ownerName: this.currentUserName,
-      isOfflineLocal: true,
-      botCount: 0,
-      startingPlayerMode: "random",
-      autoStart: false,
-    });
-    this.activeRoomId = room.roomId;
-    this.viewMode = "room_setup";
-    this.resetSubModes();
-    this.render();
-    return true;
-  }
+  const bounds = getRoomBoundsPure(room);
+  const adjustedBotCountForBigIsland =
+    room.gameId === "catan" &&
+    room.config.scenarioId === "big_island_5_6" &&
+    room.humanPlayers.length + room.botCount < 5
+      ? Math.max(room.botCount, 5 - room.humanPlayers.length)
+      : room.botCount;
 
-  public openAddGuestView(): void {
-    this.stopAutoPlay();
-    this.returnViewAfterAddGuest =
-      this.viewMode === "login" ? "lobby" : this.viewMode;
-    this.addingAdditionalGuest = true;
-    this.loginErrorMsg = "";
-    this.loginDraftName = `Guest ${this.deviceGuests.length + 1}`;
-    this.viewMode = "login";
-    this.render();
-  }
-
-  public switchActiveGuest(guestId: string): void {
-    const found =
-      this.deviceGuests.find((g) => g.id === guestId) ??
-      USER_PROFILES.find((u) => u.id === guestId);
-    if (!found) return;
-
-    this.currentUserId = found.id;
-    this.currentUserName = found.name;
-    const session: GuestSession = {
-      id: found.id,
-      name: found.name,
-      mode: "guest",
-    };
-    this.saveGuestSession(session);
-    this.upsertDeviceGuest(session);
-
-    const active = this.rooms.get(this.activeRoomId);
-    if (
-      active &&
-      this.roomUsesServer(active) &&
-      (this.viewMode === "room_setup" || this.viewMode === "in_game")
-    ) {
-      this.sendWsMessage({
-        type: "SUBSCRIBE_ROOM",
-        roomId: active.roomId,
-        playerId: this.currentUserId,
-      });
-      void fetch(
-        `/api/rooms/${encodeURIComponent(active.roomId)}?playerId=${encodeURIComponent(this.currentUserId)}`
-      )
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data?.room) {
-            this.upsertRoomFromSummary(
-              data.room,
-              data.state,
-              data.actingPlayerId
-            );
-            this.render();
-          }
-        })
-        .catch(() => {});
-    }
-
-    this.render();
-  }
-
-  public signOutGuest(): void {
-    this.stopAutoPlay();
-    if (this.useServerBackend && this.activeRoomId) {
-      const active = this.rooms.get(this.activeRoomId);
-      if (
-        active &&
-        !active.isOfflineLocal &&
-        active.status !== "in_progress" &&
-        this.deviceGuests.length <= 1
-      ) {
-        void fetch(
-          `/api/rooms/${encodeURIComponent(this.activeRoomId)}/leave`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ playerId: this.currentUserId }),
-          }
-        ).catch(() => {});
-      }
-      this.sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
-    }
-    this.clearGuestSession();
-    this.isAuthenticated = false;
-    this.addingAdditionalGuest = false;
-    this.loginErrorMsg = "";
-    this.loginDraftName = `Guest ${100 + Math.floor(Math.random() * 900)}`;
-    this.viewMode = "login";
-    this.resetSubModes();
-    this.render();
-  }
-
-  private sendWsMessage(msg: Record<string, unknown>): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
-    }
-  }
-
-  private syncOnlineLobbyRooms(summaries: any[]): void {
-    const incomingIds = new Set(summaries.map((s) => s.roomId));
-    for (const [id, existing] of this.rooms.entries()) {
-      if (!existing.isOfflineLocal && !incomingIds.has(id)) {
-        this.rooms.delete(id);
-      }
-    }
-    for (const s of summaries) {
-      this.upsertRoomFromSummary(s);
-    }
-  }
-
-  private connectServerRealtime(): void {
-    if (!this.useServerBackend || typeof WebSocket === "undefined") return;
-    if (
-      this.ws &&
-      (this.ws.readyState === WebSocket.OPEN ||
-        this.ws.readyState === WebSocket.CONNECTING)
-    ) {
-      return;
-    }
-
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${window.location.host}`);
-    this.ws = ws;
-
-    ws.addEventListener("open", () => {
-      this.serverReachable = true;
-      const active = this.rooms.get(this.activeRoomId);
-      if (
-        (this.viewMode === "room_setup" || this.viewMode === "in_game") &&
-        active &&
-        !active.isOfflineLocal
-      ) {
-        this.sendWsMessage({
-          type: "SUBSCRIBE_ROOM",
-          roomId: active.roomId,
-          playerId: this.currentUserId,
-        });
-      }
-    });
-
-    ws.addEventListener("message", (ev) => {
-      try {
-        const msg = JSON.parse(String(ev.data));
-        if (msg.type === "LOBBY_ROOMS" && Array.isArray(msg.rooms)) {
-          this.syncOnlineLobbyRooms(msg.rooms);
-          if (this.viewMode === "lobby") {
-            this.renderPreservingFocus();
-          }
-        } else if (msg.type === "ROOM_STATE" && msg.room) {
-          const prevStatus = this.rooms.get(msg.room.roomId)?.status;
-          const updated = this.upsertRoomFromSummary(
-            msg.room,
-            msg.state,
-            msg.actingPlayerId
-          );
-          if (updated.roomId === this.activeRoomId) {
-            if (
-              this.viewMode === "room_setup" &&
-              prevStatus !== "in_progress" &&
-              updated.status === "in_progress"
-            ) {
-              this.viewMode = "in_game";
-              this.resetSubModes();
-            }
-            if (updated.status === "finished") {
-              this.stopAutoPlay();
-            }
-            this.renderPreservingFocus();
-          }
-        }
-      } catch {
-        // Ignore malformed frame
-      }
-    });
-
-    ws.addEventListener("close", () => {
-      if (this.ws === ws) {
-        this.ws = null;
-      }
-      if (this.isAuthenticated && this.useServerBackend) {
-        if (this.wsReconnectTimer) clearTimeout(this.wsReconnectTimer);
-        this.wsReconnectTimer = setTimeout(
-          () => this.connectServerRealtime(),
-          1500
-        );
-      }
-    });
-  }
-
-  private renderPreservingFocus(): void {
-    const activeEl =
-      typeof document !== "undefined"
-        ? (document.activeElement as HTMLElement | null)
-        : null;
-    if (
-      activeEl &&
-      (activeEl.id === "inp-create-room-name" ||
-        activeEl.id === "setup-room-name" ||
-        activeEl.id === "inp-guest-name" ||
-        activeEl.id === "inp-local-friend-name")
-    ) {
-      return;
-    }
-    this.render();
-  }
-
-  private upsertRoomFromSummary(
-    summary: any,
-    remoteState?: any,
-    remoteActingPlayerId?: string | null
-  ): ClientRoom {
-    const existing = this.rooms.get(summary.roomId);
-    const players: PlayerDescriptor[] = Array.isArray(summary.players)
-      ? summary.players
-      : [];
-    const humanPlayers = players.filter((p) => !p.isBot);
-    const botCount =
-      typeof summary.botCount === "number"
-        ? summary.botCount
-        : players.filter((p) => p.isBot).length;
-    const cfg = summary.config ?? {};
-
-    const room: ClientRoom = {
-      roomId: summary.roomId,
-      name: summary.name ?? "Table",
-      gameId: (summary.gameId as SupportedGameId) ?? "catan",
-      isOfflineLocal: false,
-      ownerId: summary.ownerId ?? "p1",
-      ownerName: summary.ownerName ?? "Host",
-      status: summary.status ?? "lobby",
-      humanPlayers,
-      botCount,
-      allBots: Boolean(summary.allBots),
-      botDifficulty:
-        (summary.botDifficulty as BotDifficulty) ??
-        (cfg.botDifficulty as BotDifficulty) ??
-        "master",
-      startingPlayerMode: summary.startingPlayerMode ?? "random",
-      autoStepBots:
-        summary.autoStepBots !== undefined
-          ? Boolean(summary.autoStepBots)
-          : true,
-      players,
-      config: {
-        scenarioId: (cfg.scenarioId as ScenarioId) ?? "standard",
-        enableHarbormaster: Boolean(cfg.enableHarbormaster),
-        enableCityWalls: Boolean(cfg.enableCityWalls),
-        enableFriendlyRobber: Boolean(cfg.enableFriendlyRobber),
-      },
-      seed: existing?.seed ?? summary.roomId,
-      matchCounter: existing?.matchCounter ?? 0,
-      session: existing?.session ?? null,
-      remoteState:
-        remoteState !== undefined ? remoteState : (existing?.remoteState ?? null),
-      remoteActingPlayerId:
-        remoteActingPlayerId !== undefined
-          ? remoteActingPlayerId
-          : (existing?.remoteActingPlayerId ?? null),
-      canUndo:
-        summary.canUndo !== undefined
-          ? Boolean(summary.canUndo)
-          : (existing?.canUndo ?? false),
-      undoableSteps:
-        typeof summary.undoableSteps === "number"
-          ? summary.undoableSteps
-          : (existing?.undoableSteps ?? 0),
-      canRedo:
-        summary.canRedo !== undefined
-          ? Boolean(summary.canRedo)
-          : (existing?.canRedo ?? false),
-      step:
-        typeof summary.step === "number" ? summary.step : (existing?.step ?? 0),
-    };
-
-    this.rooms.set(room.roomId, room);
-    this.autoRespondBotsToHuman = room.autoStepBots;
-    return room;
-  }
-
-  private async fetchLobbyRooms(): Promise<void> {
-    if (!this.useServerBackend) return;
-    try {
-      const res = await fetch("/api/rooms");
-      const ct = res.headers.get("content-type") ?? "";
-      if (!res.ok || !ct.includes("application/json")) {
-        // Running on a static host without the Node/Bun room backend
-        this.staticHostOnly = true;
-        this.useServerBackend = false;
-        this.serverReachable = false;
-        this.createRoomMode = "offline";
-        if (this.wsReconnectTimer) {
-          clearTimeout(this.wsReconnectTimer);
-          this.wsReconnectTimer = null;
-        }
-        if (this.viewMode === "lobby") {
-          this.renderPreservingFocus();
-        }
-        return;
-      }
-      this.serverReachable = true;
-      this.connectServerRealtime();
-      const data = await res.json();
-      if (Array.isArray(data.rooms)) {
-        this.syncOnlineLobbyRooms(data.rooms);
-        if (this.viewMode === "lobby") {
-          this.renderPreservingFocus();
-        }
-      }
-    } catch {
-      this.serverReachable = false;
-      this.createRoomMode = "offline";
-      if (this.viewMode === "lobby") {
-        this.renderPreservingFocus();
-      }
-    }
-  }
-
-  private registerGlobalDropdownDismiss(): void {
-    if (typeof document === "undefined") return;
-    document.addEventListener("pointerdown", (e) => {
-      const target = e.target as Node | null;
-      this.root.querySelectorAll(".ga-dropdown.is-open").forEach((dd) => {
-        if (!target || !dd.contains(target)) {
-          this.closeDropdownElement(dd as HTMLElement);
-        }
-      });
-    });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        this.root.querySelectorAll(".ga-dropdown.is-open").forEach((dd) => {
-          const trigger = dd.querySelector(
-            ".ga-dropdown__trigger"
-          ) as HTMLButtonElement | null;
-          this.closeDropdownElement(dd as HTMLElement);
-          trigger?.focus();
-        });
-      }
-    });
-  }
-
-  private closeDropdownElement(dd: HTMLElement): void {
-    dd.classList.remove("is-open");
-    const trigger = dd.querySelector(
-      ".ga-dropdown__trigger"
-    ) as HTMLButtonElement | null;
-    const menu = dd.querySelector(".ga-dropdown__menu") as HTMLElement | null;
-    if (trigger) trigger.setAttribute("aria-expanded", "false");
-    if (menu) menu.hidden = true;
-  }
-
-  private seedInitialLobbyRooms(): void {
-    this.createLocalRoom({
-      name: "Island of Catan — Table 1",
-      gameId: "catan",
-      ownerId: "p1",
-      ownerName: "Player 1 (You)",
-      botCount: 3,
-      startingPlayerMode: "first",
-      scenarioId: "standard",
-      autoStart: false,
-    });
-
-    this.createLocalRoom({
-      name: "Four Islands — Seafarers",
-      gameId: "catan",
-      ownerId: "host-nemo",
-      ownerName: "Captain Nemo",
-      botCount: 3,
-      scenarioId: "seafarers_four_islands",
-      enableHarbormaster: true,
-      autoStart: false,
-    });
-
-    this.createLocalRoom({
-      name: "Florence Gem Market",
-      gameId: "splendor",
-      ownerId: "host-lorenzo",
-      ownerName: "Lorenzo",
-      botCount: 3,
-      autoStart: false,
-    });
-
-    this.createLocalRoom({
-      name: "Evora Courtyard Wall",
-      gameId: "azul",
-      ownerId: "host-manuel",
-      ownerName: "Manuel",
-      botCount: 3,
-      autoStart: false,
-    });
-  }
-
-  public getRoomBounds(room: {
-    gameId: SupportedGameId;
-    config: { scenarioId: ScenarioId };
-  }): { minPlayers: number; maxPlayers: number } {
-    if (room.gameId === "catan") {
-      const sc = SCENARIO_CATALOG[room.config.scenarioId];
-      return { minPlayers: sc.minPlayers, maxPlayers: sc.maxPlayers };
-    }
-    return { minPlayers: 2, maxPlayers: 4 };
-  }
-
-  private createLocalRoom(opts: {
-    name: string;
-    gameId: SupportedGameId;
-    ownerId: string;
-    ownerName: string;
-    isOfflineLocal?: boolean;
-    botCount?: number;
-    allBots?: boolean;
-    botDifficulty?: BotDifficulty;
-    startingPlayerMode?: string;
-    scenarioId?: ScenarioId;
-    enableHarbormaster?: boolean;
-    enableCityWalls?: boolean;
-    enableFriendlyRobber?: boolean;
-    autoStart?: boolean;
-  }): ClientRoom {
-    const roomId = `room-${this.nextRoomNum++}`;
-    const allBots = opts.allBots ?? false;
-    const botDifficulty: BotDifficulty = opts.botDifficulty ?? "master";
-    const humanPlayers: PlayerDescriptor[] = allBots
-      ? []
-      : [
-          {
-            id: opts.ownerId,
-            name: opts.ownerName,
-            color: PLAYER_COLORS[0]!,
-            isBot: false,
-          },
-        ];
-
-    const room: ClientRoom = {
-      roomId,
-      name: opts.name,
-      gameId: opts.gameId,
-      isOfflineLocal: opts.isOfflineLocal ?? true,
-      ownerId: opts.ownerId,
-      ownerName: opts.ownerName,
-      status: "lobby",
-      humanPlayers,
-      botCount: opts.botCount ?? (allBots ? 4 : 0),
-      allBots,
-      botDifficulty,
-      startingPlayerMode: opts.startingPlayerMode ?? "random",
-      autoStepBots: true,
-      players: [],
-      config: {
-        scenarioId: opts.scenarioId ?? "standard",
-        enableHarbormaster: opts.enableHarbormaster ?? false,
-        enableCityWalls: opts.enableCityWalls ?? false,
-        enableFriendlyRobber: opts.enableFriendlyRobber ?? false,
-      },
-      seed: `arena-${roomId}-${Date.now() % 10000}`,
-      matchCounter: 0,
-      session: null,
-      remoteState: null,
-      remoteActingPlayerId: null,
-      canUndo: false,
-      undoableSteps: 0,
-      canRedo: false,
-      step: 0,
-    };
-
-    this.rebuildRoomSeats(room);
-    this.rooms.set(roomId, room);
-    if (opts.autoStart) {
-      this.startRoomMatch(roomId);
-    }
-    return room;
-  }
-
-  private getEngineForGame(gameId: SupportedGameId): any {
-    if (gameId === "splendor") return SplendorEngine;
-    if (gameId === "azul") return AzulEngine;
-    return CatanEngine;
-  }
-
-  private getActiveRoom(): ClientRoom {
-    return (
-      this.rooms.get(this.activeRoomId) ??
-      Array.from(this.rooms.values())[0]!
-    );
-  }
-
-  private getRoomState(room: ClientRoom): any | null {
-    if (this.roomUsesServer(room)) {
-      return room.remoteState;
-    }
-    return room.session?.getState() ?? null;
-  }
-
-  private canControlPlayerOnThisDevice(
-    room: ClientRoom,
-    playerId: string | null
-  ): boolean {
-    if (!playerId) return false;
-    const seat = room.players.find((p) => p.id === playerId);
-    if (!seat) return false;
-    if (seat.isBot) {
-      return Boolean(room.allBots);
-    }
-    if (!this.roomUsesServer(room) && room.isOfflineLocal) {
-      return true;
-    }
-    return (
-      playerId === this.currentUserId ||
-      seat.controllerId === this.currentUserId
-    );
-  }
-
-  private getActingPlayerId(gameId: SupportedGameId, state: any): string | null {
-    if (gameId === "splendor") return getSplendorActingPlayerId(state);
-    if (gameId === "azul") return getAzulActingPlayerId(state);
-    return getNextActingPlayerId(state);
-  }
-
-  private rebuildRoomSeats(room: ClientRoom): void {
-    if (room.status === "in_progress") return;
-
-    const bounds = this.getRoomBounds(room);
-    if (
-      room.gameId === "catan" &&
-      room.config.scenarioId === "big_island_5_6" &&
-      room.humanPlayers.length + room.botCount < 5
-    ) {
-      room.botCount = Math.max(room.botCount, 5 - room.humanPlayers.length);
-    }
-
-    const nextPlayers: PlayerDescriptor[] = [];
-
+  const computeSeats = (): {
+    humanPlayers: PlayerDescriptor[];
+    botCount: number;
+    players: PlayerDescriptor[];
+  } => {
     if (room.allBots) {
-      room.botCount = Math.max(
+      const clampedBots = Math.max(
         bounds.minPlayers,
-        Math.min(bounds.maxPlayers, room.botCount || 4)
+        Math.min(bounds.maxPlayers, adjustedBotCountForBigIsland || 4)
       );
-      for (let i = 0; i < room.botCount; i++) {
-        nextPlayers.push({
+      const botPlayers: PlayerDescriptor[] = Array.from(
+        { length: clampedBots },
+        (_, i) => ({
           id: `p${i + 1}`,
           name: `Bot ${i + 1}`,
           color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
           isBot: true,
           botDifficulty: room.botDifficulty,
-        });
-      }
-    } else {
-      if (room.humanPlayers.length === 0 && room.ownerId) {
-        room.humanPlayers.push({
-          id: room.ownerId,
-          name: room.ownerName,
-          color: PLAYER_COLORS[0]!,
-          isBot: false,
-        });
-      }
-      room.humanPlayers = room.humanPlayers.slice(0, bounds.maxPlayers);
-      const maxBots = Math.max(0, bounds.maxPlayers - room.humanPlayers.length);
-      room.botCount = Math.max(0, Math.min(maxBots, room.botCount));
+        })
+      );
+      return {
+        humanPlayers: [...room.humanPlayers],
+        botCount: clampedBots,
+        players: botPlayers,
+      };
+    }
 
-      for (const h of room.humanPlayers) {
-        const idx = nextPlayers.length;
-        nextPlayers.push({
-          ...h,
-          color: PLAYER_COLORS[idx % PLAYER_COLORS.length]!,
-          isBot: false,
-        });
-      }
+    const seededHumans =
+      room.humanPlayers.length === 0 && room.ownerId
+        ? [
+            {
+              id: room.ownerId,
+              name: room.ownerName,
+              color: PLAYER_COLORS[0]!,
+              isBot: false,
+            },
+          ]
+        : room.humanPlayers;
+    const trimmedHumans = seededHumans.slice(0, bounds.maxPlayers);
+    const maxBots = Math.max(0, bounds.maxPlayers - trimmedHumans.length);
+    const clampedBots = Math.max(
+      0,
+      Math.min(maxBots, adjustedBotCountForBigIsland)
+    );
 
-      for (let b = 0; b < room.botCount; b++) {
-        const idx = nextPlayers.length;
-        const defaultId = `p${idx + 1}`;
-        const finalId = nextPlayers.some((p) => p.id === defaultId)
-          ? `bot-${b + 1}`
-          : defaultId;
-        nextPlayers.push({
+    const humanSeats: PlayerDescriptor[] = trimmedHumans.map((h, idx) => ({
+      ...h,
+      color: PLAYER_COLORS[idx % PLAYER_COLORS.length]!,
+      isBot: false,
+    }));
+
+    const botSeats = Array.from({ length: clampedBots }, (_, b) => b).reduce<
+      PlayerDescriptor[]
+    >((acc, b) => {
+      const idx = humanSeats.length + acc.length;
+      const defaultId = `p${idx + 1}`;
+      const taken =
+        humanSeats.some((p) => p.id === defaultId) ||
+        acc.some((p) => p.id === defaultId);
+      const finalId = taken ? `bot-${b + 1}` : defaultId;
+      return [
+        ...acc,
+        {
           id: finalId,
           name: `Bot ${b + 1}`,
           color: PLAYER_COLORS[idx % PLAYER_COLORS.length]!,
           isBot: true,
           botDifficulty: room.botDifficulty,
-        });
-      }
-    }
+        },
+      ];
+    }, []);
 
-    room.players = nextPlayers;
-    if (
-      room.startingPlayerMode !== "random" &&
-      room.startingPlayerMode !== "first" &&
-      !room.players.some((p) => p.id === room.startingPlayerMode)
-    ) {
-      room.startingPlayerMode = "random";
-    }
-  }
-
-  private pushServerRoomSetup(room: ClientRoom, debounceMs = 0): void {
-    if (!this.roomUsesServer(room)) return;
-    if (this.setupSyncTimer) {
-      clearTimeout(this.setupSyncTimer);
-      this.setupSyncTimer = null;
-    }
-    const send = async () => {
-      try {
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(room.roomId)}/setup`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              requesterId: this.currentUserId,
-              name: room.name,
-              gameId: room.gameId,
-              botCount: room.botCount,
-              allBots: room.allBots,
-              botDifficulty: room.botDifficulty,
-              startingPlayerMode: room.startingPlayerMode,
-              config: room.config,
-            }),
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.room) {
-            this.upsertRoomFromSummary(data.room);
-            this.renderPreservingFocus();
-          }
-        }
-      } catch {
-        // Ignore transient network errors
-      }
+    return {
+      humanPlayers: trimmedHumans,
+      botCount: clampedBots,
+      players: [...humanSeats, ...botSeats],
     };
-    if (debounceMs > 0) {
-      this.setupSyncTimer = setTimeout(() => void send(), debounceMs);
-    } else {
-      void send();
-    }
-  }
+  };
 
-  public addLocalFriendToRoom(room: ClientRoom, rawName: string): void {
-    const cleanName = rawName.trim() || `Player ${room.humanPlayers.length + 1}`;
-    const bounds = this.getRoomBounds(room);
-    if (room.humanPlayers.length >= bounds.maxPlayers) return;
+  const { humanPlayers, botCount, players } = computeSeats();
+  const startingPlayerMode =
+    room.startingPlayerMode !== "random" &&
+    room.startingPlayerMode !== "first" &&
+    !players.some((p) => p.id === room.startingPlayerMode)
+      ? "random"
+      : room.startingPlayerMode;
 
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        try {
-          const res = await fetch(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/local-players`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                requesterId: this.currentUserId,
-                playerName: cleanName.slice(0, 28),
-              }),
-            }
-          );
-          const data = await res.json();
-          if (!res.ok) {
-            alert(data.error ?? "Unable to add local player");
-            return;
-          }
-          this.localFriendDraftName = "";
-          this.upsertRoomFromSummary(data.room);
-          this.render();
-        } catch (err: any) {
-          alert(`Unable to add local player: ${err?.message ?? String(err)}`);
-        }
-      })();
-      return;
-    }
+  return {
+    ...room,
+    config: { ...room.config },
+    humanPlayers,
+    botCount,
+    players,
+    startingPlayerMode,
+  };
+}
 
-    const localId = `local-${Math.random().toString(36).slice(2, 7)}-${room.humanPlayers.length + 1}`;
-    room.humanPlayers.push({
-      id: localId,
-      name: cleanName.slice(0, 28),
-      color: PLAYER_COLORS[room.humanPlayers.length % PLAYER_COLORS.length]!,
-      isBot: false,
-      controllerId: room.ownerId,
-    });
-    this.localFriendDraftName = "";
-    this.rebuildRoomSeats(room);
-    this.render();
-  }
-
-  public removePlayerFromRoom(room: ClientRoom, targetPlayerId: string): void {
-    if (targetPlayerId === room.ownerId) return;
-
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        try {
-          const res = await fetch(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/remove-player`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                requesterId: this.currentUserId,
-                targetPlayerId,
-              }),
-            }
-          );
-          const data = await res.json();
-          if (!res.ok) {
-            alert(data.error ?? "Unable to remove player");
-            return;
-          }
-          this.upsertRoomFromSummary(data.room);
-          this.render();
-        } catch (err: any) {
-          alert(`Unable to remove player: ${err?.message ?? String(err)}`);
-        }
-      })();
-      return;
-    }
-
-    room.humanPlayers = room.humanPlayers.filter(
-      (p) => p.id !== targetPlayerId
-    );
-    this.rebuildRoomSeats(room);
-    this.render();
-  }
-
-  private createAndOpenRoom(): void {
-    const cleanName =
-      this.createRoomName.trim() ||
-      `${this.createRoomGameId} table ${this.nextRoomNum}`;
-
-    const openAsOfflineLocal =
-      this.createRoomMode === "offline" ||
-      !this.useServerBackend ||
-      !this.serverReachable;
-
-    if (!openAsOfflineLocal) {
-      void (async () => {
-        try {
-          const res = await fetch("/api/rooms", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: cleanName,
-              gameId: this.createRoomGameId,
-              ownerId: this.currentUserId,
-              hostName: this.currentUserName,
-              botCount: 0,
-              startingPlayerMode: "random",
-              autoStart: false,
-            }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            alert(data.error ?? "Unable to create room");
-            return;
-          }
-          const created = this.upsertRoomFromSummary(
-            data.room,
-            data.state,
-            data.actingPlayerId
-          );
-          this.activeRoomId = created.roomId;
-          this.sendWsMessage({
-            type: "SUBSCRIBE_ROOM",
-            roomId: created.roomId,
-            playerId: this.currentUserId,
-          });
-          this.viewMode =
-            created.status === "in_progress" ? "in_game" : "room_setup";
-          this.resetSubModes();
-          this.render();
-        } catch {
-          // Automatic offline fallback if the server becomes unreachable
-          this.serverReachable = false;
-          this.createRoomMode = "offline";
-          const fallbackRoom = this.createLocalRoom({
-            name: cleanName,
-            gameId: this.createRoomGameId,
-            ownerId: this.currentUserId,
-            ownerName: this.currentUserName,
-            isOfflineLocal: true,
-            botCount: 0,
-            startingPlayerMode: "random",
-            autoStart: false,
-          });
-          this.activeRoomId = fallbackRoom.roomId;
-          this.viewMode = "room_setup";
-          this.resetSubModes();
-          this.render();
-        }
-      })();
-      return;
-    }
-
-    const room = this.createLocalRoom({
-      name: cleanName,
-      gameId: this.createRoomGameId,
-      ownerId: this.currentUserId,
-      ownerName: this.currentUserName,
-      isOfflineLocal: true,
-      botCount: 0,
-      startingPlayerMode: "random",
-      autoStart: false,
-    });
-    this.activeRoomId = room.roomId;
-    this.viewMode = "room_setup";
-    this.resetSubModes();
-    this.render();
-  }
-
-  private enterOrJoinRoom(roomId: string): void {
-    this.stopAutoPlay();
-    const room = this.rooms.get(roomId);
-    if (!room) return;
-    this.activeRoomId = roomId;
-
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        try {
-          let latestRoom = room;
-          if (room.status === "lobby" || room.status === "finished") {
-            const joinRes = await fetch(
-              `/api/rooms/${encodeURIComponent(roomId)}/join`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  playerId: this.currentUserId,
-                  playerName: this.currentUserName,
-                }),
-              }
-            );
-            const joinData = await joinRes.json();
-            if (!joinRes.ok) {
-              alert(joinData.error ?? "Unable to join room");
-              return;
-            }
-            latestRoom = this.upsertRoomFromSummary(
-              joinData.room,
-              joinData.state,
-              joinData.actingPlayerId
-            );
-          } else {
-            const getRes = await fetch(
-              `/api/rooms/${encodeURIComponent(roomId)}?playerId=${encodeURIComponent(this.currentUserId)}`
-            );
-            if (getRes.ok) {
-              const getData = await getRes.json();
-              latestRoom = this.upsertRoomFromSummary(
-                getData.room,
-                getData.state,
-                getData.actingPlayerId
-              );
-            }
-          }
-
-          this.sendWsMessage({
-            type: "SUBSCRIBE_ROOM",
-            roomId,
-            playerId: this.currentUserId,
-          });
-          this.viewMode =
-            latestRoom.status === "in_progress" ? "in_game" : "room_setup";
-          this.resetSubModes();
-          this.render();
-        } catch (err: any) {
-          alert(`Unable to enter room: ${err?.message ?? String(err)}`);
-        }
-      })();
-      return;
-    }
-
-    if (room.status === "lobby" || room.status === "finished") {
-      const alreadySeated = room.humanPlayers.some(
-        (p) => p.id === this.currentUserId
-      );
-      const bounds = this.getRoomBounds(room);
-      if (
-        !alreadySeated &&
-        !room.allBots &&
-        room.humanPlayers.length < bounds.maxPlayers
-      ) {
-        room.humanPlayers.push({
-          id: this.currentUserId,
-          name: this.currentUserName,
-          color:
-            PLAYER_COLORS[room.humanPlayers.length % PLAYER_COLORS.length]!,
+export function createLocalRoomPure(
+  model: Readonly<AppModel>,
+  opts: CreateLocalRoomOptions,
+  nowMs: number = Date.now()
+): { readonly model: AppModel; readonly room: ClientRoom } {
+  const roomId = `room-${model.nextRoomNum}`;
+  const allBots = opts.allBots ?? false;
+  const botDifficulty: BotDifficulty = opts.botDifficulty ?? "master";
+  const humanPlayers: PlayerDescriptor[] = allBots
+    ? []
+    : [
+        {
+          id: opts.ownerId,
+          name: opts.ownerName,
+          color: PLAYER_COLORS[0]!,
           isBot: false,
-        });
-        this.rebuildRoomSeats(room);
-      }
-      this.viewMode = "room_setup";
-    } else {
-      this.viewMode = "in_game";
+        },
+      ];
+
+  const baseRoom: ClientRoom = {
+    roomId,
+    name: opts.name,
+    gameId: opts.gameId,
+    isOfflineLocal: opts.isOfflineLocal ?? true,
+    ownerId: opts.ownerId,
+    ownerName: opts.ownerName,
+    status: "lobby",
+    humanPlayers,
+    botCount: opts.botCount ?? (allBots ? 4 : 0),
+    allBots,
+    botDifficulty,
+    startingPlayerMode: opts.startingPlayerMode ?? "random",
+    autoStepBots: true,
+    players: [],
+    config: {
+      scenarioId: opts.scenarioId ?? "standard",
+      enableHarbormaster: opts.enableHarbormaster ?? false,
+      enableCityWalls: opts.enableCityWalls ?? false,
+      enableFriendlyRobber: opts.enableFriendlyRobber ?? false,
+    },
+    seed: `arena-${roomId}-${nowMs % 10000}`,
+    matchCounter: 0,
+    session: null,
+    remoteState: null,
+    remoteActingPlayerId: null,
+    canUndo: false,
+    undoableSteps: 0,
+    canRedo: false,
+    step: 0,
+  };
+
+  const rebuilt = rebuildRoomSeatsPure(baseRoom);
+  const nextModel = setRoomInModelPure(
+    {
+      ...model,
+      nextRoomNum: model.nextRoomNum + 1,
+    },
+    rebuilt
+  );
+  return { model: nextModel, room: rebuilt };
+}
+
+const INITIAL_LOBBY_ROOM_SEEDS: readonly CreateLocalRoomOptions[] = [
+  {
+    name: "Island of Catan — Table 1",
+    gameId: "catan",
+    ownerId: "p1",
+    ownerName: "Player 1 (You)",
+    botCount: 3,
+    startingPlayerMode: "first",
+    scenarioId: "standard",
+    autoStart: false,
+  },
+  {
+    name: "Four Islands — Seafarers",
+    gameId: "catan",
+    ownerId: "host-nemo",
+    ownerName: "Captain Nemo",
+    botCount: 3,
+    scenarioId: "seafarers_four_islands",
+    enableHarbormaster: true,
+    autoStart: false,
+  },
+  {
+    name: "Florence Gem Market",
+    gameId: "splendor",
+    ownerId: "host-lorenzo",
+    ownerName: "Lorenzo",
+    botCount: 3,
+    autoStart: false,
+  },
+  {
+    name: "Evora Courtyard Wall",
+    gameId: "azul",
+    ownerId: "host-manuel",
+    ownerName: "Manuel",
+    botCount: 3,
+    autoStart: false,
+  },
+];
+
+export function seedInitialLobbyRoomsPure(
+  model: Readonly<AppModel>,
+  nowMs: number = Date.now()
+): AppModel {
+  return INITIAL_LOBBY_ROOM_SEEDS.reduce(
+    (accModel, seedOpts) => createLocalRoomPure(accModel, seedOpts, nowMs).model,
+    model
+  );
+}
+
+export function upsertRoomFromSummaryPure(
+  model: Readonly<AppModel>,
+  summary: any,
+  remoteState?: any,
+  remoteActingPlayerId?: string | null
+): { readonly model: AppModel; readonly room: ClientRoom } {
+  const existing = model.rooms[summary.roomId];
+  const players: PlayerDescriptor[] = Array.isArray(summary.players)
+    ? summary.players
+    : [];
+  const humanPlayers = players.filter((p) => !p.isBot);
+  const botCount =
+    typeof summary.botCount === "number"
+      ? summary.botCount
+      : players.filter((p) => p.isBot).length;
+  const cfg = summary.config ?? {};
+
+  const room: ClientRoom = {
+    roomId: summary.roomId,
+    name: summary.name ?? "Table",
+    gameId: (summary.gameId as SupportedGameId) ?? "catan",
+    isOfflineLocal: false,
+    ownerId: summary.ownerId ?? "p1",
+    ownerName: summary.ownerName ?? "Host",
+    status: summary.status ?? "lobby",
+    humanPlayers,
+    botCount,
+    allBots: Boolean(summary.allBots),
+    botDifficulty:
+      (summary.botDifficulty as BotDifficulty) ??
+      (cfg.botDifficulty as BotDifficulty) ??
+      "master",
+    startingPlayerMode: summary.startingPlayerMode ?? "random",
+    autoStepBots:
+      summary.autoStepBots !== undefined ? Boolean(summary.autoStepBots) : true,
+    players,
+    config: {
+      scenarioId: (cfg.scenarioId as ScenarioId) ?? "standard",
+      enableHarbormaster: Boolean(cfg.enableHarbormaster),
+      enableCityWalls: Boolean(cfg.enableCityWalls),
+      enableFriendlyRobber: Boolean(cfg.enableFriendlyRobber),
+    },
+    seed: existing?.seed ?? summary.roomId,
+    matchCounter: existing?.matchCounter ?? 0,
+    session: existing?.session ?? null,
+    remoteState:
+      remoteState !== undefined ? remoteState : (existing?.remoteState ?? null),
+    remoteActingPlayerId:
+      remoteActingPlayerId !== undefined
+        ? remoteActingPlayerId
+        : (existing?.remoteActingPlayerId ?? null),
+    canUndo:
+      summary.canUndo !== undefined
+        ? Boolean(summary.canUndo)
+        : (existing?.canUndo ?? false),
+    undoableSteps:
+      typeof summary.undoableSteps === "number"
+        ? summary.undoableSteps
+        : (existing?.undoableSteps ?? 0),
+    canRedo:
+      summary.canRedo !== undefined
+        ? Boolean(summary.canRedo)
+        : (existing?.canRedo ?? false),
+    step:
+      typeof summary.step === "number" ? summary.step : (existing?.step ?? 0),
+  };
+
+  const nextModel = setRoomInModelPure(
+    {
+      ...model,
+      autoRespondBotsToHuman: room.autoStepBots,
+    },
+    room
+  );
+  return { model: nextModel, room };
+}
+
+export function syncOnlineLobbyRoomsPure(
+  model: Readonly<AppModel>,
+  summaries: readonly any[]
+): AppModel {
+  const incomingIds = new Set(summaries.map((s) => s.roomId));
+  const prunedModel = model.roomOrder.reduce<AppModel>((acc, id) => {
+    const existing = acc.rooms[id];
+    if (existing && !existing.isOfflineLocal && !incomingIds.has(id)) {
+      return removeRoomFromModelPure(acc, id);
     }
-    this.resetSubModes();
-    this.render();
-  }
+    return acc;
+  }, model);
 
-  private leaveActiveRoom(): void {
-    const room = this.getActiveRoom();
-    if (!room) return;
-    this.stopAutoPlay();
+  return summaries.reduce<AppModel>(
+    (acc, s) => upsertRoomFromSummaryPure(acc, s).model,
+    prunedModel
+  );
+}
 
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        try {
-          const res = await fetch(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/leave`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ playerId: this.currentUserId }),
-            }
-          );
-          if (res.ok) {
-            const data = await res.json();
-            if (data.closed) {
-              this.rooms.delete(room.roomId);
-            }
-          }
-        } catch {
-          // Ignore network errors
-        }
-        this.sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
-        this.viewMode = "lobby";
-        this.resetSubModes();
-        await this.fetchLobbyRooms();
-        this.render();
-      })();
-      return;
+export function resetSubModesPure(model: Readonly<AppModel>): AppModel {
+  return {
+    ...model,
+    buildMode: null,
+    selectedBoardSpot: null,
+    selectedMoveFromEdgeId: null,
+    discardSelection: emptyResources(),
+    maritimeGive: emptyResources(),
+    maritimeWant: emptyResources(),
+    domesticGive: emptyResources(),
+    domesticWant: emptyResources(),
+    domesticTargetPlayerId: "all",
+    splendorDraftGems: {},
+    azulSelectedDraft: null,
+  };
+}
+
+export function switchTradeModePure(
+  model: Readonly<AppModel>,
+  nextMode: "maritime_trade" | "domestic_trade" | null
+): AppModel {
+  const syncedWants = (() => {
+    if (model.buildMode === "domestic_trade" && nextMode === "maritime_trade") {
+      return {
+        maritimeWant: { ...model.domesticWant },
+        domesticWant: { ...model.domesticWant },
+      };
     }
-
-    if (room.status !== "in_progress") {
-      room.humanPlayers = room.humanPlayers.filter(
-        (p) =>
-          p.id !== this.currentUserId && p.controllerId !== this.currentUserId
-      );
-      if (room.humanPlayers.length === 0 && !room.allBots) {
-        this.rooms.delete(room.roomId);
-        const remaining = Array.from(this.rooms.keys())[0];
-        this.activeRoomId = remaining ?? "";
-      } else {
-        if (room.ownerId === this.currentUserId && room.humanPlayers.length > 0) {
-          room.ownerId = room.humanPlayers[0]!.id;
-          room.ownerName = room.humanPlayers[0]!.name;
-        }
-        this.rebuildRoomSeats(room);
-      }
+    if (model.buildMode === "maritime_trade" && nextMode === "domestic_trade") {
+      return {
+        maritimeWant: { ...model.maritimeWant },
+        domesticWant: { ...model.maritimeWant },
+      };
     }
-    this.viewMode = "lobby";
-    this.resetSubModes();
-    this.render();
-  }
-
-  private startRoomMatch(roomId: string): void {
-    this.stopAutoPlay();
-    const room = this.rooms.get(roomId);
-    if (!room) return;
-
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        try {
-          const res = await fetch(
-            `/api/rooms/${encodeURIComponent(roomId)}/start`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ requesterId: this.currentUserId }),
-            }
-          );
-          const data = await res.json();
-          if (!res.ok) {
-            alert(data.error ?? "Cannot start match");
-            return;
-          }
-          this.upsertRoomFromSummary(
-            data.room,
-            data.state,
-            data.actingPlayerId
-          );
-          this.activeRoomId = roomId;
-          this.sendWsMessage({
-            type: "SUBSCRIBE_ROOM",
-            roomId,
-            playerId: this.currentUserId,
-          });
-          this.viewMode = "in_game";
-          this.resetSubModes();
-          this.render();
-        } catch (err: any) {
-          alert(`Unable to start match: ${err?.message ?? String(err)}`);
-        }
-      })();
-      return;
-    }
-
-    this.rebuildRoomSeats(room);
-    const bounds = this.getRoomBounds(room);
-    if (room.players.length < bounds.minPlayers) {
-      return;
-    }
-
-    const engine = this.getEngineForGame(room.gameId);
-    let startingPlayerIndex: number | undefined;
-    let randomizeStartingPlayer = false;
-    if (room.startingPlayerMode === "first") {
-      startingPlayerIndex = 0;
-    } else if (room.startingPlayerMode === "random") {
-      randomizeStartingPlayer = true;
-    } else {
-      const idx = room.players.findIndex(
-        (p) => p.id === room.startingPlayerMode
-      );
-      if (idx >= 0) {
-        startingPlayerIndex = idx;
-      } else {
-        randomizeStartingPlayer = true;
-      }
-    }
-
-    const engineConfig =
-      room.gameId === "catan"
-        ? {
-            scenarioId: room.config.scenarioId,
-            enableHarbormaster: room.config.enableHarbormaster,
-            enableCityWalls: room.config.enableCityWalls,
-            enableFriendlyRobber: room.config.enableFriendlyRobber,
-            startingPlayerIndex,
-            randomizeStartingPlayer,
-          }
-        : { startingPlayerIndex, randomizeStartingPlayer };
-
-    const matchSeed =
-      room.matchCounter === 0
-        ? room.seed
-        : `${room.seed}-g${room.matchCounter}`;
-    room.matchCounter += 1;
-
-    const initialState = engine.initGame(room.players, engineConfig, matchSeed);
-
-    room.session = new MatchSession(engine, initialState, true);
-    room.status = "in_progress";
-    this.activeRoomId = roomId;
-    this.viewMode = "in_game";
-    this.resetSubModes();
-    this.render();
-    this.scheduleBotAutoResponseIfNeeded();
-  }
-
-  private resetSubModes(): void {
-    this.buildMode = null;
-    this.selectedBoardSpot = null;
-    this.selectedMoveFromEdgeId = null;
-    this.discardSelection = emptyResources();
-    this.maritimeGive = emptyResources();
-    this.maritimeWant = emptyResources();
-    this.domesticGive = emptyResources();
-    this.domesticWant = emptyResources();
-    this.domesticTargetPlayerId = "all";
-    this.splendorDraftGems = {};
-    this.azulSelectedDraft = null;
-  }
-
-  private dispatchUiAction(playerId: string, action: any): void {
-    const room = this.getActiveRoom();
-    if (!this.canControlPlayerOnThisDevice(room, playerId)) {
-      return;
-    }
-    const rawState = this.getRoomState(room);
-    if (rawState) {
-      const actingId = this.roomUsesServer(room)
-        ? room.remoteActingPlayerId ??
-          this.getActingPlayerId(room.gameId, rawState)
-        : this.getActingPlayerId(room.gameId, rawState);
-      const isTradeProposerAction =
-        room.gameId === "catan" &&
-        rawState.activeTradeOffer?.fromPlayerId === playerId &&
-        (action?.type === "CONFIRM_DOMESTIC_TRADE" ||
-          action?.type === "CANCEL_DOMESTIC_TRADE");
-      if (playerId !== actingId && !isTradeProposerAction) {
-        return;
-      }
-    }
-    this.dispatch(playerId, action);
-  }
-
-  private dispatch(playerId: string, action: any): void {
-    const room = this.getActiveRoom();
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        try {
-          const res = await fetch(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/action`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                playerId,
-                requesterId: this.currentUserId,
-                action,
-              }),
-            }
-          );
-          const data = await res.json();
-          if (!res.ok) {
-            alert(`Action error: ${data.error ?? "Illegal action"}`);
-            return;
-          }
-          this.upsertRoomFromSummary(
-            data.room,
-            data.state,
-            data.actingPlayerId
-          );
-          this.resetSubModes();
-          this.render();
-        } catch (err: any) {
-          alert(`Action error: ${err?.message ?? String(err)}`);
-        }
-      })();
-      return;
-    }
-
-    if (!room.session) return;
-    try {
-      const prevActorId = this.getActingPlayerId(
-        room.gameId,
-        room.session.getState()
-      );
-      const result = room.session.dispatch(playerId, action);
-      const nextActorId = this.getActingPlayerId(room.gameId, result.state);
-      if (result.state.phase === "GAME_OVER") {
-        room.status = "finished";
-      } else if (
-        room.gameId === "catan" &&
-        prevActorId !== nextActorId &&
-        result.state.players.filter((p: any) => !p.isBot).length >= 2
+    if (nextMode === "maritime_trade") {
+      if (
+        totalResourceCount(model.maritimeWant) === 0 &&
+        totalResourceCount(model.domesticWant) > 0
       ) {
-        const nextActor = result.state.players.find(
-          (p: any) => p.id === nextActorId
-        );
-        if (nextActor && !nextActor.isBot && this.hidePassAndPlayHand) {
-          this.hidePassAndPlayHand = true;
-        }
+        return {
+          maritimeWant: { ...model.domesticWant },
+          domesticWant: { ...model.domesticWant },
+        };
       }
-      this.resetSubModes();
-      this.render();
-      this.scheduleBotAutoResponseIfNeeded();
-    } catch (err: any) {
-      alert(`Action error: ${err?.message ?? String(err)}`);
+      return {
+        maritimeWant: { ...model.maritimeWant },
+        domesticWant: { ...model.maritimeWant },
+      };
     }
+    if (
+      totalResourceCount(model.domesticWant) === 0 &&
+      totalResourceCount(model.maritimeWant) > 0
+    ) {
+      return {
+        maritimeWant: { ...model.maritimeWant },
+        domesticWant: { ...model.maritimeWant },
+      };
+    }
+    return {
+      maritimeWant: { ...model.domesticWant },
+      domesticWant: { ...model.domesticWant },
+    };
+  })();
+
+  const nextMaritimeGive = RESOURCES.reduce<ResourceMap>(
+    (acc, r) => ({
+      ...acc,
+      [r]: syncedWants.maritimeWant[r] > 0 ? 0 : model.maritimeGive[r],
+    }),
+    emptyResources()
+  );
+
+  const nextDomesticGive = RESOURCES.reduce<ResourceMap>(
+    (acc, r) => ({
+      ...acc,
+      [r]: syncedWants.domesticWant[r] > 0 ? 0 : model.domesticGive[r],
+    }),
+    emptyResources()
+  );
+
+  return {
+    ...model,
+    selectedBoardSpot: null,
+    maritimeWant: syncedWants.maritimeWant,
+    domesticWant: syncedWants.domesticWant,
+    maritimeGive: nextMaritimeGive,
+    domesticGive: nextDomesticGive,
+    buildMode: nextMode,
+  };
+}
+
+export function setSharedTradeWantPure(
+  model: Readonly<AppModel>,
+  resource: ResourceType,
+  amount: number
+): AppModel {
+  const clamped = Math.max(0, amount);
+  return {
+    ...model,
+    maritimeWant: { ...model.maritimeWant, [resource]: clamped },
+    domesticWant: { ...model.domesticWant, [resource]: clamped },
+    maritimeGive:
+      clamped > 0
+        ? { ...model.maritimeGive, [resource]: 0 }
+        : { ...model.maritimeGive },
+    domesticGive:
+      clamped > 0
+        ? { ...model.domesticGive, [resource]: 0 }
+        : { ...model.domesticGive },
+  };
+}
+
+export function toggleSplendorDraftGemPure(
+  draftGems: Readonly<Partial<Record<GemColor, number>>>,
+  state: SplendorState,
+  color: GemColor
+): Partial<Record<GemColor, number>> {
+  const current = draftGems[color] ?? 0;
+  const distinctSelected = (Object.keys(draftGems) as GemColor[]).filter(
+    (k) => (draftGems[k] ?? 0) > 0
+  );
+
+  if (current === 0) {
+    if (distinctSelected.length >= 3) {
+      return { ...draftGems };
+    }
+    const normalized = distinctSelected.reduce<Partial<Record<GemColor, number>>>(
+      (acc, k) => ({
+        ...acc,
+        [k]: 1,
+      }),
+      {}
+    );
+    return { ...normalized, [color]: 1 };
   }
 
-  private scheduleBotAutoResponseIfNeeded(): void {
-    const room = this.getActiveRoom();
-    if (!room || this.roomUsesServer(room)) return; // Server steps bots centrally for online rooms
-    if (this.botResponseTimeout) {
-      clearTimeout(this.botResponseTimeout);
-      this.botResponseTimeout = null;
+  if (current === 1 && distinctSelected.length === 1 && state.bank[color] >= 4) {
+    return { ...draftGems, [color]: 2 };
+  }
+
+  return Object.fromEntries(
+    (Object.entries(draftGems) as Array<[GemColor, number | undefined]>).filter(
+      ([k, v]) => k !== color && v !== undefined && v > 0
+    )
+  ) as Partial<Record<GemColor, number>>;
+}
+
+export function createInitialAppModelPure(
+  options: MultiGamePlatformAppOptions | undefined,
+  env: {
+    readonly isStaticHost: boolean;
+    readonly isBrowserHttp: boolean;
+    readonly randomGuestSuffix: number;
+    readonly deviceGuests: readonly GuestSession[];
+    readonly savedGuest: GuestSession | null;
+    readonly nowMs: number;
+  }
+): AppModel {
+  const staticHostOnly = env.isStaticHost;
+  const useServerBackend = env.isBrowserHttp && !env.isStaticHost;
+  const serverReachable = !env.isStaticHost;
+  const createRoomMode: "online" | "offline" = useServerBackend
+    ? "online"
+    : "offline";
+  const initialDraftName = `Guest ${env.randomGuestSuffix}`;
+
+  const authInit = ((): {
+    currentUserId: string;
+    currentUserName: string;
+    loginDraftName: string;
+    deviceGuests: GuestSession[];
+    isAuthenticated: boolean;
+    viewMode: AppViewMode;
+  } => {
+    if (env.savedGuest) {
+      return {
+        currentUserId: env.savedGuest.id,
+        currentUserName: env.savedGuest.name,
+        loginDraftName: env.savedGuest.name,
+        deviceGuests: upsertDeviceGuestListPure(
+          env.deviceGuests,
+          env.savedGuest
+        ),
+        isAuthenticated: true,
+        viewMode: "lobby",
+      };
     }
-    if (!room.session || this.viewMode !== "in_game") return;
-    const state = room.session.getState();
-    if (state.phase === "GAME_OVER") return;
+    if (options?.startAtLogin !== undefined) {
+      const isAuth = !options.startAtLogin;
+      const guests = isAuth
+        ? upsertDeviceGuestListPure(env.deviceGuests, {
+            id: "p1",
+            name: "Player 1 (You)",
+            mode: "guest",
+          })
+        : [...env.deviceGuests];
+      return {
+        currentUserId: "p1",
+        currentUserName: "Player 1 (You)",
+        loginDraftName: initialDraftName,
+        deviceGuests: guests,
+        isAuthenticated: isAuth,
+        viewMode: options.startAtLogin ? "login" : "lobby",
+      };
+    }
+    if (env.isBrowserHttp || env.isStaticHost) {
+      return {
+        currentUserId: "p1",
+        currentUserName: "Player 1 (You)",
+        loginDraftName: initialDraftName,
+        deviceGuests: [...env.deviceGuests],
+        isAuthenticated: false,
+        viewMode: "login",
+      };
+    }
+    return {
+      currentUserId: "p1",
+      currentUserName: "Player 1 (You)",
+      loginDraftName: initialDraftName,
+      deviceGuests: upsertDeviceGuestListPure(env.deviceGuests, {
+        id: "p1",
+        name: "Player 1 (You)",
+        mode: "guest",
+      }),
+      isAuthenticated: true,
+      viewMode: "lobby",
+    };
+  })();
 
-    const actorId = this.getActingPlayerId(room.gameId, state);
-    const actor = state.players.find((p: any) => p.id === actorId);
+  const baseModel: AppModel = {
+    viewMode: authInit.viewMode,
+    lobbyGameFilter: "all",
+    lobbyHeroEnteredOnce: false,
+    loginHeroEnteredOnce: false,
+    useServerBackend,
+    staticHostOnly,
+    serverReachable,
+    isAuthenticated: authInit.isAuthenticated,
+    addingAdditionalGuest: false,
+    returnViewAfterAddGuest: "lobby",
+    loginDraftName: authInit.loginDraftName,
+    loginErrorMsg: "",
+    currentUserId: authInit.currentUserId,
+    currentUserName: authInit.currentUserName,
+    deviceGuests: authInit.deviceGuests,
+    localFriendDraftName: "",
+    hidePassAndPlayHand: false,
+    createRoomName: "Catan harbour table",
+    createRoomGameId: "catan",
+    createRoomMode,
+    rooms: {},
+    roomOrder: [],
+    nextRoomNum: 1,
+    activeRoomId: "room-1",
+    buildMode: null,
+    selectedBoardSpot: null,
+    setupEdgeKind: "road",
+    robberOrPirateMode: "robber",
+    selectedMoveFromEdgeId: null,
+    discardSelection: emptyResources(),
+    tradeGiveRes: "brick",
+    tradeReceiveRes: "ore",
+    maritimeGive: emptyResources(),
+    maritimeWant: emptyResources(),
+    domesticGive: emptyResources(),
+    domesticWant: emptyResources(),
+    domesticTargetPlayerId: "all",
+    yopRes1: "grain",
+    yopRes2: "ore",
+    monoRes: "ore",
+    splendorDraftGems: {},
+    azulSelectedDraft: null,
+    autoPlayBots: false,
+    autoRespondBotsToHuman: true,
+    autoPlaySpeedMs: 150,
+  };
 
-    // Auto-decline domestic trade immediately if a responder lacks the requested resources
-    if (
-      room.gameId === "catan" &&
-      state.phase === "MAIN_PHASE" &&
-      state.activeTradeOffer &&
-      actor &&
-      actor.id !== state.activeTradeOffer.fromPlayerId &&
-      !hasResources(actor.resources, state.activeTradeOffer.want)
-    ) {
-      this.dispatch(actor.id, {
-        type: "DECLINE_DOMESTIC_TRADE",
-        offerId: state.activeTradeOffer.id,
+  if (!useServerBackend && !staticHostOnly) {
+    return seedInitialLobbyRoomsPure(baseModel, env.nowMs);
+  }
+  return baseModel;
+}
+
+export function resolveGuestSignInPure(
+  model: Readonly<AppModel>,
+  rawName: string | undefined,
+  randomToken: string,
+  nowMs: number,
+  existingGuestId?: string
+):
+  | { readonly ok: false; readonly model: AppModel }
+  | {
+      readonly ok: true;
+      readonly model: AppModel;
+      readonly session: GuestSession;
+    } {
+  const clean = (rawName ?? model.loginDraftName).trim();
+  if (!clean) {
+    return {
+      ok: false,
+      model: {
+        ...model,
+        loginErrorMsg: "Enter a guest display name to continue.",
+      },
+    };
+  }
+
+  const trimmedName = clean.slice(0, 28);
+  const matchedById = existingGuestId
+    ? model.deviceGuests.find((g) => g.id === existingGuestId)
+    : undefined;
+  const matchedByName = !matchedById
+    ? model.deviceGuests.find(
+        (g) => g.name.toLowerCase() === trimmedName.toLowerCase()
+      )
+    : undefined;
+
+  const session: GuestSession = matchedById
+    ? { id: matchedById.id, name: trimmedName, mode: "guest" }
+    : matchedByName
+      ? { id: matchedByName.id, name: trimmedName, mode: "guest" }
+      : {
+          id: `guest-${randomToken}-${nowMs % 10000}`,
+          name: trimmedName,
+          mode: "guest",
+        };
+
+  const withGuest: AppModel = {
+    ...model,
+    currentUserId: session.id,
+    currentUserName: session.name,
+    loginDraftName: session.name,
+    loginErrorMsg: "",
+    isAuthenticated: true,
+    addingAdditionalGuest: false,
+    deviceGuests: upsertDeviceGuestListPure(model.deviceGuests, session),
+    viewMode: "lobby",
+  };
+
+  const firstRoom = withGuest.rooms["room-1"];
+  const withClaimedRoom1 =
+    !withGuest.useServerBackend &&
+    withGuest.roomOrder.length > 0 &&
+    firstRoom &&
+    firstRoom.status === "lobby" &&
+    firstRoom.ownerId === "p1"
+      ? setRoomInModelPure(
+          withGuest,
+          rebuildRoomSeatsPure({
+            ...firstRoom,
+            ownerId: session.id,
+            ownerName: session.name,
+            humanPlayers: [
+              {
+                id: session.id,
+                name: session.name,
+                color: PLAYER_COLORS[0]!,
+                isBot: false,
+              },
+            ],
+          })
+        )
+      : withGuest;
+
+  return { ok: true, model: withClaimedRoom1, session };
+}
+
+export function addOfflineLocalFriendPure(
+  model: Readonly<AppModel>,
+  roomId: string,
+  rawName: string,
+  randomToken: string
+): AppModel {
+  const room = model.rooms[roomId];
+  if (!room) return model;
+  const cleanName = rawName.trim() || `Player ${room.humanPlayers.length + 1}`;
+  const bounds = getRoomBoundsPure(room);
+  if (room.humanPlayers.length >= bounds.maxPlayers) return model;
+
+  const localId = `local-${randomToken}-${room.humanPlayers.length + 1}`;
+  const nextHuman: PlayerDescriptor = {
+    id: localId,
+    name: cleanName.slice(0, 28),
+    color: PLAYER_COLORS[room.humanPlayers.length % PLAYER_COLORS.length]!,
+    isBot: false,
+    controllerId: room.ownerId,
+  };
+
+  const rebuilt = rebuildRoomSeatsPure({
+    ...room,
+    humanPlayers: [...room.humanPlayers, nextHuman],
+  });
+
+  return setRoomInModelPure(
+    {
+      ...model,
+      localFriendDraftName: "",
+    },
+    rebuilt
+  );
+}
+
+export function removeOfflinePlayerPure(
+  model: Readonly<AppModel>,
+  roomId: string,
+  targetPlayerId: string
+): AppModel {
+  const room = model.rooms[roomId];
+  if (!room || targetPlayerId === room.ownerId) return model;
+
+  const rebuilt = rebuildRoomSeatsPure({
+    ...room,
+    humanPlayers: room.humanPlayers.filter((p) => p.id !== targetPlayerId),
+  });
+  return setRoomInModelPure(model, rebuilt);
+}
+
+export function enterOfflineRoomPure(
+  model: Readonly<AppModel>,
+  roomId: string
+): AppModel {
+  const room = model.rooms[roomId];
+  if (!room) return model;
+
+  if (room.status === "lobby" || room.status === "finished") {
+    const alreadySeated = room.humanPlayers.some(
+      (p) => p.id === model.currentUserId
+    );
+    const bounds = getRoomBoundsPure(room);
+    const updatedRoom =
+      !alreadySeated &&
+      !room.allBots &&
+      room.humanPlayers.length < bounds.maxPlayers
+        ? rebuildRoomSeatsPure({
+            ...room,
+            humanPlayers: [
+              ...room.humanPlayers,
+              {
+                id: model.currentUserId,
+                name: model.currentUserName,
+                color:
+                  PLAYER_COLORS[
+                    room.humanPlayers.length % PLAYER_COLORS.length
+                  ]!,
+                isBot: false,
+              },
+            ],
+          })
+        : room;
+
+    return resetSubModesPure(
+      setRoomInModelPure(
+        {
+          ...model,
+          activeRoomId: roomId,
+          viewMode: "room_setup",
+        },
+        updatedRoom
+      )
+    );
+  }
+
+  return resetSubModesPure({
+    ...model,
+    activeRoomId: roomId,
+    viewMode: "in_game",
+  });
+}
+
+export function leaveOfflineRoomPure(
+  model: Readonly<AppModel>,
+  roomId: string
+): AppModel {
+  const room = model.rooms[roomId];
+  if (!room) return model;
+
+  if (room.status !== "in_progress") {
+    const remainingHumans = room.humanPlayers.filter(
+      (p) =>
+        p.id !== model.currentUserId && p.controllerId !== model.currentUserId
+    );
+    if (remainingHumans.length === 0 && !room.allBots) {
+      const removed = removeRoomFromModelPure(model, room.roomId);
+      const nextActive = removed.roomOrder[0] ?? "";
+      return resetSubModesPure({
+        ...removed,
+        activeRoomId: nextActive,
+        viewMode: "lobby",
       });
-      return;
     }
-
-    if (!this.autoRespondBotsToHuman || this.autoPlayBots) return;
-    if (actor && actor.isBot) {
-      this.botResponseTimeout = setTimeout(() => {
-        this.stepOneBotMove();
-      }, 140);
-    }
+    const nextOwnerId =
+      room.ownerId === model.currentUserId && remainingHumans.length > 0
+        ? remainingHumans[0]!.id
+        : room.ownerId;
+    const nextOwnerName =
+      room.ownerId === model.currentUserId && remainingHumans.length > 0
+        ? remainingHumans[0]!.name
+        : room.ownerName;
+    const rebuilt = rebuildRoomSeatsPure({
+      ...room,
+      ownerId: nextOwnerId,
+      ownerName: nextOwnerName,
+      humanPlayers: remainingHumans,
+    });
+    return resetSubModesPure(
+      setRoomInModelPure(
+        {
+          ...model,
+          viewMode: "lobby",
+        },
+        rebuilt
+      )
+    );
   }
 
-  private stepOneBotMove(): boolean {
-    const room = this.getActiveRoom();
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(room.roomId)}/bot-step`,
-          { method: "POST" }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          this.upsertRoomFromSummary(
-            data.room,
-            data.state,
-            data.actingPlayerId
-          );
-          this.resetSubModes();
-          this.render();
+  return resetSubModesPure({
+    ...model,
+    viewMode: "lobby",
+  });
+}
+
+export function startOfflineRoomMatchPure(
+  model: Readonly<AppModel>,
+  roomId: string
+): { readonly started: boolean; readonly model: AppModel } {
+  const existing = model.rooms[roomId];
+  if (!existing) return { started: false, model };
+
+  const rebuilt = rebuildRoomSeatsPure(existing);
+  const bounds = getRoomBoundsPure(rebuilt);
+  if (rebuilt.players.length < bounds.minPlayers) {
+    return { started: false, model: setRoomInModelPure(model, rebuilt) };
+  }
+
+  const engine = getEngineForGamePure(rebuilt.gameId);
+  const startSpec = ((): {
+    startingPlayerIndex: number | undefined;
+    randomizeStartingPlayer: boolean;
+  } => {
+    if (rebuilt.startingPlayerMode === "first") {
+      return { startingPlayerIndex: 0, randomizeStartingPlayer: false };
+    }
+    if (rebuilt.startingPlayerMode === "random") {
+      return { startingPlayerIndex: undefined, randomizeStartingPlayer: true };
+    }
+    const idx = rebuilt.players.findIndex(
+      (p) => p.id === rebuilt.startingPlayerMode
+    );
+    return idx >= 0
+      ? { startingPlayerIndex: idx, randomizeStartingPlayer: false }
+      : { startingPlayerIndex: undefined, randomizeStartingPlayer: true };
+  })();
+
+  const engineConfig =
+    rebuilt.gameId === "catan"
+      ? {
+          scenarioId: rebuilt.config.scenarioId,
+          enableHarbormaster: rebuilt.config.enableHarbormaster,
+          enableCityWalls: rebuilt.config.enableCityWalls,
+          enableFriendlyRobber: rebuilt.config.enableFriendlyRobber,
+          startingPlayerIndex: startSpec.startingPlayerIndex,
+          randomizeStartingPlayer: startSpec.randomizeStartingPlayer,
         }
-      })();
-      return true;
-    }
+      : {
+          startingPlayerIndex: startSpec.startingPlayerIndex,
+          randomizeStartingPlayer: startSpec.randomizeStartingPlayer,
+        };
 
-    if (!room.session) return false;
-    const state = room.session.getState();
-    if (state.phase === "GAME_OVER") {
-      room.status = "finished";
-      this.stopAutoPlay();
-      return false;
-    }
-    const actorId = this.getActingPlayerId(room.gameId, state);
-    if (!actorId) return false;
-    const engine = this.getEngineForGame(room.gameId);
-    const action = engine.chooseBotAction(state, actorId);
-    if (!action) return false;
-    const res = room.session.dispatch(actorId, action);
-    if (res.state.phase === "GAME_OVER") {
-      room.status = "finished";
-    }
-    this.resetSubModes();
-    this.render();
-    this.scheduleBotAutoResponseIfNeeded();
-    return true;
-  }
+  const matchSeed =
+    rebuilt.matchCounter === 0
+      ? rebuilt.seed
+      : `${rebuilt.seed}-g${rebuilt.matchCounter}`;
+  const initialState = engine.initGame(
+    rebuilt.players,
+    engineConfig,
+    matchSeed
+  );
+  const session = createMatchSession(engine, initialState, true);
 
-  private finishSetupWithBots(): void {
-    const room = this.getActiveRoom();
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(room.roomId)}/finish-setup`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ requesterId: this.currentUserId }),
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          this.upsertRoomFromSummary(
-            data.room,
-            data.state,
-            data.actingPlayerId
-          );
-          this.resetSubModes();
-          this.render();
-        }
-      })();
-      return;
-    }
+  const startedRoom: ClientRoom = {
+    ...rebuilt,
+    matchCounter: rebuilt.matchCounter + 1,
+    session,
+    status: "in_progress",
+  };
 
-    if (!room.session || room.gameId !== "catan") return;
-    let guard = 0;
-    while (
-      room.session.getState().phase.startsWith("SETUP_") &&
-      guard < 40
-    ) {
-      const state = room.session.getState();
-      const actorId = getNextActingPlayerId(state);
-      if (!actorId) break;
-      const action = CatanEngine.chooseBotAction(state, actorId);
-      if (!action) break;
-      room.session.dispatch(actorId, action);
-      guard++;
-    }
-    this.resetSubModes();
-    this.render();
-    this.scheduleBotAutoResponseIfNeeded();
-  }
+  return {
+    started: true,
+    model: resetSubModesPure(
+      setRoomInModelPure(
+        {
+          ...model,
+          activeRoomId: roomId,
+          viewMode: "in_game",
+        },
+        startedRoom
+      )
+    ),
+  };
+}
 
-  private undoMatch(): void {
-    const room = this.getActiveRoom();
-    this.stopAutoPlay();
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(room.roomId)}/undo`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ requesterId: this.currentUserId }),
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          this.upsertRoomFromSummary(
-            data.room,
-            data.state,
-            data.actingPlayerId
-          );
-          this.resetSubModes();
-          this.render();
-        }
-      })();
-      return;
-    }
-    if (!room.session) return;
-    const rawState = room.session.getState();
-    const actingId = this.getActingPlayerId(room.gameId, rawState);
-    if (
-      !actingId ||
-      !this.canControlPlayerOnThisDevice(room, actingId) ||
-      !room.session.canPlayerUndo(actingId)
-    ) {
-      return;
-    }
-    room.session.undoForPlayer(actingId);
-    this.resetSubModes();
-    this.render();
-  }
+export function stepSetupBotsRecursive(
+  session: MatchSession<any, any, any>,
+  remainingGuard: number
+): void {
+  if (remainingGuard <= 0) return;
+  const state = session.getState();
+  if (!state.phase.startsWith("SETUP_")) return;
+  const actorId = getNextActingPlayerId(state);
+  if (!actorId) return;
+  const action = CatanEngine.chooseBotAction(state, actorId);
+  if (!action) return;
+  session.dispatch(actorId, action);
+  stepSetupBotsRecursive(session, remainingGuard - 1);
+}
 
-  private redoMatch(): void {
-    const room = this.getActiveRoom();
-    this.stopAutoPlay();
-    if (this.roomUsesServer(room)) {
-      void (async () => {
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(room.roomId)}/redo`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ requesterId: this.currentUserId }),
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          this.upsertRoomFromSummary(
-            data.room,
-            data.state,
-            data.actingPlayerId
-          );
-          this.resetSubModes();
-          this.render();
-        }
-      })();
-      return;
-    }
-    if (!room.session) return;
-    const rawState = room.session.getState();
-    const actingId = this.getActingPlayerId(room.gameId, rawState);
-    if (
-      !actingId ||
-      !this.canControlPlayerOnThisDevice(room, actingId) ||
-      !room.session.canPlayerRedo(actingId)
-    ) {
-      return;
-    }
-    room.session.redoForPlayer(actingId);
-    this.resetSubModes();
-    this.render();
-  }
+/**
+ * Pure Functional View Renderers (Zero DOM Mutation, Zero `this`)
+ */
+export function renderLoginViewPure(model: Readonly<AppModel>): string {
+  const enterAttr = model.loginHeroEnteredOnce ? "" : "data-enter";
+  const heroTitle = model.addingAdditionalGuest
+    ? "Add another guest on this computer."
+    : "Enter Game Arena as a guest.";
+  const heroLead = model.addingAdditionalGuest
+    ? "Create a second guest profile on this computer to host another table or join an open room."
+    : "Sign in as a guest to host an online table, represent multiple hosts on one computer, or play offline with local friends.";
 
-  private toggleAutoRespondBots(): void {
-    const room = this.getActiveRoom();
-    const next = !this.autoRespondBotsToHuman;
-    this.autoRespondBotsToHuman = next;
-    room.autoStepBots = next;
-    if (this.roomUsesServer(room)) {
-      void fetch(`/api/rooms/${encodeURIComponent(room.roomId)}/auto-bots`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: next }),
-      }).catch(() => {});
-    }
-    this.render();
-    this.scheduleBotAutoResponseIfNeeded();
-  }
-
-  private toggleAutoPlay(): void {
-    if (this.autoPlayBots) {
-      this.stopAutoPlay();
-    } else {
-      this.autoPlayBots = true;
-      this.autoPlayTimer = setInterval(() => {
-        const room = this.getActiveRoom();
-        const state = this.getRoomState(room);
-        if (!state) {
-          this.stopAutoPlay();
-          return;
-        }
-        if (state.phase === "GAME_OVER") {
-          room.status = "finished";
-          this.stopAutoPlay();
-          this.render();
-          return;
-        }
-        this.stepOneBotMove();
-      }, this.autoPlaySpeedMs);
-    }
-    this.render();
-  }
-
-  private stopAutoPlay(): void {
-    this.autoPlayBots = false;
-    if (this.autoPlayTimer) {
-      clearInterval(this.autoPlayTimer);
-      this.autoPlayTimer = null;
-    }
-    if (this.botResponseTimeout) {
-      clearTimeout(this.botResponseTimeout);
-      this.botResponseTimeout = null;
-    }
-  }
-
-  public render(): void {
-    const inActiveGame =
-      this.isAuthenticated &&
-      this.viewMode === "in_game" &&
-      Boolean(this.getRoomState(this.getActiveRoom()));
-    if (typeof document !== "undefined" && document.body?.classList) {
-      document.body.classList.toggle("ga-body--in-game", inActiveGame);
-    }
-
-    if (!this.isAuthenticated || this.viewMode === "login") {
-      this.renderLoginView();
-      this.loginHeroEnteredOnce = true;
-      return;
-    }
-    if (this.viewMode === "lobby") {
-      this.renderLobbyView();
-      this.lobbyHeroEnteredOnce = true;
-      return;
-    }
-    if (this.viewMode === "room_setup") {
-      this.renderRoomSetupView();
-      return;
-    }
-    this.renderInGameView();
-  }
-
-  /**
-   * VIEW 0: GUEST LOGIN PAGE
-   */
-  private renderLoginView(): void {
-    const enterAttr = this.loginHeroEnteredOnce ? "" : "data-enter";
-    const heroTitle = this.addingAdditionalGuest
-      ? "Add another guest on this computer."
-      : "Enter Game Arena as a guest.";
-    const heroLead = this.addingAdditionalGuest
-      ? "Create a second guest profile on this computer to host another table or join an open room."
-      : "Sign in as a guest to host an online table, represent multiple hosts on one computer, or play offline with local friends.";
-
-    this.root.innerHTML = `
+  return `
       <header class="ga-nav">
         <div class="ga-nav__inner">
           <div class="ga-brand" role="banner">
@@ -2083,7 +1484,7 @@ class MultiGamePlatformApp {
 
         <form id="form-guest-login" class="ga-surface-card ga-login-card" novalidate>
           <div class="ga-section-bar">
-            <h2>${this.addingAdditionalGuest ? "New guest profile" : "Guest sign-in"}</h2>
+            <h2>${model.addingAdditionalGuest ? "New guest profile" : "Guest sign-in"}</h2>
             <span class="ga-chip ga-chip--accent">Guest mode</span>
           </div>
 
@@ -2094,25 +1495,25 @@ class MultiGamePlatformApp {
               id="inp-guest-name"
               class="ga-input"
               maxlength="28"
-              value="${escapeAttr(this.loginDraftName)}"
+              value="${escapeAttr(model.loginDraftName)}"
               placeholder="Enter your display name"
               autocomplete="nickname"
             />
           </div>
 
           ${
-            this.loginErrorMsg
-              ? `<div id="login-error" class="ga-login-error" role="alert">${escapeAttr(this.loginErrorMsg)}</div>`
+            model.loginErrorMsg
+              ? `<div id="login-error" class="ga-login-error" role="alert">${escapeAttr(model.loginErrorMsg)}</div>`
               : ""
           }
 
           <div style="display: flex; flex-direction: column; gap: var(--s-2);">
             <button type="submit" id="btn-guest-login" class="btn btn--primary" style="width: 100%;">
-              ${this.addingAdditionalGuest ? "Save and switch guest" : "Continue as guest"}${DRAWN_ARROW_SVG}
+              ${model.addingAdditionalGuest ? "Save and switch guest" : "Continue as guest"}${DRAWN_ARROW_SVG}
             </button>
 
             ${
-              !this.addingAdditionalGuest
+              !model.addingAdditionalGuest
                 ? `
                   <button type="button" id="btn-start-solo-game" class="btn btn--secondary" style="width: 100%;">
                     Start solo game with bots
@@ -2126,12 +1527,12 @@ class MultiGamePlatformApp {
           </div>
 
           ${
-            this.deviceGuests.length > 0
+            model.deviceGuests.length > 0
               ? `
                 <div class="ga-saved-guests">
                   <span class="t-label muted">Guests on this computer</span>
                   <div class="ga-saved-guests__list">
-                    ${this.deviceGuests
+                    ${model.deviceGuests
                       .map(
                         (g) => `
                           <button type="button" data-select-saved-guest="${escapeAttr(g.id)}" class="btn btn--secondary btn--sm">
@@ -2152,100 +1553,80 @@ class MultiGamePlatformApp {
         </form>
       </main>
     `;
+}
 
-    this.root
-      .querySelector("#inp-guest-name")
-      ?.addEventListener("input", (e) => {
-        this.loginDraftName = (e.target as HTMLInputElement).value;
-        if (this.loginErrorMsg) {
-          this.loginErrorMsg = "";
-        }
-      });
+export function renderTopbarUserSelectorPure(model: Readonly<AppModel>): string {
+  const allRooms = getRoomListPure(model);
+  const candidateProfiles: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly fallbackMeta: string;
+  }> = [
+    {
+      id: model.currentUserId,
+      name: model.currentUserName,
+      fallbackMeta: "Active",
+    },
+    ...model.deviceGuests.map((g) => ({
+      id: g.id,
+      name: g.name,
+      fallbackMeta: "Guest",
+    })),
+    ...(!model.useServerBackend && !model.staticHostOnly
+      ? USER_PROFILES.map((u) => ({
+          id: u.id,
+          name: u.name,
+          fallbackMeta: u.roleHint,
+        }))
+      : []),
+  ];
 
-    this.root
-      .querySelector("#form-guest-login")
-      ?.addEventListener("submit", (e) => {
-        e.preventDefault();
-        this.signInAsGuest(this.loginDraftName);
-      });
-
-    this.root
-      .querySelector("#btn-start-solo-game")
-      ?.addEventListener("click", () => {
-        this.startSoloGameFromLogin(this.loginDraftName);
-      });
-
-    this.root
-      .querySelector("#btn-start-offline-local")
-      ?.addEventListener("click", () => {
-        this.startOfflineLocalFromLogin(this.loginDraftName);
-      });
-
-    this.root
-      .querySelector("#btn-cancel-add-guest")
-      ?.addEventListener("click", () => {
-        this.addingAdditionalGuest = false;
-        this.loginErrorMsg = "";
-        this.viewMode = this.returnViewAfterAddGuest;
-        this.render();
-      });
-
-    this.root.querySelectorAll("[data-select-saved-guest]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const guestId = btn.getAttribute("data-select-saved-guest")!;
-        const found = this.deviceGuests.find((g) => g.id === guestId);
-        if (found) {
-          this.signInAsGuest(found.name, found.id);
-        }
-      });
-    });
-  }
-
-  private renderTopbarUserSelector(): string {
-    const seenIds = new Set<string>();
-    const options: DropdownOption[] = [];
-
-    const pushProfile = (id: string, name: string, fallbackMeta: string) => {
-      if (!id || seenIds.has(id)) return;
-      seenIds.add(id);
-      const hostedCount = Array.from(this.rooms.values()).filter(
-        (r) => r.ownerId === id
-      ).length;
-      options.push({
-        value: id,
-        label: name,
-        meta:
-          hostedCount > 0
-            ? hostedCount === 1
-              ? "1 room"
-              : `${hostedCount} rooms`
-            : fallbackMeta,
-      });
-    };
-
-    pushProfile(this.currentUserId, this.currentUserName, "Active");
-    for (const g of this.deviceGuests) {
-      pushProfile(g.id, g.name, "Guest");
-    }
-    if (!this.useServerBackend && !this.staticHostOnly) {
-      for (const u of USER_PROFILES) {
-        pushProfile(u.id, u.name, u.roleHint);
+  const options = candidateProfiles.reduce<{
+    readonly seen: ReadonlySet<string>;
+    readonly list: DropdownOption[];
+  }>(
+    (acc, candidate) => {
+      if (!candidate.id || acc.seen.has(candidate.id)) {
+        return acc;
       }
-    }
+      const hostedCount = allRooms.filter(
+        (r) => r.ownerId === candidate.id
+      ).length;
+      const nextSeen = new Set(acc.seen);
+      nextSeen.add(candidate.id);
+      return {
+        seen: nextSeen,
+        list: [
+          ...acc.list,
+          {
+            value: candidate.id,
+            label: candidate.name,
+            meta:
+              hostedCount > 0
+                ? hostedCount === 1
+                  ? "1 room"
+                  : `${hostedCount} rooms`
+                : candidate.fallbackMeta,
+          },
+        ],
+      };
+    },
+    { seen: new Set<string>(), list: [] }
+  ).list;
 
-    return `
+  return `
       <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">
         ${
-          this.staticHostOnly
+          model.staticHostOnly
             ? `<span class="ga-chip ga-chip--ok">Solo and local play</span>`
-            : this.useServerBackend && !this.serverReachable
+            : model.useServerBackend && !model.serverReachable
               ? `<span class="ga-chip ga-chip--warn">Offline mode</span>`
               : ""
         }
         <label class="ga-inline-label" for="sel-user-identity-btn">Guest</label>
         ${renderDropdown({
           id: "sel-user-identity",
-          value: this.currentUserId,
+          value: model.currentUserId,
           size: "sm",
           inline: true,
           align: "end",
@@ -2256,40 +1637,37 @@ class MultiGamePlatformApp {
         <button type="button" id="btn-sign-out" class="btn btn--secondary btn--sm">Sign out</button>
       </div>
     `;
-  }
+}
 
-  /**
-   * VIEW 1: PLATFORM LOBBY
-   */
-  private renderLobbyView(): void {
-    const roomsList = Array.from(this.rooms.values()).filter(
-      (r) =>
-        this.lobbyGameFilter === "all" || r.gameId === this.lobbyGameFilter
-    );
-    const enterAttr = this.lobbyHeroEnteredOnce ? "" : "data-enter";
-    const effectiveMode: "online" | "offline" =
-      !this.useServerBackend || !this.serverReachable
-        ? "offline"
-        : this.createRoomMode;
-    const modeOptions: DropdownOption[] =
-      this.useServerBackend && this.serverReachable
-        ? [
-            { value: "online", label: "Online room", meta: "Live sync" },
-            {
-              value: "offline",
-              label: "Offline local",
-              meta: "Solo and friends",
-            },
-          ]
-        : [
-            {
-              value: "offline",
-              label: "Offline local",
-              meta: "Solo and friends",
-            },
-          ];
+export function renderLobbyViewPure(model: Readonly<AppModel>): string {
+  const allRooms = getRoomListPure(model);
+  const roomsList = allRooms.filter(
+    (r) => model.lobbyGameFilter === "all" || r.gameId === model.lobbyGameFilter
+  );
+  const enterAttr = model.lobbyHeroEnteredOnce ? "" : "data-enter";
+  const effectiveMode: "online" | "offline" =
+    !model.useServerBackend || !model.serverReachable
+      ? "offline"
+      : model.createRoomMode;
+  const modeOptions: DropdownOption[] =
+    model.useServerBackend && model.serverReachable
+      ? [
+          { value: "online", label: "Online room", meta: "Live sync" },
+          {
+            value: "offline",
+            label: "Offline local",
+            meta: "Solo and friends",
+          },
+        ]
+      : [
+          {
+            value: "offline",
+            label: "Offline local",
+            meta: "Solo and friends",
+          },
+        ];
 
-    this.root.innerHTML = `
+  return `
       <header class="ga-nav">
         <div class="ga-nav__inner">
           <div class="ga-brand" role="banner">
@@ -2300,7 +1678,7 @@ class MultiGamePlatformApp {
             </div>
           </div>
           <div class="ga-toolbar">
-            ${this.renderTopbarUserSelector()}
+            ${renderTopbarUserSelectorPure(model)}
           </div>
         </div>
       </header>
@@ -2318,7 +1696,7 @@ class MultiGamePlatformApp {
             </div>
             <div class="ga-lobby-stat">
               <dt>Open tables</dt>
-              <dd class="ga-num">${this.rooms.size}</dd>
+              <dd class="ga-num">${allRooms.length}</dd>
             </div>
             <div class="ga-lobby-stat">
               <dt>Table seats</dt>
@@ -2334,17 +1712,17 @@ class MultiGamePlatformApp {
           </div>
           <div class="ga-filter-grid">
             <button type="button" class="game-select-card ${
-              this.lobbyGameFilter === "all" ? "selected" : ""
+              model.lobbyGameFilter === "all" ? "selected" : ""
             }" data-lobby-filter="all">
               <div class="game-select-card__top">
                 <span class="game-select-card__title">All games</span>
-                <span class="ga-chip ga-num">${this.rooms.size}</span>
+                <span class="ga-chip ga-num">${allRooms.length}</span>
               </div>
               <span class="game-select-card__desc">Browse every active and open table across Catan, Splendor, and Azul.</span>
             </button>
 
             <button type="button" class="game-select-card ${
-              this.lobbyGameFilter === "catan" ? "selected" : ""
+              model.lobbyGameFilter === "catan" ? "selected" : ""
             }" data-lobby-filter="catan">
               <div class="game-select-card__top">
                 <span class="game-select-card__title">Settlers of Catan</span>
@@ -2354,7 +1732,7 @@ class MultiGamePlatformApp {
             </button>
 
             <button type="button" class="game-select-card ${
-              this.lobbyGameFilter === "splendor" ? "selected" : ""
+              model.lobbyGameFilter === "splendor" ? "selected" : ""
             }" data-lobby-filter="splendor">
               <div class="game-select-card__top">
                 <span class="game-select-card__title">Splendor</span>
@@ -2364,7 +1742,7 @@ class MultiGamePlatformApp {
             </button>
 
             <button type="button" class="game-select-card ${
-              this.lobbyGameFilter === "azul" ? "selected" : ""
+              model.lobbyGameFilter === "azul" ? "selected" : ""
             }" data-lobby-filter="azul">
               <div class="game-select-card__top">
                 <span class="game-select-card__title">Azul</span>
@@ -2385,7 +1763,7 @@ class MultiGamePlatformApp {
             <div class="ga-field">
               <label for="inp-create-room-name">Room name</label>
               <input type="text" id="inp-create-room-name" class="ga-input" value="${escapeAttr(
-                this.createRoomName
+                model.createRoomName
               )}" placeholder="Name your table" />
             </div>
 
@@ -2393,7 +1771,7 @@ class MultiGamePlatformApp {
               <label for="sel-create-room-game-btn">Board game</label>
               ${renderDropdown({
                 id: "sel-create-room-game",
-                value: this.createRoomGameId,
+                value: model.createRoomGameId,
                 options: [
                   {
                     value: "catan",
@@ -2418,8 +1796,8 @@ class MultiGamePlatformApp {
             <p class="t-small muted">
               ${
                 effectiveMode === "offline"
-                  ? `Opens a local room on this computer with <strong>${escapeAttr(this.currentUserName)}</strong> as host. Add bots for a solo game or add local friends to pass and play.`
-                  : `Opens an online room with <strong>${escapeAttr(this.currentUserName)}</strong> as host. Choose bots, local friends, and starting player on the setup screen.`
+                  ? `Opens a local room on this computer with <strong>${escapeAttr(model.currentUserName)}</strong> as host. Add bots for a solo game or add local friends to pass and play.`
+                  : `Opens an online room with <strong>${escapeAttr(model.currentUserName)}</strong> as host. Choose bots, local friends, and starting player on the setup screen.`
               }
             </p>
 
@@ -2431,7 +1809,7 @@ class MultiGamePlatformApp {
           <div class="ga-surface-card">
             <div class="ga-section-bar">
               <h2>Open rooms</h2>
-              <span class="t-label muted">Signed in as <strong style="color: var(--ink); font-weight: 500;">${escapeAttr(this.currentUserName)}</strong></span>
+              <span class="t-label muted">Signed in as <strong style="color: var(--ink); font-weight: 500;">${escapeAttr(model.currentUserName)}</strong></span>
             </div>
 
             ${
@@ -2447,12 +1825,12 @@ class MultiGamePlatformApp {
                     ${roomsList
                       .map((r) => {
                         const isOwner = Boolean(
-                          r.ownerId && r.ownerId === this.currentUserId
+                          r.ownerId && r.ownerId === model.currentUserId
                         );
                         const isJoinedGuest =
                           !isOwner &&
                           r.humanPlayers.some(
-                            (p) => p.id === this.currentUserId
+                            (p) => p.id === model.currentUserId
                           );
                         const gameBadge =
                           r.gameId === "catan"
@@ -2480,7 +1858,7 @@ class MultiGamePlatformApp {
                           humanCount === 0
                             ? `${botCount} ${botCount === 1 ? "bot" : "bots"}`
                             : `${r.players.length} ${r.players.length === 1 ? "player" : "players"} (${humanCount} ${humanCount === 1 ? "human" : "humans"}, ${botCount} ${botCount === 1 ? "bot" : "bots"})`;
-                        const bounds = this.getRoomBounds(r);
+                        const bounds = getRoomBoundsPure(r);
                         const canDirectStart =
                           isOwner && r.players.length >= bounds.minPlayers;
 
@@ -2551,86 +1929,22 @@ class MultiGamePlatformApp {
         </div>
       </div>
     `;
+}
 
-    this.bindCommonIdentityEvents();
+export function renderRoomHeaderPure(
+  model: Readonly<AppModel>,
+  room: ClientRoom,
+  activeTab: "setup" | "game"
+): string {
+  const hasMatchState = Boolean(getRoomStatePure(model, room));
+  const statusChip =
+    room.status === "in_progress"
+      ? `<span class="ga-chip ga-chip--warn">In progress</span>`
+      : room.status === "finished"
+        ? `<span class="ga-chip ga-chip--ok">Finished</span>`
+        : `<span class="ga-chip">Pre-game</span>`;
 
-    this.root.querySelectorAll("[data-lobby-filter]").forEach((el) => {
-      el.addEventListener("click", () => {
-        this.lobbyGameFilter = el.getAttribute("data-lobby-filter") as
-          | "all"
-          | SupportedGameId;
-        this.defaultGameOnFilter();
-        this.render();
-      });
-    });
-
-    this.root
-      .querySelector("#inp-create-room-name")
-      ?.addEventListener("input", (e) => {
-        this.createRoomName = (e.target as HTMLInputElement).value;
-      });
-
-    this.root
-      .querySelector("#sel-create-room-game")
-      ?.addEventListener("change", (e) => {
-        this.createRoomGameId = (e.target as HTMLSelectElement)
-          .value as SupportedGameId;
-        this.render();
-      });
-
-    this.root
-      .querySelector("#sel-create-room-mode")
-      ?.addEventListener("change", (e) => {
-        this.createRoomMode = (e.target as HTMLSelectElement).value as
-          | "online"
-          | "offline";
-        this.render();
-      });
-
-    this.root
-      .querySelector("#btn-create-room")
-      ?.addEventListener("click", () => {
-        this.createAndOpenRoom();
-      });
-
-    this.root.querySelectorAll("[data-join-room]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const rId = btn.getAttribute("data-join-room")!;
-        this.enterOrJoinRoom(rId);
-      });
-    });
-
-    this.root.querySelectorAll("[data-start-room-direct]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const rId = btn.getAttribute("data-start-room-direct")!;
-        this.startRoomMatch(rId);
-      });
-    });
-  }
-
-  private defaultGameOnFilter(): void {
-    if (this.lobbyGameFilter !== "all") {
-      this.createRoomGameId = this.lobbyGameFilter;
-    }
-  }
-
-  /**
-   * Shared room navigation header used identically by both Setup and Game views
-   * so switching tabs produces zero horizontal or vertical layout jump.
-   */
-  private renderRoomHeader(
-    room: ClientRoom,
-    activeTab: "setup" | "game"
-  ): string {
-    const hasMatchState = Boolean(this.getRoomState(room));
-    const statusChip =
-      room.status === "in_progress"
-        ? `<span class="ga-chip ga-chip--warn">In progress</span>`
-        : room.status === "finished"
-          ? `<span class="ga-chip ga-chip--ok">Finished</span>`
-          : `<span class="ga-chip">Pre-game</span>`;
-
-    return `
+  return `
       <header class="ga-nav ga-nav--room">
         <div class="ga-nav__inner">
           <div class="ga-nav__left">
@@ -2660,122 +1974,137 @@ class MultiGamePlatformApp {
           </div>
 
           <div class="ga-toolbar">
-            ${this.renderTopbarUserSelector()}
+            ${renderTopbarUserSelectorPure(model)}
           </div>
         </div>
       </header>
     `;
+}
+
+export function getStartingPlayerSummaryLabelPure(
+  room: ClientRoom,
+  state: any
+): string {
+  if (state && typeof state.startingPlayerIndex === "number") {
+    const starter = state.players?.[state.startingPlayerIndex];
+    if (starter) {
+      return `First turn: ${starter.name}`;
+    }
   }
-
-  private getStartingPlayerSummaryLabel(room: ClientRoom, state: any): string {
-    if (state && typeof state.startingPlayerIndex === "number") {
-      const starter = state.players?.[state.startingPlayerIndex];
-      if (starter) {
-        return `First turn: ${starter.name}`;
-      }
-    }
-    if (room.startingPlayerMode === "random") {
-      return "First turn: Random player";
-    }
-    if (room.startingPlayerMode === "first") {
-      return `First turn: ${room.players[0]?.name ?? "Seat 1"}`;
-    }
-    const chosen = room.players.find((p) => p.id === room.startingPlayerMode);
-    return `First turn: ${chosen?.name ?? "Random player"}`;
+  if (room.startingPlayerMode === "random") {
+    return "First turn: Random player";
   }
+  if (room.startingPlayerMode === "first") {
+    return `First turn: ${room.players[0]?.name ?? "Seat 1"}`;
+  }
+  const chosen = room.players.find((p) => p.id === room.startingPlayerMode);
+  return `First turn: ${chosen?.name ?? "Random player"}`;
+}
 
-  private getRoomSetupSummaryData(room: ClientRoom): {
-    gameTitle: string;
-    formatTitle: string;
-    formatDescription: string;
-    targetLabel: string;
-    seatsLabel: string;
-    seatsSubLabel: string;
-    ruleChips: string[];
-  } {
-    const state = this.getRoomState(room);
-    const humanCount = room.players.filter((p) => !p.isBot).length;
-    const botCount = room.players.length - humanCount;
-    const diffLabel = BOT_DIFFICULTY_META[room.botDifficulty].label.toLowerCase();
-    const seatsLabel = `${room.players.length} ${room.players.length === 1 ? "player" : "players"}`;
-    const seatsSubLabel = room.allBots
-      ? `All-bot simulation (${diffLabel})`
-      : `${humanCount} ${humanCount === 1 ? "human" : "humans"}, ${botCount} ${diffLabel} ${botCount === 1 ? "bot" : "bots"}`;
-    const firstTurnChip = this.getStartingPlayerSummaryLabel(room, state);
-    const modeLabel = room.isOfflineLocal
-      ? "Offline pass and play"
-      : "Online multiplayer";
+export function getRoomSetupSummaryDataPure(
+  model: Readonly<AppModel>,
+  room: ClientRoom
+): {
+  gameTitle: string;
+  formatTitle: string;
+  formatDescription: string;
+  targetLabel: string;
+  seatsLabel: string;
+  seatsSubLabel: string;
+  ruleChips: string[];
+} {
+  const state = getRoomStatePure(model, room);
+  const humanCount = room.players.filter((p) => !p.isBot).length;
+  const botCount = room.players.length - humanCount;
+  const diffLabel = BOT_DIFFICULTY_META[room.botDifficulty].label.toLowerCase();
+  const seatsLabel = `${room.players.length} ${room.players.length === 1 ? "player" : "players"}`;
+  const seatsSubLabel = room.allBots
+    ? `All-bot simulation (${diffLabel})`
+    : `${humanCount} ${humanCount === 1 ? "human" : "humans"}, ${botCount} ${diffLabel} ${botCount === 1 ? "bot" : "bots"}`;
+  const firstTurnChip = getStartingPlayerSummaryLabelPure(room, state);
+  const modeLabel = room.isOfflineLocal
+    ? "Offline pass and play"
+    : "Online multiplayer";
 
-    if (room.gameId === "splendor") {
-      const pts = state?.config?.targetPoints ?? 15;
-      return {
-        gameTitle: "Splendor",
-        formatTitle: "Renaissance gem market",
-        formatDescription:
-          "Draft gem tokens, purchase tier 1–3 development cards, and attract noble patrons.",
-        targetLabel: `${pts} prestige points`,
-        seatsLabel,
-        seatsSubLabel,
-        ruleChips: [
-          modeLabel,
-          firstTurnChip,
-          "90 development cards",
-          "10-token limit",
-        ],
-      };
-    }
-
-    if (room.gameId === "azul") {
-      return {
-        gameTitle: "Azul",
-        formatTitle: "Evora palace mosaic",
-        formatDescription:
-          "Draft ceramic tiles from factory displays onto pattern lines to tile a 5×5 wall.",
-        targetLabel: "Complete 1 horizontal row",
-        seatsLabel,
-        seatsSubLabel,
-        ruleChips: [
-          modeLabel,
-          firstTurnChip,
-          "100 ceramic tiles",
-          "5×5 mosaic wall",
-        ],
-      };
-    }
-
-    const sc = SCENARIO_CATALOG[room.config.scenarioId];
-    const targetVp = state?.config?.targetVictoryPoints ?? sc.defaultTargetVp;
-    const ruleChips: string[] = [modeLabel, firstTurnChip];
-    if (sc.enableSeafarers) ruleChips.push("Seafarers ships and islands");
-    if (sc.enableSpecialBuildingPhase) ruleChips.push("Special building phase");
-    if (room.config.enableHarbormaster) ruleChips.push("Harbormaster (+2 VP)");
-    if (room.config.enableCityWalls) ruleChips.push("City walls (+2 safe hand)");
-    if (room.config.enableFriendlyRobber) ruleChips.push("Friendly robber");
-    if (ruleChips.length === 2) ruleChips.push("Standard island rules");
-
+  if (room.gameId === "splendor") {
+    const pts = state?.config?.targetPoints ?? 15;
     return {
-      gameTitle: "Settlers of Catan",
-      formatTitle: sc.name,
-      formatDescription: sc.description,
-      targetLabel: `${targetVp} victory points`,
+      gameTitle: "Splendor",
+      formatTitle: "Renaissance gem market",
+      formatDescription:
+        "Draft gem tokens, purchase tier 1–3 development cards, and attract noble patrons.",
+      targetLabel: `${pts} prestige points`,
       seatsLabel,
       seatsSubLabel,
-      ruleChips,
+      ruleChips: [
+        modeLabel,
+        firstTurnChip,
+        "90 development cards",
+        "10-token limit",
+      ],
     };
   }
 
-  private renderSetupSummaryCard(room: ClientRoom, isOwner: boolean): string {
-    const info = this.getRoomSetupSummaryData(room);
-    const badgeLabel =
-      room.status === "in_progress"
-        ? "Match active"
-        : `Joined as ${escapeAttr(this.currentUserName)}`;
-    const noticeCopy =
-      room.status === "in_progress"
-        ? "A match is currently underway. Table setup unlocks once the game concludes."
-        : `Hosted by <strong>${escapeAttr(room.ownerName || "Room host")}</strong>. Review the match setup summary below while waiting for the host to start.`;
+  if (room.gameId === "azul") {
+    return {
+      gameTitle: "Azul",
+      formatTitle: "Evora palace mosaic",
+      formatDescription:
+        "Draft ceramic tiles from factory displays onto pattern lines to tile a 5×5 wall.",
+      targetLabel: "Complete 1 horizontal row",
+      seatsLabel,
+      seatsSubLabel,
+      ruleChips: [
+        modeLabel,
+        firstTurnChip,
+        "100 ceramic tiles",
+        "5×5 mosaic wall",
+      ],
+    };
+  }
 
-    return `
+  const sc = SCENARIO_CATALOG[room.config.scenarioId];
+  const targetVp = state?.config?.targetVictoryPoints ?? sc.defaultTargetVp;
+  const expansionChips = [
+    sc.enableSeafarers ? "Seafarers ships and islands" : "",
+    sc.enableSpecialBuildingPhase ? "Special building phase" : "",
+    room.config.enableHarbormaster ? "Harbormaster (+2 VP)" : "",
+    room.config.enableCityWalls ? "City walls (+2 safe hand)" : "",
+    room.config.enableFriendlyRobber ? "Friendly robber" : "",
+  ].filter(Boolean);
+  const ruleChips: string[] = [
+    modeLabel,
+    firstTurnChip,
+    ...(expansionChips.length > 0 ? expansionChips : ["Standard island rules"]),
+  ];
+
+  return {
+    gameTitle: "Settlers of Catan",
+    formatTitle: sc.name,
+    formatDescription: sc.description,
+    targetLabel: `${targetVp} victory points`,
+    seatsLabel,
+    seatsSubLabel,
+    ruleChips,
+  };
+}
+
+export function renderSetupSummaryCardPure(
+  model: Readonly<AppModel>,
+  room: ClientRoom,
+  isOwner: boolean
+): string {
+  const info = getRoomSetupSummaryDataPure(model, room);
+  const badgeLabel =
+    room.status === "in_progress"
+      ? "Match active"
+      : `Joined as ${escapeAttr(model.currentUserName)}`;
+  const noticeCopy =
+    room.status === "in_progress"
+      ? "A match is currently underway. Table setup unlocks once the game concludes."
+      : `Hosted by <strong>${escapeAttr(room.ownerName || "Room host")}</strong>. Review the match setup summary below while waiting for the host to start.`;
+
+  return `
       <div class="ga-surface-card ga-setup-summary">
         <div class="ga-section-bar">
           <h2>Setup summary</h2>
@@ -2822,32 +2151,34 @@ class MultiGamePlatformApp {
         </div>
       </div>
     `;
-  }
+}
 
-  /**
-   * VIEW 2: SETUP PAGE
-   * Editable configuration for Room Owner when `status === "lobby"` or `status === "finished"`.
-   * Clean Setup Summary (instead of disabled form controls) after joining a room or during an active match.
-   */
-  private renderRoomSetupView(): void {
-    const room = this.getActiveRoom();
-    const isOwner = Boolean(
-      room.ownerId && room.ownerId === this.currentUserId
-    );
-    const isEditablePhase =
-      room.status === "lobby" || room.status === "finished";
-    const canEditSetup = isOwner && isEditablePhase;
-    const bounds = this.getRoomBounds(room);
-    const humanCount = room.humanPlayers.length;
-    const maxBots = room.allBots
-      ? bounds.maxPlayers
-      : Math.max(0, bounds.maxPlayers - humanCount);
-    const minBots = room.allBots ? bounds.minPlayers : 0;
+export function renderRoomSetupViewPure(
+  model: Readonly<AppModel>,
+  room: ClientRoom
+): {
+  readonly html: string;
+  readonly canEditSetup: boolean;
+  readonly maxBots: number;
+  readonly bounds: { minPlayers: number; maxPlayers: number };
+} {
+  const isOwner = Boolean(room.ownerId && room.ownerId === model.currentUserId);
+  const isEditablePhase =
+    room.status === "lobby" || room.status === "finished";
+  const canEditSetup = isOwner && isEditablePhase;
+  const bounds = getRoomBoundsPure(room);
+  const humanCount = room.humanPlayers.length;
+  const maxBots = room.allBots
+    ? bounds.maxPlayers
+    : Math.max(0, bounds.maxPlayers - humanCount);
+  const minBots = room.allBots ? bounds.minPlayers : 0;
 
-    const botCountOptions: DropdownOption[] = [];
-    for (let b = minBots; b <= maxBots; b++) {
+  const botCountOptions: DropdownOption[] = Array.from(
+    { length: Math.max(0, maxBots - minBots + 1) },
+    (_, idx) => {
+      const b = minBots + idx;
       const totalP = room.allBots ? b : humanCount + b;
-      botCountOptions.push({
+      return {
         value: String(b),
         label: room.allBots
           ? `${b} bots`
@@ -2855,36 +2186,37 @@ class MultiGamePlatformApp {
             ? "0 bots (humans only)"
             : `${b} ${b === 1 ? "bot" : "bots"}`,
         meta: `${totalP} ${totalP === 1 ? "player" : "players"}`,
-      });
+      };
     }
+  );
 
-    const effectiveStartingValue =
-      room.startingPlayerMode === "first" && room.players[0]
-        ? room.players[0].id
-        : room.startingPlayerMode;
+  const effectiveStartingValue =
+    room.startingPlayerMode === "first" && room.players[0]
+      ? room.players[0].id
+      : room.startingPlayerMode;
 
-    const startingPlayerOptions: DropdownOption[] = [
-      { value: "random", label: "Random player", meta: "Fair draw" },
-      ...room.players.map((p, idx) => ({
-        value: p.id,
-        label: `Seat ${idx + 1} · ${p.name}`,
-        meta: p.isBot
-          ? "Bot"
-          : p.id === room.ownerId
-            ? "Host"
-            : p.controllerId || room.isOfflineLocal
-              ? "Local player"
-              : "Guest",
-      })),
-    ];
+  const startingPlayerOptions: DropdownOption[] = [
+    { value: "random", label: "Random player", meta: "Fair draw" },
+    ...room.players.map((p, idx) => ({
+      value: p.id,
+      label: `Seat ${idx + 1} · ${p.name}`,
+      meta: p.isBot
+        ? "Bot"
+        : p.id === room.ownerId
+          ? "Host"
+          : p.controllerId || room.isOfflineLocal
+            ? "Local player"
+            : "Guest",
+    })),
+  ];
 
-    const enoughPlayersToStart = room.players.length >= bounds.minPlayers;
-    const hasMatchState = Boolean(this.getRoomState(room));
-    const isSeatedHuman = room.humanPlayers.some(
-      (p) => p.id === this.currentUserId
-    );
+  const enoughPlayersToStart = room.players.length >= bounds.minPlayers;
+  const hasMatchState = Boolean(getRoomStatePure(model, room));
+  const isSeatedHuman = room.humanPlayers.some(
+    (p) => p.id === model.currentUserId
+  );
 
-    const editableFormCard = `
+  const editableFormCard = `
       <div class="ga-surface-card">
         <div class="ga-section-bar">
           <h2>Match configuration</h2>
@@ -3025,11 +2357,11 @@ class MultiGamePlatformApp {
       </div>
     `;
 
-    this.root.innerHTML = `
-      ${this.renderRoomHeader(room, "setup")}
+  const html = `
+      ${renderRoomHeaderPure(model, room, "setup")}
 
       <div class="ga-room-shell">
-        ${canEditSetup ? editableFormCard : this.renderSetupSummaryCard(room, isOwner)}
+        ${canEditSetup ? editableFormCard : renderSetupSummaryCardPure(model, room, isOwner)}
 
         <aside class="ga-surface-card">
           <div class="ga-section-bar">
@@ -3059,7 +2391,7 @@ class MultiGamePlatformApp {
                       : ""
                   }
                   ${
-                    p.id === this.currentUserId
+                    p.id === model.currentUserId
                       ? `<span class="ga-chip ga-chip--ok">You</span>`
                       : ""
                   }
@@ -3101,7 +2433,7 @@ class MultiGamePlatformApp {
                             id="inp-local-friend-name"
                             class="ga-input"
                             maxlength="28"
-                            value="${escapeAttr(this.localFriendDraftName)}"
+                            value="${escapeAttr(model.localFriendDraftName)}"
                             placeholder="Friend's name"
                           />
                           <button type="button" id="btn-add-local-friend" class="btn btn--secondary btn--sm">Add player</button>
@@ -3165,7 +2497,7 @@ class MultiGamePlatformApp {
                         : ""
                     }
                   `
-                  : this.roomUsesServer(room)
+                  : roomUsesServerPure(model, room)
                     ? `
                       <div class="ga-notice">
                         Waiting for <strong>${escapeAttr(room.ownerName || "the host")}</strong> to start the match. Your board opens automatically as soon as the game begins.
@@ -3198,319 +2530,1551 @@ class MultiGamePlatformApp {
       </div>
     `;
 
-    this.bindCommonIdentityEvents();
+  return { html, canEditSetup, maxBots, bounds };
+}
 
-    this.root
-      .querySelector("#btn-back-lobby")
-      ?.addEventListener("click", () => {
-        this.viewMode = "lobby";
-        if (this.useServerBackend) {
-          void this.fetchLobbyRooms().then(() => this.render());
-        } else {
-          this.render();
-        }
-      });
+export function renderCostPipStripPure(cost: Partial<ResourceMap>): string {
+  const pips = RESOURCES.flatMap((r) =>
+    Array.from(
+      { length: cost[r] ?? 0 },
+      () =>
+        `<span class="cost-pip res-${r}" title="${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r, 11)}</span>`
+    )
+  );
+  return `<span class="cost-pip-strip">${pips.join("")}</span>`;
+}
 
-    this.root
-      .querySelector("#btn-leave-room")
-      ?.addEventListener("click", () => {
-        this.leaveActiveRoom();
-      });
+export function renderResourceColumnHeadersPure(
+  playerResources?: ResourceMap,
+  showBank?: ResourceMap,
+  tradeRatios?: Record<ResourceType, number>
+): string {
+  return `
+      <div class="ga-res-matrix__row-label">Resource</div>
+      ${RESOURCES.map((r) => {
+        const ratio = tradeRatios?.[r];
+        return `
+        <div class="ga-res-col-head">
+          <div class="ga-res-col-head__top">
+            <span>${RESOURCE_META[r].label}</span>
+            ${
+              playerResources
+                ? `<span class="ga-res-col-head__have">×${playerResources[r]}</span>`
+                : showBank
+                  ? `<span class="ga-res-col-head__have">${showBank[r]}</span>`
+                  : ""
+            }
+          </div>
+          <div class="ga-res-col-head__card-wrap">
+            ${renderMiniResourceCardSvg(r, 48, 30)}
+            ${
+              ratio !== undefined
+                ? `<span class="ga-res-col-head__rate ${
+                    ratio < 4 ? "is-port" : ""
+                  }" title="${ratio}:1 harbor rate">${ratio}:1</span>`
+                : ""
+            }
+          </div>
+        </div>
+      `;
+      }).join("")}
+    `;
+}
 
-    this.root.querySelector("#tab-game-page")?.addEventListener("click", () => {
-      if (this.getRoomState(room)) {
-        this.viewMode = "in_game";
-        this.render();
-      }
-    });
-
-    this.root
-      .querySelector("#btn-return-active-game")
-      ?.addEventListener("click", () => {
-        if (this.getRoomState(room)) {
-          this.viewMode = "in_game";
-          this.render();
-        }
-      });
-
-    if (canEditSetup) {
-      this.root
-        .querySelector("#setup-room-name")
-        ?.addEventListener("input", (e) => {
-          room.name = (e.target as HTMLInputElement).value;
-          this.pushServerRoomSetup(room, 250);
-        });
-
-      this.root
-        .querySelector("#inp-local-friend-name")
-        ?.addEventListener("input", (e) => {
-          this.localFriendDraftName = (e.target as HTMLInputElement).value;
-        });
-
-      this.root
-        .querySelector("#inp-local-friend-name")
-        ?.addEventListener("keydown", (e) => {
-          if ((e as KeyboardEvent).key === "Enter") {
-            e.preventDefault();
-            this.addLocalFriendToRoom(room, this.localFriendDraftName);
-          }
-        });
-
-      this.root
-        .querySelector("#btn-add-local-friend")
-        ?.addEventListener("click", () => {
-          this.addLocalFriendToRoom(room, this.localFriendDraftName);
-        });
-
-      this.root.querySelectorAll("[data-remove-player]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const targetId = btn.getAttribute("data-remove-player")!;
-          this.removePlayerFromRoom(room, targetId);
-        });
-      });
-
-      this.root
-        .querySelector("#setup-sel-game")
-        ?.addEventListener("change", (e) => {
-          room.gameId = (e.target as HTMLSelectElement)
-            .value as SupportedGameId;
-          this.rebuildRoomSeats(room);
-          this.pushServerRoomSetup(room);
-          this.render();
-        });
-
-      this.root
-        .querySelector("#setup-sel-scenario")
-        ?.addEventListener("change", (e) => {
-          room.config.scenarioId = (e.target as HTMLSelectElement)
-            .value as ScenarioId;
-          this.rebuildRoomSeats(room);
-          this.pushServerRoomSetup(room);
-          this.render();
-        });
-
-      this.root
-        .querySelector("#setup-sel-bots")
-        ?.addEventListener("change", (e) => {
-          room.botCount = Number((e.target as HTMLSelectElement).value);
-          this.rebuildRoomSeats(room);
-          this.pushServerRoomSetup(room);
-          this.render();
-        });
-
-      this.root
-        .querySelector("#btn-seat-remove-bot")
-        ?.addEventListener("click", () => {
-          if (room.botCount > 0) {
-            room.botCount -= 1;
-            this.rebuildRoomSeats(room);
-            this.pushServerRoomSetup(room);
-            this.render();
-          }
-        });
-
-      this.root
-        .querySelector("#btn-seat-add-bot")
-        ?.addEventListener("click", () => {
-          if (room.botCount < maxBots) {
-            room.botCount += 1;
-            this.rebuildRoomSeats(room);
-            this.pushServerRoomSetup(room);
-            this.render();
-          }
-        });
-
-      this.root
-        .querySelector("#setup-sel-starting-player")
-        ?.addEventListener("change", (e) => {
-          room.startingPlayerMode = (e.target as HTMLSelectElement).value;
-          this.pushServerRoomSetup(room);
-          this.render();
-        });
-
-      this.root
-        .querySelector("#setup-sel-bot-difficulty")
-        ?.addEventListener("change", (e) => {
-          room.botDifficulty = (e.target as HTMLSelectElement)
-            .value as BotDifficulty;
-          this.rebuildRoomSeats(room);
-          this.pushServerRoomSetup(room);
-          this.render();
-        });
-
-      this.root
-        .querySelector("#setup-chk-allbots")
-        ?.addEventListener("change", (e) => {
-          room.allBots = (e.target as HTMLInputElement).checked;
-          if (room.allBots && room.botCount < bounds.minPlayers) {
-            room.botCount = Math.min(bounds.maxPlayers, 4);
-          }
-          this.rebuildRoomSeats(room);
-          this.pushServerRoomSetup(room);
-          this.render();
-        });
-
-      this.root
-        .querySelector("#setup-chk-harbormaster")
-        ?.addEventListener("change", (e) => {
-          room.config.enableHarbormaster = (
-            e.target as HTMLInputElement
-          ).checked;
-          this.pushServerRoomSetup(room);
-          this.render();
-        });
-
-      this.root
-        .querySelector("#setup-chk-citywalls")
-        ?.addEventListener("change", (e) => {
-          room.config.enableCityWalls = (e.target as HTMLInputElement).checked;
-          this.pushServerRoomSetup(room);
-          this.render();
-        });
-
-      this.root
-        .querySelector("#setup-chk-friendlyrobber")
-        ?.addEventListener("change", (e) => {
-          room.config.enableFriendlyRobber = (
-            e.target as HTMLInputElement
-          ).checked;
-          this.pushServerRoomSetup(room);
-          this.render();
-        });
-    }
-
-    this.root
-      .querySelector("#btn-launch-match")
-      ?.addEventListener("click", () => {
-        this.startRoomMatch(room.roomId);
-      });
+export function renderCatanMapDiceHudPure(state: CatanState): string {
+  if (!state.lastRoll) {
+    return `
+        <div class="map-dice-hud">
+          <div class="map-dice-hud__row">
+            ${renderRollDiceButtonGraphicSvg(28)}
+            <span class="t-label muted">Roll dice to produce</span>
+          </div>
+        </div>
+      `;
   }
 
-  /**
-   * VIEW 3: ACTIVE GAME TABLE
-   */
-  private renderInGameView(): void {
-    const room = this.getActiveRoom();
-    const rawState = this.getRoomState(room);
-    const usesServer = this.roomUsesServer(room);
-    if (!rawState) {
-      if (usesServer) {
-        this.viewMode = "room_setup";
-        this.renderRoomSetupView();
-      } else {
-        this.startRoomMatch(room.roomId);
+  const { die1, die2, total } = state.lastRoll;
+  const isSeven = total === 7;
+  const rollStats = isSeven
+    ? {
+        producedByRes: {} as Partial<Record<ResourceType, number>>,
+        goldHexes: 0,
+        blockedHexes: 0,
       }
-      return;
-    }
-
-    const engine = this.getEngineForGame(room.gameId);
-    const actingPlayerId = usesServer
-      ? room.remoteActingPlayerId ?? this.getActingPlayerId(room.gameId, rawState)
-      : this.getActingPlayerId(room.gameId, rawState);
-    const isMyTurn = this.canControlPlayerOnThisDevice(room, actingPlayerId);
-    if (!isMyTurn) {
-      this.buildMode = null;
-      this.selectedMoveFromEdgeId = null;
-    }
-    const controllableHumans = rawState.players.filter(
-      (p: any) => !p.isBot && this.canControlPlayerOnThisDevice(room, p.id)
-    );
-    const controllableHumansCount = controllableHumans.length;
-    const rawActingPlayer =
-      rawState.players.find((p: any) => p.id === actingPlayerId) ?? null;
-
-    let effectiveViewerId: string | null = null;
-    if (rawState.phase !== "GAME_OVER") {
-      if (controllableHumansCount >= 2 && this.hidePassAndPlayHand) {
-        effectiveViewerId = null;
-      } else if (isMyTurn && rawActingPlayer && !rawActingPlayer.isBot) {
-        effectiveViewerId = rawActingPlayer.id;
-      } else if (controllableHumansCount === 1) {
-        effectiveViewerId = controllableHumans[0]!.id;
-      }
-    }
-
-    const state =
-      room.gameId === "catan"
-        ? CatanEngine.getPlayerView(rawState as CatanState, effectiveViewerId)
-        : rawState;
-
-    const actingPlayer =
-      state.players.find((p: any) => p.id === actingPlayerId) ?? null;
-    const invariantCheck = engine.checkInvariants(state);
-
-    const mySeatedPlayer =
-      state.players.find((p: any) => p.id === this.currentUserId) ?? null;
-    const handPlayer =
-      state.phase === "GAME_OVER"
-        ? mySeatedPlayer ??
-          state.players.find((p: any) => p.id === state.winnerId) ??
-          state.players[0]
-        : controllableHumansCount >= 2 && this.hidePassAndPlayHand
-          ? (isMyTurn && actingPlayer && !actingPlayer.isBot
-              ? actingPlayer
-              : mySeatedPlayer ?? controllableHumans[0])
-          : effectiveViewerId
-            ? state.players.find((p: any) => p.id === effectiveViewerId) ?? null
-            : null;
-
-    const localDeviceGuestForTurn =
-      !isMyTurn && actingPlayerId
-        ? this.deviceGuests.find((g) => g.id === actingPlayerId)
-        : undefined;
-
-    const offerProposer =
-      room.gameId === "catan" && state.activeTradeOffer
-        ? state.players.find(
-            (p: any) => p.id === state.activeTradeOffer!.fromPlayerId
-          )
-        : null;
-    const canCancelMyTrade =
-      room.gameId === "catan" &&
-      Boolean(
-        state.activeTradeOffer &&
-          offerProposer &&
-          (!offerProposer.isBot || room.allBots) &&
-          effectiveViewerId &&
-          state.activeTradeOffer.fromPlayerId === effectiveViewerId &&
-          this.canControlPlayerOnThisDevice(
-            room,
-            state.activeTradeOffer.fromPlayerId
-          )
+    : state.topology.hexOrder.reduce<{
+        readonly producedByRes: Partial<Record<ResourceType, number>>;
+        readonly goldHexes: number;
+        readonly blockedHexes: number;
+      }>(
+        (acc, hId) => {
+          const tile = state.hexes[hId]!;
+          if (tile.numberToken !== total) return acc;
+          if (state.robberHexId === hId) {
+            return { ...acc, blockedHexes: acc.blockedHexes + 1 };
+          }
+          if (tile.terrain === "gold") {
+            return { ...acc, goldHexes: acc.goldHexes + 1 };
+          }
+          const res = TERRAIN_TO_RESOURCE[tile.terrain];
+          if (!res) return acc;
+          return {
+            ...acc,
+            producedByRes: {
+              ...acc.producedByRes,
+              [res]: (acc.producedByRes[res] ?? 0) + 1,
+            },
+          };
+        },
+        { producedByRes: {}, goldHexes: 0, blockedHexes: 0 }
       );
 
-    const summaryInfo = this.getRoomSetupSummaryData(room);
-    const isOwner = Boolean(
-      room.ownerId && room.ownerId === this.currentUserId
+  const prodEntries = RESOURCES.filter(
+    (r) => (rollStats.producedByRes[r] ?? 0) > 0
+  );
+  const yieldsHtml = isSeven
+    ? `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#ef4444", 18)} 7 rolled · robber active</span>`
+    : prodEntries.length > 0 || rollStats.goldHexes > 0
+      ? [
+          ...prodEntries.map(
+            (r) =>
+              `<span class="map-yield-chip" title="${RESOURCE_META[r].label} hex produced">${renderMiniResourceCardSvg(r, 36, 23)}${
+                (rollStats.producedByRes[r] ?? 0) > 1
+                  ? ` ×${rollStats.producedByRes[r]}`
+                  : ""
+              }</span>`
+          ),
+          rollStats.goldHexes > 0
+            ? `<span class="map-yield-chip">${renderActionPieceIconSvg("year_of_plenty", "#facc15", 18)} Gold ×${rollStats.goldHexes}</span>`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("")
+      : rollStats.blockedHexes > 0
+        ? `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#f87171", 16)} Blocked by robber</span>`
+        : `<span class="t-label muted">No matching island hex</span>`;
+
+  return `
+      <div class="map-dice-hud ${isSeven ? "map-dice-hud--seven" : "map-dice-hud--rolled"}">
+        <div class="map-dice-hud__row">
+          ${renderDieSvg(die1, 34)}
+          ${renderDieSvg(die2, 34)}
+          <span class="map-dice-hud__total ${isSeven ? "map-dice-hud__total--seven" : ""}">= ${total}</span>
+        </div>
+        <div class="map-dice-hud__yields">
+          ${yieldsHtml}
+        </div>
+      </div>
+    `;
+}
+
+export function renderMissingCostBadgePure(
+  have: ResourceMap,
+  cost: ResourceMap
+): string {
+  const missing = RESOURCES.flatMap((r) =>
+    Array.from(
+      { length: Math.max(0, (cost[r] ?? 0) - (have[r] ?? 0)) },
+      () =>
+        `<span class="cost-pip res-${r}" title="Need ${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r, 11)}</span>`
+    )
+  );
+  return `<span class="cost-pip-strip">${missing.join("")}</span>`;
+}
+
+export function renderCatanSpotPopoverPure(
+  model: Readonly<AppModel>,
+  state: CatanState,
+  actingPlayer: CatanState["players"][number] | null,
+  legalActions: readonly CatanAction[]
+): string {
+  if (
+    !model.selectedBoardSpot ||
+    !actingPlayer ||
+    state.phase === "GAME_OVER"
+  ) {
+    return "";
+  }
+
+  const spot = model.selectedBoardSpot;
+  const { xPct, yPct } = getBoardSpotPercentPosition(state, spot);
+  const belowClass = yPct < 36 ? "map-spot-popover--below" : "";
+  const pColor = actingPlayer.color;
+
+  const details = ((): {
+    readonly valid: boolean;
+    readonly titleHtml: string;
+    readonly actionItems: readonly string[];
+    readonly hintHtml: string;
+  } => {
+    if (spot.kind === "edge") {
+      const eNode = state.topology.edges[spot.id];
+      if (!eNode) {
+        return { valid: false, titleHtml: "", actionItems: [], hintHtml: "" };
+      }
+      const route = state.edges[spot.id];
+      const hasSea = eNode.adjacentHexIds.some(
+        (hId) => state.hexes[hId]?.terrain === "sea"
+      );
+      const hasLand = eNode.adjacentHexIds.some((hId) => {
+        const t = state.hexes[hId]?.terrain;
+        return t && t !== "sea" && t !== "fog";
+      });
+      const spotKindLabel =
+        hasSea && hasLand
+          ? "Coastal edge"
+          : hasSea
+            ? "Sea lane"
+            : "Island path";
+      const titleHtml = `${renderActionPieceIconSvg(hasSea && !hasLand ? "ship" : "road", pColor, 18)} <span>${spotKindLabel}</span>`;
+
+      const canBuildRoadHere = legalActions.some(
+        (a) => a.type === "BUILD_ROAD" && a.edgeId === spot.id
+      );
+      const canBuildShipHere = legalActions.some(
+        (a) => a.type === "BUILD_SHIP" && a.edgeId === spot.id
+      );
+      const canSetupRoadHere = legalActions.some(
+        (a) =>
+          a.type === "PLACE_SETUP_EDGE" &&
+          a.edgeId === spot.id &&
+          a.edgeKind === "road"
+      );
+      const canSetupShipHere = legalActions.some(
+        (a) =>
+          a.type === "PLACE_SETUP_EDGE" &&
+          a.edgeId === spot.id &&
+          a.edgeKind === "ship"
+      );
+      const moveFromHere = legalActions.some(
+        (a) => a.type === "MOVE_SHIP" && a.fromEdgeId === spot.id
+      );
+      const moveToHere = model.selectedMoveFromEdgeId
+        ? legalActions.some(
+            (a) =>
+              a.type === "MOVE_SHIP" &&
+              a.fromEdgeId === model.selectedMoveFromEdgeId &&
+              a.toEdgeId === spot.id
+          )
+        : false;
+
+      const actionItems = [
+        canSetupRoadHere
+          ? `<button type="button" data-spot-action="setup_road" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("road", pColor, 18)} <span>Place starting road</span></button>`
+          : "",
+        canSetupShipHere
+          ? `<button type="button" data-spot-action="setup_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("ship", pColor, 18)} <span>Place starting ship</span></button>`
+          : "",
+        canBuildRoadHere
+          ? `<button type="button" data-spot-action="build_road" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("road", pColor, 18)} Build road</span>
+            ${state.phase === "ROAD_BUILDING_DEV" ? `<span class="ga-chip">Free</span>` : renderCostPipStripPure(BUILDING_COSTS.road)}
+          </button>`
+          : "",
+        canBuildShipHere
+          ? `<button type="button" data-spot-action="build_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("ship", pColor, 18)} Build ship</span>
+            ${state.phase === "ROAD_BUILDING_DEV" ? `<span class="ga-chip">Free</span>` : renderCostPipStripPure(BUILDING_COSTS.ship)}
+          </button>`
+          : "",
+        moveToHere
+          ? `<button type="button" data-spot-action="complete_move_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_ship", pColor, 18)} <span>Sail ship here</span></button>`
+          : "",
+        moveFromHere
+          ? `<button type="button" data-spot-action="start_move_ship" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_ship", pColor, 18)} <span>Move this ship</span></button>`
+          : "",
+      ].filter(Boolean);
+
+      const hintHtml = (() => {
+        if (actionItems.length > 0) return "";
+        if (route) {
+          const owner = state.players.find((p) => p.id === route.ownerId);
+          return `<div class="t-label muted" style="display: flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg(route.type, owner?.color ?? pColor, 18)} <span>${owner?.name ?? "Player"} ${route.type}</span></div>`;
+        }
+        const roadGeomOk = getLegalRoadEdges(
+          state,
+          actingPlayer.id,
+          null
+        ).includes(spot.id);
+        const shipGeomOk =
+          state.config.enableSeafarers &&
+          getLegalShipEdges(state, actingPlayer.id, null).includes(spot.id);
+        if (
+          roadGeomOk &&
+          !hasResources(actingPlayer.resources, BUILDING_COSTS.road)
+        ) {
+          return `
+              <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                <span>Road needs</span>
+                ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.road)}
+              </div>
+              ${
+                state.phase === "MAIN_PHASE" && legalActions.length > 0
+                  ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
+                  : ""
+              }
+            `;
+        }
+        if (
+          shipGeomOk &&
+          !hasResources(actingPlayer.resources, BUILDING_COSTS.ship)
+        ) {
+          return `
+              <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                <span>Ship needs</span>
+                ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.ship)}
+              </div>
+              ${
+                state.phase === "MAIN_PHASE" && legalActions.length > 0
+                  ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
+                  : ""
+              }
+            `;
+        }
+        return `<div class="t-label muted">Connect a road or ship to build on this edge.</div>`;
+      })();
+
+      return { valid: true, titleHtml, actionItems, hintHtml };
+    }
+
+    if (spot.kind === "vertex") {
+      const vNode = state.topology.vertices[spot.id];
+      if (!vNode) {
+        return { valid: false, titleHtml: "", actionItems: [], hintHtml: "" };
+      }
+      const existing = state.buildings[spot.id];
+      const harbor = state.harbors.find((h) => {
+        const he = state.topology.edges[h.edgeId];
+        return he && (he.v1 === spot.id || he.v2 === spot.id);
+      });
+      const spotTitle = harbor
+        ? harbor.type === "generic"
+          ? "3:1 Harbor spot"
+          : `2:1 ${RESOURCE_META[harbor.type].label} port`
+        : existing
+          ? existing.type === "city"
+            ? "Fortified city"
+            : "Settlement"
+          : "Island intersection";
+      const titleHtml = `${renderActionPieceIconSvg(existing?.type === "city" ? "city" : "settlement", existing ? state.players.find((p) => p.id === existing.ownerId)?.color ?? pColor : pColor, 18)} <span>${spotTitle}</span>`;
+
+      const canSetupSettleHere = legalActions.some(
+        (a) => a.type === "PLACE_SETUP_SETTLEMENT" && a.vertexId === spot.id
+      );
+      const canSettleHere = legalActions.some(
+        (a) => a.type === "BUILD_SETTLEMENT" && a.vertexId === spot.id
+      );
+      const canCityHere = legalActions.some(
+        (a) => a.type === "BUILD_CITY" && a.vertexId === spot.id
+      );
+      const canWallHere = legalActions.some(
+        (a) => a.type === "BUILD_CITY_WALL" && a.vertexId === spot.id
+      );
+
+      const actionItems = [
+        canSetupSettleHere
+          ? `<button type="button" data-spot-action="setup_settlement" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("settlement", pColor, 18)} <span>Place starting settlement</span></button>`
+          : "",
+        canSettleHere
+          ? `<button type="button" data-spot-action="build_settlement" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("settlement", pColor, 18)} Build settlement</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.settlement)}
+          </button>`
+          : "",
+        canCityHere
+          ? `<button type="button" data-spot-action="build_city" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("city", pColor, 18)} Upgrade city</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.city)}
+          </button>`
+          : "",
+        canWallHere
+          ? `<button type="button" data-spot-action="build_wall" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("wall", pColor, 18)} Build city wall</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.cityWall)}
+          </button>`
+          : "",
+      ].filter(Boolean);
+
+      const hintHtml = (() => {
+        if (actionItems.length > 0) return "";
+        if (
+          existing &&
+          existing.ownerId === actingPlayer.id &&
+          existing.type === "settlement" &&
+          !hasResources(actingPlayer.resources, BUILDING_COSTS.city)
+        ) {
+          return `
+            <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+              <span>City upgrade needs</span>
+              ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.city)}
+            </div>
+            ${
+              state.phase === "MAIN_PHASE" && legalActions.length > 0
+                ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
+                : ""
+            }
+          `;
+        }
+        if (
+          !existing &&
+          getLegalSettlementVertices(state, actingPlayer.id, false).includes(
+            spot.id
+          ) &&
+          !hasResources(actingPlayer.resources, BUILDING_COSTS.settlement)
+        ) {
+          return `
+            <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+              <span>Settlement needs</span>
+              ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.settlement)}
+            </div>
+            ${
+              state.phase === "MAIN_PHASE" && legalActions.length > 0
+                ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
+                : ""
+            }
+          `;
+        }
+        if (existing) {
+          const owner = state.players.find((p) => p.id === existing.ownerId);
+          return `<div class="t-label muted">${owner?.name ?? "Player"} ${existing.type}${existing.hasWall ? " · walled" : ""}</div>`;
+        }
+        const adjOccupied = vNode.adjacentVertexIds.some((nbV) =>
+          Boolean(state.buildings[nbV])
+        );
+        return `<div class="t-label muted">${
+          adjOccupied
+            ? "Distance rule: adjacent intersection occupied."
+            : "Connect your road or ship to settle here."
+        }</div>`;
+      })();
+
+      return { valid: true, titleHtml, actionItems, hintHtml };
+    }
+
+    const tile = state.hexes[spot.id];
+    if (!tile) {
+      return { valid: false, titleHtml: "", actionItems: [], hintHtml: "" };
+    }
+    const res = TERRAIN_TO_RESOURCE[tile.terrain];
+    const terrainName =
+      tile.terrain.charAt(0).toUpperCase() + tile.terrain.slice(1);
+    const titleHtml = `${
+      res
+        ? renderMiniResourceCardSvg(res, 32, 20)
+        : renderActionPieceIconSvg(
+            tile.terrain === "sea" ? "ship" : "robber",
+            pColor,
+            18
+          )
+    } <span>${terrainName}${tile.numberToken ? ` · #${tile.numberToken}` : ""}</span>`;
+
+    const canRobHere = legalActions.some(
+      (a) => a.type === "MOVE_ROBBER" && a.hexId === spot.id
     );
-    const undoableSteps = usesServer
-      ? isMyTurn
-        ? room.undoableSteps
-        : 0
-      : isMyTurn && actingPlayerId && room.session
-        ? room.session.getUndoableStepCount(actingPlayerId)
-        : 0;
-    const canUndo = isMyTurn && undoableSteps > 0;
-    const canRedo = usesServer
-      ? isMyTurn && room.canRedo
-      : Boolean(
-          isMyTurn &&
-            actingPlayerId &&
-            room.session?.canPlayerRedo(actingPlayerId)
+    const canPirateHere = legalActions.some(
+      (a) => a.type === "MOVE_PIRATE" && a.hexId === spot.id
+    );
+    const canPlayKnight = legalActions.some((a) => a.type === "PLAY_KNIGHT");
+
+    const actionItems = [
+      canRobHere
+        ? `<button type="button" data-spot-action="move_robber" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("robber", pColor, 18)} <span>Move robber here</span></button>`
+        : "",
+      canPirateHere
+        ? `<button type="button" data-spot-action="move_pirate" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("pirate", pColor, 18)} <span>Move pirate here</span></button>`
+        : "",
+      canPlayKnight &&
+      ((tile.terrain !== "sea" && state.robberHexId !== spot.id) ||
+        (tile.terrain === "sea" &&
+          state.config.enableSeafarers &&
+          state.pirateHexId !== spot.id))
+        ? `<button type="button" data-spot-action="play_knight" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("knight", pColor, 18)} <span>Play knight card</span></button>`
+        : "",
+    ].filter(Boolean);
+
+    const hintHtml =
+      actionItems.length === 0
+        ? `<div class="t-label muted">${
+            state.robberHexId === spot.id
+              ? "Robber currently blocks this tile."
+              : state.pirateHexId === spot.id
+                ? "Pirate ship currently blocks this sea."
+                : res
+                  ? `Produces ${RESOURCE_META[res].label.toLowerCase()} on roll ${tile.numberToken}.`
+                  : "No resource yield on this tile."
+          }</div>`
+        : "";
+
+    return { valid: true, titleHtml, actionItems, hintHtml };
+  })();
+
+  if (!details.valid) return "";
+
+  return `
+      <div class="map-spot-popover ${belowClass}" style="left: ${xPct.toFixed(1)}%; top: ${yPct.toFixed(1)}%;">
+        <div class="map-spot-popover__head">
+          <div class="map-spot-popover__title">${details.titleHtml}</div>
+          <button type="button" id="btn-close-spot-popover" class="map-spot-popover__close" aria-label="Close spot menu">×</button>
+        </div>
+        <div class="map-spot-popover__actions">
+          ${details.actionItems.join("")}
+          ${details.hintHtml}
+        </div>
+      </div>
+    `;
+}
+
+export function renderActiveTradeOfferCardPure(
+  model: Readonly<AppModel>,
+  room: ClientRoom,
+  state: CatanState,
+  actingPlayer: CatanState["players"][number],
+  canManageMyTrade = false
+): string {
+  const offer = state.activeTradeOffer!;
+  const fromP = state.players.find((p) => p.id === offer.fromPlayerId)!;
+  const isResponder = actingPlayer.id !== offer.fromPlayerId;
+  const canRespond =
+    isResponder &&
+    (!actingPlayer.isBot || room.allBots) &&
+    canControlPlayerOnDevicePure(model, room, actingPlayer.id);
+  const canManage = !canRespond && canManageMyTrade;
+  const acceptedIds = offer.acceptedBy ?? [];
+  const acceptedPartners = acceptedIds
+    .map((pid) => state.players.find((p) => p.id === pid))
+    .filter((p): p is CatanState["players"][number] => Boolean(p));
+  const targetedOpponents = state.players.filter(
+    (p) =>
+      p.id !== offer.fromPlayerId &&
+      (offer.toPlayerId === null || offer.toPlayerId === p.id)
+  );
+  const pendingResponders = targetedOpponents.filter(
+    (p) => !acceptedIds.includes(p.id) && !offer.declinedBy.includes(p.id)
+  );
+
+  const statusLabel = canRespond
+    ? `${escapeAttr(actingPlayer.name)} responding`
+    : acceptedPartners.length > 0
+      ? pendingResponders.length > 0
+        ? "Select partner now or wait for others"
+        : "Select partner to complete trade"
+      : "Awaiting player response";
+
+  const responderChipsHtml = canManage
+    ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px;">
+          ${targetedOpponents
+            .map((op) => {
+              const didAccept = acceptedIds.includes(op.id);
+              const didDecline = offer.declinedBy.includes(op.id);
+              const chipCls = didAccept
+                ? "ga-chip ga-chip--ok"
+                : didDecline
+                  ? "ga-chip"
+                  : "ga-chip ga-chip--warn";
+              const stateText = didAccept
+                ? "Accepted"
+                : didDecline
+                  ? "Declined"
+                  : "Responding...";
+              return `<span class="${chipCls}" style="display: inline-flex; align-items: center; gap: 5px;">
+                <span class="player-dot" style="background: ${op.color}; width: 7px; height: 7px;"></span>
+                ${escapeAttr(op.name)} · ${stateText}
+              </span>`;
+            })
+            .join("")}
+        </div>`
+    : "";
+
+  return `
+      <div class="ga-trade-head">
+        <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+          <span class="player-dot" style="background: ${fromP.color}"></span>
+          <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(fromP.name)} trade offer</strong>
+          ${responderChipsHtml}
+        </div>
+        <span class="t-label muted">${statusLabel}</span>
+      </div>
+
+      <div class="ga-res-matrix">
+        ${renderResourceColumnHeadersPure(
+          canRespond
+            ? actingPlayer.resources
+            : canManage
+              ? fromP.resources
+              : undefined
+        )}
+
+        <div class="ga-res-matrix__row-label">
+          <span class="ga-res-row-dot ga-res-row-dot--give"></span>Gives
+        </div>
+        ${RESOURCES.map((r) => {
+          const amt = offer.give[r] ?? 0;
+          return `
+            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-give" : ""}" style="justify-content: center;">
+              <span class="ga-res-step-val">${amt > 0 ? `+${amt}` : "—"}</span>
+            </div>
+          `;
+        }).join("")}
+
+        <div class="ga-res-matrix__row-label">
+          <span class="ga-res-row-dot ga-res-row-dot--want"></span>Wants
+        </div>
+        ${RESOURCES.map((r) => {
+          const amt = offer.want[r] ?? 0;
+          return `
+            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-want" : ""}" style="justify-content: center;">
+              <span class="ga-res-step-val">${amt > 0 ? `−${amt}` : "—"}</span>
+            </div>
+          `;
+        }).join("")}
+      </div>
+
+      <div class="ga-trade-preview">
+        <span class="t-label muted">Inspect the map above while deciding on this trade</span>
+        <div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto;">
+          ${
+            canRespond
+              ? `
+                <button type="button" data-decline-trade="${actingPlayer.id}" class="btn btn--secondary btn--sm">Decline</button>
+                <button type="button" data-accept-trade="${actingPlayer.id}" class="btn btn--primary btn--sm action-btn-graphic" ${
+                  !hasResources(actingPlayer.resources, offer.want)
+                    ? "disabled"
+                    : ""
+                }>${renderActionPieceIconSvg("domestic_trade", actingPlayer.color, 16)} <span>Accept</span></button>
+              `
+              : ""
+          }
+          ${
+            canManage
+              ? `
+                ${acceptedPartners
+                  .map(
+                    (partner) => `
+                      <button type="button" data-confirm-trade="${escapeAttr(partner.id)}" class="btn btn--primary btn--sm action-btn-graphic">
+                        <span class="player-dot" style="background: ${partner.color}"></span>
+                        <span>Trade with ${escapeAttr(partner.name)}</span>
+                      </button>
+                    `
+                  )
+                  .join("")}
+                <button type="button" id="btn-cancel-domestic" class="btn btn--secondary btn--sm">Cancel offer</button>
+              `
+              : ""
+          }
+        </div>
+      </div>
+    `;
+}
+
+export function renderCatanMapDecisionPopupPure(
+  model: Readonly<AppModel>,
+  state: CatanState,
+  actingPlayer: CatanState["players"][number] | null,
+  legalActions: readonly CatanAction[]
+): string {
+  if (!actingPlayer || state.phase === "GAME_OVER" || model.autoPlayBots) {
+    return "";
+  }
+
+  if (state.phase === "PRE_ROLL") {
+    const canKnight = legalActions.some((a) => a.type === "PLAY_KNIGHT");
+    return `
+        <div class="map-decision-popup map-decision-popup--compact">
+          <button type="button" id="btn-roll-dice" class="btn btn--primary btn-roll-graphic">
+            <span class="roll-dice-btn-graphic" style="display: inline-flex; align-items: center;">${renderRollDiceButtonGraphicSvg(32)}</span>
+            <span>Roll dice</span>
+          </button>
+          ${
+            canKnight
+              ? `<button type="button" id="btn-play-knight" class="btn btn--secondary action-btn-graphic">
+                   ${renderActionPieceIconSvg("knight", actingPlayer.color, 18)}
+                   <span>Play knight</span>
+                 </button>`
+              : ""
+          }
+        </div>
+      `;
+  }
+
+  if (state.phase === "STEAL_RESOURCE") {
+    return `
+        <div class="map-decision-popup map-decision-popup--compact">
+          <span class="action-prompt"><strong>Steal 1 card:</strong></span>
+          ${state.stealCandidates
+            .map((vId) => {
+              const victim = state.players.find((p) => p.id === vId)!;
+              return `<button type="button" data-steal-victim="${vId}" class="btn btn--primary btn--sm action-btn-graphic">
+                <span class="player-dot" style="background: ${victim.color}"></span>
+                <span>${victim.name} (${getPlayerResourceCount(victim)})</span>
+              </button>`;
+            })
+            .join("")}
+        </div>
+      `;
+  }
+
+  return "";
+}
+
+export function renderCatanActionDockPure(
+  model: Readonly<AppModel>,
+  room: ClientRoom,
+  state: CatanState,
+  actingPlayer: CatanState["players"][number] | null,
+  legalActions: readonly CatanAction[],
+  canCancelMyTrade = false
+): string {
+  if (state.phase === "GAME_OVER" || !actingPlayer) {
+    const winner = state.players.find((p) => p.id === state.winnerId);
+    return `<div class="action-buttons" style="justify-content: space-between;">
+        <span class="action-prompt"><strong>Match complete.</strong> ${winner?.name ?? "Player"} wins Catan with ${
+          winner ? computePlayerVictoryPoints(state, winner.id, false) : 0
+        } victory points.</span>
+        <button type="button" id="btn-goto-setup-finished" class="btn btn--primary btn--sm">Configure next game${DRAWN_ARROW_SVG}</button>
+      </div>`;
+  }
+
+  const pColor = actingPlayer.color;
+
+  if (
+    state.phase === "SETUP_SETTLEMENT_1" ||
+    state.phase === "SETUP_SETTLEMENT_2"
+  ) {
+    return `<div class="action-buttons">
+        ${renderActionPieceIconSvg("settlement", pColor, 22)}
+        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click any pulsing intersection on the map to place a starting settlement.</span>
+      </div>`;
+  }
+
+  if (state.phase === "SETUP_ROAD_1" || state.phase === "SETUP_ROAD_2") {
+    const anchor = state.lastSetupSettlementVertexId;
+    const canShip =
+      state.config.enableSeafarers &&
+      getLegalShipEdges(state, actingPlayer.id, anchor).length > 0;
+    return `<div class="action-buttons">
+        ${renderActionPieceIconSvg(model.setupEdgeKind, pColor, 22)}
+        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click a pulsing edge next to your settlement to place a starting ${model.setupEdgeKind}.</span>
+        ${
+          canShip
+            ? `<button type="button" id="btn-toggle-setup-edge" class="btn btn--secondary btn--sm is-selected action-btn-graphic">
+                 ${renderActionPieceIconSvg(model.setupEdgeKind === "road" ? "ship" : "road", pColor, 18)}
+                 <span>Switch to ${model.setupEdgeKind === "road" ? "ship" : "road"}</span>
+               </button>`
+            : ""
+        }
+      </div>`;
+  }
+
+  if (state.phase === "DISCARD_ON_SEVEN") {
+    if (model.autoPlayBots) {
+      return `<div class="action-buttons"><span class="action-prompt"><strong>Roll of 7:</strong> Resolving discards...</span></div>`;
+    }
+    const req = state.pendingDiscards[actingPlayer.id] ?? 0;
+    const currentSelected = totalResourceCount(model.discardSelection);
+    return `
+        <div class="sub-modal sub-modal--trade sub-modal--discard">
+          <div class="ga-trade-head">
+            <span class="action-prompt"><strong>Roll of 7 · ${escapeAttr(actingPlayer.name)}:</strong> Discard ${req} cards</span>
+            <span class="ga-chip ${currentSelected === req ? "ga-chip--ok" : "ga-chip--warn"} ga-num">${currentSelected}/${req} selected</span>
+          </div>
+          <div class="ga-res-matrix">
+            ${renderResourceColumnHeadersPure(actingPlayer.resources)}
+            <div class="ga-res-matrix__row-label">
+              <span class="ga-res-row-dot ga-res-row-dot--give"></span>Discard
+            </div>
+            ${RESOURCES.map((r) => {
+              const sel = model.discardSelection[r];
+              const have = actingPlayer.resources[r];
+              return `
+                <div class="ga-res-cell ${sel > 0 ? "ga-res-cell--active-give" : ""}">
+                  <button type="button" data-discard-sub="${r}" class="ga-res-step-btn" ${sel <= 0 ? "disabled" : ""}>−</button>
+                  <span class="ga-res-step-val">${sel}</span>
+                  <button type="button" data-discard-add="${r}" class="ga-res-step-btn" ${sel >= have || currentSelected >= req ? "disabled" : ""}>+</button>
+                </div>
+              `;
+            }).join("")}
+          </div>
+          <div class="ga-trade-preview">
+            <button type="button" id="btn-discard-reset" class="btn btn--secondary btn--sm">Reset</button>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btn-discard-auto" class="btn btn--secondary btn--sm">Auto-pick ${req}</button>
+              <button type="button" id="btn-discard-submit" class="btn btn--primary btn--sm" ${currentSelected !== req ? "disabled" : ""}>Confirm discard</button>
+            </div>
+          </div>
+        </div>
+        <div class="action-buttons">
+          ${renderActionPieceIconSvg("robber", pColor, 20)}
+          <span class="action-prompt"><strong>Roll of 7:</strong> Select ${req} resource cards below while keeping the map in view.</span>
+        </div>`;
+  }
+
+  if (state.phase === "GOLD_RESOURCE_SELECTION") {
+    if (model.autoPlayBots) {
+      return `<div class="action-buttons"><span class="action-prompt"><strong>Gold river:</strong> Selecting resources...</span></div>`;
+    }
+    const rem = state.pendingGoldPicks[actingPlayer.id] ?? 0;
+    return `
+        <div class="sub-modal sub-modal--trade sub-modal--gold">
+          <div class="ga-trade-head">
+            <span class="action-prompt"><strong>Gold river · ${escapeAttr(actingPlayer.name)}:</strong> Pick ${rem} free resource${rem === 1 ? "" : "s"}</span>
+            <span class="ga-chip ga-chip--warn ga-num">${rem} left</span>
+          </div>
+          <div class="ga-res-matrix">
+            ${renderResourceColumnHeadersPure(actingPlayer.resources)}
+            <div class="ga-res-matrix__row-label">
+              <span class="ga-res-row-dot ga-res-row-dot--want"></span>Take 1
+            </div>
+            ${RESOURCES.map(
+              (r) => `
+                <button type="button" data-gold-pick="${r}" class="ga-res-port-btn is-selected-want" ${state.bank[r] <= 0 ? "disabled" : ""}>
+                  <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
+                </button>
+              `
+            ).join("")}
+          </div>
+        </div>
+        <div class="action-buttons">
+          ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
+          <span class="action-prompt"><strong>Gold river:</strong> Select your free resource card in the tray below.</span>
+        </div>`;
+  }
+
+  if (state.phase === "MOVE_ROBBER_OR_PIRATE") {
+    return `<div class="action-buttons">
+        ${renderActionPieceIconSvg(model.robberOrPirateMode, pColor, 22)}
+        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click any pulsing hex on the map to move the ${
+          model.robberOrPirateMode === "pirate" ? "pirate ship" : "robber"
+        }.</span>
+        ${
+          state.config.enableSeafarers
+            ? `<button type="button" id="btn-toggle-robber-pirate" class="btn btn--secondary btn--sm is-selected action-btn-graphic">
+                 ${renderActionPieceIconSvg(model.robberOrPirateMode === "robber" ? "pirate" : "robber", pColor, 18)}
+                 <span>Switch to ${
+                   model.robberOrPirateMode === "robber"
+                     ? "pirate (sea)"
+                     : "robber (land)"
+                 }</span>
+               </button>`
+            : ""
+        }
+      </div>`;
+  }
+
+  if (state.phase === "STEAL_RESOURCE") {
+    return `<div class="action-buttons">
+        ${renderActionPieceIconSvg("robber", pColor, 20)}
+        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Choose an adjacent player on the map popup above to draw 1 card.</span>
+      </div>`;
+  }
+
+  if (state.phase === "ROAD_BUILDING_DEV") {
+    return `<div class="action-buttons">
+        ${renderActionPieceIconSvg("road_building", pColor, 22)}
+        <span class="action-prompt"><strong>Road building active:</strong> Click a highlighted edge on the map (${state.freeRoadsRemaining} free ${state.freeRoadsRemaining === 1 ? "route" : "routes"} left).</span>
+      </div>`;
+  }
+
+  if (state.phase === "PRE_ROLL") {
+    if (model.autoPlayBots) {
+      return `<div class="action-buttons">
+          <button type="button" id="btn-roll-dice" class="btn btn--primary btn--sm action-btn-graphic">${renderRollDiceButtonGraphicSvg(24)} <span>Roll dice</span></button>
+        </div>`;
+    }
+    return `<div class="action-buttons">
+        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Roll the dice directly on the map above to start your turn (or click any map hex to inspect).</span>
+      </div>`;
+  }
+
+  if (state.phase === "MAIN_PHASE" && state.activeTradeOffer) {
+    if (model.autoPlayBots) {
+      return `<div class="sub-modal sub-modal--trade sub-modal--trade-offer">${renderActiveTradeOfferCardPure(
+        model,
+        room,
+        state,
+        actingPlayer,
+        canCancelMyTrade
+      )}</div>`;
+    }
+    return `
+        <div class="sub-modal sub-modal--trade sub-modal--trade-offer">${renderActiveTradeOfferCardPure(
+          model,
+          room,
+          state,
+          actingPlayer,
+          canCancelMyTrade
+        )}</div>
+        <div class="action-buttons">
+          ${renderActionPieceIconSvg("domestic_trade", pColor, 20)}
+          <span class="action-prompt"><strong>Active player trade:</strong> Inspect the map above and respond to the resource offer below.</span>
+        </div>`;
+  }
+
+  const canRoad = legalActions.some((a) => a.type === "BUILD_ROAD");
+  const canShip = legalActions.some((a) => a.type === "BUILD_SHIP");
+  const canMoveShip = legalActions.some((a) => a.type === "MOVE_SHIP");
+  const canSettlement = legalActions.some((a) => a.type === "BUILD_SETTLEMENT");
+  const canCity = legalActions.some((a) => a.type === "BUILD_CITY");
+  const canWall = legalActions.some((a) => a.type === "BUILD_CITY_WALL");
+  const canBuyDev = legalActions.some((a) => a.type === "BUY_DEV_CARD");
+  const canKnight = legalActions.some((a) => a.type === "PLAY_KNIGHT");
+  const canRoadBuildDev = legalActions.some(
+    (a) => a.type === "PLAY_ROAD_BUILDING"
+  );
+  const canYoP = legalActions.some((a) => a.type === "PLAY_YEAR_OF_PLENTY");
+  const canMonopoly = legalActions.some((a) => a.type === "PLAY_MONOPOLY");
+  const canMaritime = legalActions.some((a) => a.type === "MARITIME_TRADE");
+
+  const renderTradeModeTabs = (): string => `
+      <div class="ga-trade-tabs" role="tablist" aria-label="Trade mode">
+        <button type="button" role="tab" aria-selected="${
+          model.buildMode === "maritime_trade"
+        }" data-trade-tab="maritime_trade" class="ga-trade-tab ${
+          model.buildMode === "maritime_trade" ? "is-active" : ""
+        }">
+          ${renderActionPieceIconSvg("maritime_trade", pColor, 15)}
+          <span>Bank and harbors</span>
+        </button>
+        <button type="button" role="tab" aria-selected="${
+          model.buildMode === "domestic_trade"
+        }" data-trade-tab="domestic_trade" class="ga-trade-tab ${
+          model.buildMode === "domestic_trade" ? "is-active" : ""
+        }">
+          ${renderActionPieceIconSvg("domestic_trade", pColor, 15)}
+          <span>Player trade</span>
+        </button>
+      </div>
+    `;
+
+  const subModalHtml = ((): string => {
+    if (model.buildMode === "maritime_trade") {
+      const ratios = getPlayerTradeRatios(state, actingPlayer.id);
+      const giveCredits = RESOURCES.reduce(
+        (sum, r) => sum + Math.floor(model.maritimeGive[r] / ratios[r]),
+        0
+      );
+      const receiveCount = totalResourceCount(model.maritimeWant);
+      const canExec =
+        giveCredits > 0 &&
+        giveCredits === receiveCount &&
+        RESOURCES.every(
+          (r) =>
+            !(model.maritimeGive[r] > 0 && model.maritimeWant[r] > 0) &&
+            model.maritimeGive[r] % ratios[r] === 0 &&
+            actingPlayer.resources[r] >= model.maritimeGive[r] &&
+            state.bank[r] >= model.maritimeWant[r]
         );
 
-    const catanLegalActions =
-      room.gameId === "catan" &&
-      actingPlayerId &&
-      isMyTurn &&
-      !(controllableHumansCount >= 2 && this.hidePassAndPlayHand)
-        ? CatanEngine.getLegalActions(state, actingPlayerId)
-        : [];
-    const boardActingPlayerId = isMyTurn ? actingPlayerId : null;
+      const giveCardsPreview = RESOURCES.filter(
+        (r) => model.maritimeGive[r] > 0
+      )
+        .map(
+          (r) =>
+            `<span class="map-yield-chip">−${model.maritimeGive[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
+        )
+        .join("");
+      const wantCardsPreview = RESOURCES.filter(
+        (r) => model.maritimeWant[r] > 0
+      )
+        .map(
+          (r) =>
+            `<span class="map-yield-chip">+${model.maritimeWant[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
+        )
+        .join("");
 
-    this.root.innerHTML = `
+      const statusHint =
+        giveCredits === 0 && receiveCount === 0
+          ? "Offer harbor bundles (+4, +3, or +2) for your request"
+          : giveCredits > receiveCount
+            ? `Add ${giveCredits - receiveCount} more requested card${
+                giveCredits - receiveCount === 1 ? "" : "s"
+              }`
+            : receiveCount > giveCredits
+              ? `Add ${receiveCount - giveCredits} more harbor bundle${
+                  receiveCount - giveCredits === 1 ? "" : "s"
+                } for request`
+              : `${giveCredits} bank trade${
+                  giveCredits === 1 ? "" : "s"
+                } ready`;
+
+      return `<div class="sub-modal sub-modal--trade">
+        <div class="ga-trade-head">
+          ${renderTradeModeTabs()}
+          <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
+            <span class="ga-chip ${
+              canExec
+                ? "ga-chip--ok"
+                : giveCredits > 0 || receiveCount > 0
+                  ? "ga-chip--warn"
+                  : ""
+            } ga-num">${escapeAttr(statusHint)}</span>
+            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+          </div>
+        </div>
+
+        <div class="ga-res-matrix">
+          ${renderResourceColumnHeadersPure(
+            actingPlayer.resources,
+            undefined,
+            ratios
+          )}
+
+          <div class="ga-res-matrix__row-label">
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
+          </div>
+          ${RESOURCES.map((r) => {
+            const ratio = ratios[r];
+            const val = model.maritimeGive[r];
+            const canAddBundle = actingPlayer.resources[r] >= val + ratio;
+            return `
+              <div class="ga-res-cell ${
+                val > 0 ? "ga-res-cell--active-give" : ""
+              }">
+                <button type="button" data-maritime-give-dec="${r}" class="ga-res-step-btn" ${
+                  val <= 0 ? "disabled" : ""
+                }>−</button>
+                <span class="ga-res-step-val">${val}</span>
+                <button type="button" data-maritime-give="${r}" class="ga-res-step-btn" title="Offer ${ratio} ${
+                  RESOURCE_META[r].label
+                } (${ratio}:1 rate)" ${!canAddBundle ? "disabled" : ""}>+</button>
+              </div>
+            `;
+          }).join("")}
+
+          <div class="ga-res-matrix__row-label">
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
+          </div>
+          ${RESOURCES.map((r) => {
+            const val = model.maritimeWant[r];
+            const bankAvail = state.bank[r];
+            return `
+              <div class="ga-res-cell ${
+                val > 0 ? "ga-res-cell--active-want" : ""
+              }">
+                <button type="button" data-maritime-receive-dec="${r}" class="ga-res-step-btn" ${
+                  val <= 0 ? "disabled" : ""
+                }>−</button>
+                <span class="ga-res-step-val">${val}</span>
+                <button type="button" data-maritime-receive="${r}" class="ga-res-step-btn" ${
+                  val >= bankAvail ? "disabled" : ""
+                }>+</button>
+              </div>
+            `;
+          }).join("")}
+        </div>
+
+        <div class="ga-trade-preview">
+          <div class="ga-trade-bundle">
+            ${
+              giveCardsPreview || wantCardsPreview
+                ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
+                : `<span class="t-label muted">Use + and − in each column to set your offer and request</span>`
+            }
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" id="btn-maritime-reset" class="btn btn--secondary btn--sm">Reset</button>
+            <button type="button" id="btn-exec-maritime" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
+              !canExec ? "disabled" : ""
+            }>
+              ${renderActionPieceIconSvg("maritime_trade", pColor, 16)}
+              <span>Trade with bank</span>
+            </button>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    if (model.buildMode === "domestic_trade") {
+      const ratios = getPlayerTradeRatios(state, actingPlayer.id);
+      const canPropose =
+        totalResourceCount(model.domesticGive) > 0 &&
+        totalResourceCount(model.domesticWant) > 0 &&
+        RESOURCES.every(
+          (r) => !(model.domesticGive[r] > 0 && model.domesticWant[r] > 0)
+        ) &&
+        hasResources(actingPlayer.resources, model.domesticGive);
+
+      const giveCardsPreview = RESOURCES.filter(
+        (r) => model.domesticGive[r] > 0
+      )
+        .map(
+          (r) =>
+            `<span class="map-yield-chip">−${model.domesticGive[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
+        )
+        .join("");
+      const wantCardsPreview = RESOURCES.filter(
+        (r) => model.domesticWant[r] > 0
+      )
+        .map(
+          (r) =>
+            `<span class="map-yield-chip">+${model.domesticWant[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
+        )
+        .join("");
+
+      return `<div class="sub-modal sub-modal--trade">
+        <div class="ga-trade-head">
+          ${renderTradeModeTabs()}
+          <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
+            <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">Open to all players · pick partner after accept</span>
+            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+          </div>
+        </div>
+
+        <div class="ga-res-matrix">
+          ${renderResourceColumnHeadersPure(
+            actingPlayer.resources,
+            undefined,
+            ratios
+          )}
+
+          <div class="ga-res-matrix__row-label">
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
+          </div>
+          ${RESOURCES.map((r) => {
+            const val = model.domesticGive[r];
+            const max = actingPlayer.resources[r];
+            return `
+              <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-give" : ""}">
+                <button type="button" data-dom-give-dec="${r}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
+                <span class="ga-res-step-val">${val}</span>
+                <button type="button" data-dom-give="${r}" class="ga-res-step-btn" ${val >= max ? "disabled" : ""}>+</button>
+              </div>
+            `;
+          }).join("")}
+
+          <div class="ga-res-matrix__row-label">
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
+          </div>
+          ${RESOURCES.map((r) => {
+            const val = model.domesticWant[r];
+            return `
+              <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-want" : ""}">
+                <button type="button" data-dom-want-dec="${r}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
+                <span class="ga-res-step-val">${val}</span>
+                <button type="button" data-dom-want="${r}" class="ga-res-step-btn">+</button>
+              </div>
+            `;
+          }).join("")}
+        </div>
+
+        <div class="ga-trade-preview">
+          <div class="ga-trade-bundle">
+            ${
+              giveCardsPreview || wantCardsPreview
+                ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
+                : `<span class="t-label muted">Use + and − in each column to set your offer and request</span>`
+            }
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" id="btn-dom-reset" class="btn btn--secondary btn--sm">Reset</button>
+            <button type="button" id="btn-dom-propose" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
+              !canPropose ? "disabled" : ""
+            }>
+              ${renderActionPieceIconSvg("domestic_trade", pColor, 16)}
+              <span>Send trade offer</span>
+            </button>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    if (model.buildMode === "year_of_plenty") {
+      return `<div class="sub-modal">
+        <div class="ga-trade-head">
+          <div style="display: inline-flex; align-items: center; gap: 7px;">
+            ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
+            <strong style="font-size: var(--t-small); font-weight: 500;">Year of plenty — choose 2 free bank cards</strong>
+          </div>
+          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+        </div>
+        <div class="ga-res-matrix">
+          ${renderResourceColumnHeadersPure(undefined, state.bank)}
+
+          <div class="ga-res-matrix__row-label">
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>1st card
+          </div>
+          ${RESOURCES.map(
+            (r) => `
+              <button type="button" data-yop-pick1="${r}" class="ga-res-port-btn ${
+                model.yopRes1 === r ? "is-selected-want" : ""
+              }" ${state.bank[r] <= 0 ? "disabled" : ""}>
+                <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
+              </button>
+            `
+          ).join("")}
+
+          <div class="ga-res-matrix__row-label">
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>2nd card
+          </div>
+          ${RESOURCES.map(
+            (r) => `
+              <button type="button" data-yop-pick2="${r}" class="ga-res-port-btn ${
+                model.yopRes2 === r ? "is-selected-want" : ""
+              }" ${
+                state.bank[r] <= (model.yopRes1 === r ? 1 : 0) ? "disabled" : ""
+              }>
+                <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
+              </button>
+            `
+          ).join("")}
+        </div>
+        <div class="ga-trade-preview">
+          <div class="ga-trade-bundle">
+            ${renderMiniResourceCardSvg(model.yopRes1, 42, 27)}
+            ${renderMiniResourceCardSvg(model.yopRes2, 42, 27)}
+          </div>
+          <button type="button" id="btn-exec-yop" class="btn btn--primary btn--sm">Take 2 resources</button>
+        </div>
+      </div>`;
+    }
+
+    if (model.buildMode === "monopoly") {
+      return `<div class="sub-modal">
+        <div class="ga-trade-head">
+          <div style="display: inline-flex; align-items: center; gap: 7px;">
+            ${renderActionPieceIconSvg("monopoly", pColor, 20)}
+            <strong style="font-size: var(--t-small); font-weight: 500;">Monopoly — claim every opponent copy of 1 resource</strong>
+          </div>
+          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+        </div>
+        <div class="ga-res-matrix">
+          ${renderResourceColumnHeadersPure(actingPlayer.resources)}
+          <div class="ga-res-matrix__row-label">
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Claim all
+          </div>
+          ${RESOURCES.map(
+            (r) => `
+              <button type="button" data-mono-pick="${r}" class="ga-res-port-btn ${
+                model.monoRes === r ? "is-selected-want" : ""
+              }">
+                <span style="font-size: 13px; font-weight: 600;">${RESOURCE_META[r].label}</span>
+              </button>
+            `
+          ).join("")}
+        </div>
+        <div class="ga-trade-preview">
+          <div class="ga-trade-bundle">
+            ${renderMiniResourceCardSvg(model.monoRes, 44, 28)}
+          </div>
+          <button type="button" id="btn-exec-mono" class="btn btn--primary btn--sm">Claim all ${RESOURCE_META[model.monoRes].label.toLowerCase()}</button>
+        </div>
+      </div>`;
+    }
+
+    return "";
+  })();
+
+  return `
+      ${subModalHtml}
+      <div class="action-buttons">
+        <button type="button" id="btn-mode-road" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "road" ? "is-selected" : ""
+        }" ${!canRoad ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("road", pColor, 18)}
+          <span>Road</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.road)}
+        </button>
+        ${
+          state.config.enableSeafarers
+            ? `<button type="button" id="btn-mode-ship" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "ship" ? "is-selected" : ""
+              }" ${!canShip ? "disabled" : ""}>
+                ${renderActionPieceIconSvg("ship", pColor, 18)}
+                <span>Ship</span>
+                ${renderCostPipStripPure(BUILDING_COSTS.ship)}
+              </button>
+              <button type="button" id="btn-mode-moveship" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "move_ship" ? "is-selected" : ""
+              }" ${!canMoveShip ? "disabled" : ""}>
+                ${renderActionPieceIconSvg("move_ship", pColor, 18)}
+                <span>Move ship</span>
+              </button>`
+            : ""
+        }
+        <button type="button" id="btn-mode-settlement" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "settlement" ? "is-selected" : ""
+        }" ${!canSettlement ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("settlement", pColor, 18)}
+          <span>Settlement</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.settlement)}
+        </button>
+        <button type="button" id="btn-mode-city" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "city" ? "is-selected" : ""
+        }" ${!canCity ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("city", pColor, 18)}
+          <span>City</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.city)}
+        </button>
+        ${
+          state.config.enableCityWalls
+            ? `<button type="button" id="btn-mode-wall" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "wall" ? "is-selected" : ""
+              }" ${!canWall ? "disabled" : ""}>
+                ${renderActionPieceIconSvg("wall", pColor, 18)}
+                <span>Wall</span>
+                ${renderCostPipStripPure(BUILDING_COSTS.cityWall)}
+              </button>`
+            : ""
+        }
+        <button type="button" id="btn-buy-dev" class="btn btn--secondary btn--sm action-btn-graphic" ${
+          !canBuyDev ? "disabled" : ""
+        }>
+          ${renderActionPieceIconSvg("dev_card", pColor, 18)}
+          <span>Dev card</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.devCard)}
+        </button>
+        ${
+          state.phase === "MAIN_PHASE"
+            ? `<button type="button" id="btn-mode-maritime" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "maritime_trade" ? "is-selected" : ""
+              }" title="${
+                canMaritime
+                  ? "Trade resources with the bank or harbors"
+                  : "Inspect harbor rates or switch to player trade"
+              }">
+                ${renderActionPieceIconSvg("maritime_trade", pColor, 18)}
+                <span>Bank trade</span>
+              </button>
+              <button type="button" id="btn-mode-domestic" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "domestic_trade" ? "is-selected" : ""
+              }">
+                ${renderActionPieceIconSvg("domestic_trade", pColor, 18)}
+                <span>Player trade</span>
+              </button>`
+            : ""
+        }
+        ${
+          canKnight
+            ? `<button type="button" id="btn-play-knight" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("knight", pColor, 18)} <span>Knight</span></button>`
+            : ""
+        }
+        ${
+          canRoadBuildDev
+            ? `<button type="button" id="btn-play-roadbuild" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("road_building", pColor, 18)} <span>2 roads</span></button>`
+            : ""
+        }
+        ${
+          canYoP
+            ? `<button type="button" id="btn-mode-yop" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "year_of_plenty" ? "is-selected" : ""
+              }">${renderActionPieceIconSvg("year_of_plenty", pColor, 18)} <span>Year of plenty</span></button>`
+            : ""
+        }
+        ${
+          canMonopoly
+            ? `<button type="button" id="btn-mode-mono" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "monopoly" ? "is-selected" : ""
+              }">${renderActionPieceIconSvg("monopoly", pColor, 18)} <span>Monopoly</span></button>`
+            : ""
+        }
+        <button type="button" id="btn-end-turn" class="btn btn--primary btn--sm action-btn-graphic" style="margin-left: auto;">
+          <span>${
+            state.phase === "SPECIAL_BUILDING"
+              ? "Finish build"
+              : "End turn"
+          }</span>
+          ${renderActionPieceIconSvg("end_turn", pColor, 16)}
+        </button>
+      </div>
+    `;
+}
+
+export function renderCatanPlayerCardPure(
+  currentUserId: string,
+  state: CatanState,
+  p: CatanState["players"][number],
+  isActing: boolean
+): string {
+  const visibleVp = computePlayerVictoryPoints(state, p.id, true);
+  const totalVp = computePlayerVictoryPoints(state, p.id, false);
+  const showPrivateHand = !p.handRedacted || state.phase === "GAME_OVER";
+  const cardCount = getPlayerResourceCount(p);
+  const safeLimit = getPlayerSafeHandLimit(state, p.id);
+  const unplayedDevs = p.devCards.filter((c) => !c.played);
+  const botBadge = p.isBot
+    ? `Bot · ${BOT_DIFFICULTY_META[p.botDifficulty ?? "smart"].badge}`
+    : p.id === currentUserId
+      ? "You · Guest"
+      : "Guest";
+
+  const hiddenCardIconSvg = `<svg width="13" height="15" viewBox="0 0 14 16" aria-hidden="true"><rect x="1.5" y="1" width="11" height="14" rx="2.2" fill="#27272a" stroke="#a1a1aa" stroke-width="1.2"/><path d="M4.2 4.5h5.6M4.2 8h5.6M4.2 11.5h3.6" stroke="#fb923c" stroke-width="1.1" stroke-linecap="round"/></svg>`;
+
+  return `
+      <div class="player-card ${isActing ? "active-turn" : ""}">
+        <div class="player-header">
+          <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
+            <span class="player-dot" style="background: ${p.color}"></span>
+            <strong class="player-card__name">${escapeAttr(p.name)}</strong>
+            <span class="ga-chip">${botBadge}</span>
+          </div>
+          <span class="ga-chip ga-chip--warn ga-num">${
+            showPrivateHand
+              ? `${totalVp} VP${totalVp !== visibleVp ? ` (${visibleVp})` : ""}`
+              : `${visibleVp} VP`
+          }</span>
+        </div>
+
+        <div class="player-card__hud-row">
+          <div class="res-pills">
+            ${
+              showPrivateHand
+                ? RESOURCES.map(
+                    (r) =>
+                      `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r)} ${p.resources[r]}</span>`
+                  ).join("")
+                : `<span class="res-pill res-pill--hidden ga-num" title="Hidden resource cards in hand">${hiddenCardIconSvg} ${cardCount} ${
+                    cardCount === 1 ? "card" : "cards"
+                  }</span>`
+            }
+            <span class="ga-chip ga-num" title="Cards in hand vs safe limit on 7">${cardCount}/${safeLimit}</span>
+          </div>
+
+          <div class="player-card__stats">
+            <span title="Longest route">R <strong class="ga-num">${p.longestRoadLength}</strong></span>
+            <span title="Knights played">K <strong class="ga-num">${p.knightsPlayed}</strong></span>
+            <span title="Unplayed dev cards">D <strong class="ga-num">${unplayedDevs.length}</strong></span>
+            ${
+              state.config.enableHarbormaster
+                ? `<span title="Harbor points">H <strong class="ga-num">${p.harborPoints}</strong></span>`
+                : ""
+            }
+            ${
+              p.bonusVictoryPoints > 0
+                ? `<span title="Island bonus">+<strong class="ga-num">${p.bonusVictoryPoints}</strong></span>`
+                : ""
+            }
+          </div>
+        </div>
+      </div>
+    `;
+}
+
+export function renderInGameViewPure(
+  rawModel: Readonly<AppModel>,
+  room: ClientRoom,
+  rawState: any
+): {
+  readonly model: AppModel;
+  readonly html: string;
+  readonly state: any;
+  readonly actingPlayerId: string | null;
+  readonly canCancelMyTrade: boolean;
+} {
+  const usesServer = roomUsesServerPure(rawModel, room);
+  const engine = getEngineForGamePure(room.gameId);
+  const actingPlayerId = usesServer
+    ? room.remoteActingPlayerId ?? getActingPlayerIdPure(room.gameId, rawState)
+    : getActingPlayerIdPure(room.gameId, rawState);
+  const isMyTurn = canControlPlayerOnDevicePure(
+    rawModel,
+    room,
+    actingPlayerId
+  );
+  const model: AppModel = !isMyTurn
+    ? {
+        ...rawModel,
+        buildMode: null,
+        selectedMoveFromEdgeId: null,
+      }
+    : rawModel;
+
+  const controllableHumans = rawState.players.filter(
+    (p: any) => !p.isBot && canControlPlayerOnDevicePure(model, room, p.id)
+  );
+  const controllableHumansCount = controllableHumans.length;
+  const rawActingPlayer =
+    rawState.players.find((p: any) => p.id === actingPlayerId) ?? null;
+
+  const effectiveViewerId = ((): string | null => {
+    if (rawState.phase === "GAME_OVER") return null;
+    if (controllableHumansCount >= 2 && model.hidePassAndPlayHand) return null;
+    if (isMyTurn && rawActingPlayer && !rawActingPlayer.isBot) {
+      return rawActingPlayer.id;
+    }
+    if (controllableHumansCount === 1) {
+      return controllableHumans[0]!.id;
+    }
+    return null;
+  })();
+
+  const state =
+    room.gameId === "catan"
+      ? CatanEngine.getPlayerView(rawState as CatanState, effectiveViewerId)
+      : rawState;
+
+  const actingPlayer =
+    state.players.find((p: any) => p.id === actingPlayerId) ?? null;
+  const invariantCheck = engine.checkInvariants(state);
+
+  const mySeatedPlayer =
+    state.players.find((p: any) => p.id === model.currentUserId) ?? null;
+  const handPlayer =
+    state.phase === "GAME_OVER"
+      ? mySeatedPlayer ??
+        state.players.find((p: any) => p.id === state.winnerId) ??
+        state.players[0]
+      : controllableHumansCount >= 2 && model.hidePassAndPlayHand
+        ? isMyTurn && actingPlayer && !actingPlayer.isBot
+          ? actingPlayer
+          : mySeatedPlayer ?? controllableHumans[0]
+        : effectiveViewerId
+          ? state.players.find((p: any) => p.id === effectiveViewerId) ?? null
+          : null;
+
+  const localDeviceGuestForTurn =
+    !isMyTurn && actingPlayerId
+      ? model.deviceGuests.find((g) => g.id === actingPlayerId)
+      : undefined;
+
+  const offerProposer =
+    room.gameId === "catan" && state.activeTradeOffer
+      ? state.players.find(
+          (p: any) => p.id === state.activeTradeOffer!.fromPlayerId
+        )
+      : null;
+  const canCancelMyTrade =
+    room.gameId === "catan" &&
+    Boolean(
+      state.activeTradeOffer &&
+        offerProposer &&
+        (!offerProposer.isBot || room.allBots) &&
+        effectiveViewerId &&
+        state.activeTradeOffer.fromPlayerId === effectiveViewerId &&
+        canControlPlayerOnDevicePure(
+          model,
+          room,
+          state.activeTradeOffer.fromPlayerId
+        )
+    );
+
+  const summaryInfo = getRoomSetupSummaryDataPure(model, room);
+  const isOwner = Boolean(room.ownerId && room.ownerId === model.currentUserId);
+  const undoableSteps = usesServer
+    ? isMyTurn
+      ? room.undoableSteps
+      : 0
+    : isMyTurn && actingPlayerId && room.session
+      ? room.session.getUndoableStepCount(actingPlayerId)
+      : 0;
+  const canUndo = isMyTurn && undoableSteps > 0;
+  const canRedo = usesServer
+    ? isMyTurn && room.canRedo
+    : Boolean(
+        isMyTurn &&
+          actingPlayerId &&
+          room.session?.canPlayerRedo(actingPlayerId)
+      );
+
+  const catanLegalActions =
+    room.gameId === "catan" &&
+    actingPlayerId &&
+    isMyTurn &&
+    !(controllableHumansCount >= 2 && model.hidePassAndPlayHand)
+      ? CatanEngine.getLegalActions(state, actingPlayerId)
+      : [];
+  const boardActingPlayerId = isMyTurn ? actingPlayerId : null;
+
+  const html = `
       <div class="ga-game-canvas">
-        ${this.renderRoomHeader(room, "game")}
+        ${renderRoomHeaderPure(model, room, "game")}
 
         <div class="ga-room-shell ga-room-shell--game">
           <div class="board-container ${
@@ -3566,7 +4130,7 @@ class MultiGamePlatformApp {
                 ${
                   room.gameId === "catan" && controllableHumansCount >= 2
                     ? `<button type="button" id="btn-toggle-hand-privacy" class="btn btn--secondary btn--sm">
-                        ${this.hidePassAndPlayHand ? "Show hand" : "Hide hand"}
+                        ${model.hidePassAndPlayHand ? "Show hand" : "Hide hand"}
                       </button>`
                     : ""
                 }
@@ -3588,17 +4152,17 @@ class MultiGamePlatformApp {
                     : ""
                 }
                 <button type="button" id="btn-toggle-bot-response" class="btn btn--secondary btn--sm ${
-                  this.autoRespondBotsToHuman ? "is-selected" : ""
+                  model.autoRespondBotsToHuman ? "is-selected" : ""
                 }">
-                  Auto-bots: ${this.autoRespondBotsToHuman ? "on" : "off"}
+                  Auto-bots: ${model.autoRespondBotsToHuman ? "on" : "off"}
                 </button>
                 <button type="button" id="btn-step-bot" class="btn btn--secondary btn--sm" ${
                   state.phase === "GAME_OVER" ? "disabled" : ""
                 }>Step bot</button>
                 <button type="button" id="btn-autoplay" class="btn ${
-                  this.autoPlayBots ? "btn--primary" : "btn--secondary"
+                  model.autoPlayBots ? "btn--primary" : "btn--secondary"
                 } btn--sm">
-                  ${this.autoPlayBots ? "Pause sim" : "Auto-sim"}
+                  ${model.autoPlayBots ? "Pause sim" : "Auto-sim"}
                 </button>
               </div>
             </div>
@@ -3607,28 +4171,30 @@ class MultiGamePlatformApp {
               ${
                 room.gameId === "catan"
                   ? `
-                    ${this.renderCatanMapDiceHud(state as CatanState)}
+                    ${renderCatanMapDiceHudPure(state as CatanState)}
                     ${renderCatanBoardSvg(
                       state as CatanState,
                       boardActingPlayerId,
                       {
-                        buildMode: isMyTurn ? this.buildMode : null,
-                        setupEdgeKind: this.setupEdgeKind,
-                        robberOrPirateMode: this.robberOrPirateMode,
+                        buildMode: isMyTurn ? model.buildMode : null,
+                        setupEdgeKind: model.setupEdgeKind,
+                        robberOrPirateMode: model.robberOrPirateMode,
                         selectedMoveFromEdgeId: isMyTurn
-                          ? this.selectedMoveFromEdgeId
+                          ? model.selectedMoveFromEdgeId
                           : null,
-                        selectedSpot: this.selectedBoardSpot,
+                        selectedSpot: model.selectedBoardSpot,
                       }
                     )}
-                    ${this.renderCatanSpotPopover(
+                    ${renderCatanSpotPopoverPure(
+                      model,
                       state as CatanState,
                       isMyTurn ? actingPlayer : mySeatedPlayer ?? actingPlayer,
                       catanLegalActions
                     )}
                     ${
                       isMyTurn
-                        ? this.renderCatanMapDecisionPopup(
+                        ? renderCatanMapDecisionPopupPure(
+                            model,
                             state as CatanState,
                             actingPlayer,
                             catanLegalActions
@@ -3639,11 +4205,11 @@ class MultiGamePlatformApp {
                   : room.gameId === "splendor"
                     ? renderSplendorBoardView(
                         state as SplendorState,
-                        isMyTurn ? this.splendorDraftGems : {}
+                        isMyTurn ? model.splendorDraftGems : {}
                       )
                     : renderAzulBoardView(
                         state as AzulState,
-                        isMyTurn ? this.azulSelectedDraft : null
+                        isMyTurn ? model.azulSelectedDraft : null
                       )
               }
             </div>
@@ -3657,7 +4223,9 @@ class MultiGamePlatformApp {
                       state.phase === "MAIN_PHASE" &&
                       Boolean((state as CatanState).activeTradeOffer) &&
                       actingPlayer
-                        ? `<div class="sub-modal sub-modal--trade sub-modal--trade-offer">${this.renderActiveTradeOfferCard(
+                        ? `<div class="sub-modal sub-modal--trade sub-modal--trade-offer">${renderActiveTradeOfferCardPure(
+                            model,
+                            room,
                             state as CatanState,
                             actingPlayer,
                             canCancelMyTrade
@@ -3680,21 +4248,23 @@ class MultiGamePlatformApp {
                       </div>
                     </div>`
                   : room.gameId === "catan"
-                    ? this.renderCatanActionDock(
+                    ? renderCatanActionDockPure(
+                        model,
+                        room,
                         state as CatanState,
                         actingPlayer,
                         catanLegalActions,
                         canCancelMyTrade
                       )
                     : room.gameId === "splendor"
-                      ? renderSplendorActionDock(
+                       ? renderSplendorActionDock(
                           state as SplendorState,
                           actingPlayer
                         )
                       : renderAzulActionDock(
                           state as AzulState,
                           actingPlayer,
-                          this.azulSelectedDraft
+                          model.azulSelectedDraft
                         )
               }
             </div>
@@ -3702,7 +4272,7 @@ class MultiGamePlatformApp {
             ${
               room.gameId === "catan"
                 ? handPlayer
-                  ? controllableHumansCount >= 2 && this.hidePassAndPlayHand
+                  ? controllableHumansCount >= 2 && model.hidePassAndPlayHand
                     ? `
                       <div class="ga-hand-privacy-card">
                         <span class="t-small muted"><strong>${escapeAttr(handPlayer.name)}'s</strong> hand is hidden while passing the screen.</span>
@@ -3765,7 +4335,8 @@ class MultiGamePlatformApp {
               ${state.players
                 .map((p: any) =>
                   room.gameId === "catan"
-                    ? this.renderCatanPlayerCard(
+                    ? renderCatanPlayerCardPure(
+                        model.currentUserId,
                         state as CatanState,
                         p,
                         p.id === actingPlayerId
@@ -3863,1911 +4434,2174 @@ class MultiGamePlatformApp {
       </div>
     `;
 
-    this.bindInGameEvents(room, state, actingPlayerId, canCancelMyTrade);
-  }
+  return { model, html, state, actingPlayerId, canCancelMyTrade };
+}
 
-  private renderCostPipStrip(cost: Partial<ResourceMap>): string {
-    const pips: string[] = [];
-    for (const r of RESOURCES) {
-      const n = cost[r] ?? 0;
-      for (let i = 0; i < n; i++) {
-        pips.push(
-          `<span class="cost-pip res-${r}" title="${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r, 11)}</span>`
-        );
-      }
-    }
-    return `<span class="cost-pip-strip">${pips.join("")}</span>`;
-  }
-
-  private renderResourceColumnHeaders(
-    playerResources?: ResourceMap,
-    showBank?: ResourceMap,
-    tradeRatios?: Record<ResourceType, number>
-  ): string {
-    return `
-      <div class="ga-res-matrix__row-label">Resource</div>
-      ${RESOURCES.map((r) => {
-        const ratio = tradeRatios?.[r];
-        return `
-        <div class="ga-res-col-head">
-          <div class="ga-res-col-head__top">
-            <span>${RESOURCE_META[r].label}</span>
-            ${
-              playerResources
-                ? `<span class="ga-res-col-head__have">×${playerResources[r]}</span>`
-                : showBank
-                  ? `<span class="ga-res-col-head__have">${showBank[r]}</span>`
-                  : ""
-            }
-          </div>
-          <div class="ga-res-col-head__card-wrap">
-            ${renderMiniResourceCardSvg(r, 48, 30)}
-            ${
-              ratio !== undefined
-                ? `<span class="ga-res-col-head__rate ${
-                    ratio < 4 ? "is-port" : ""
-                  }" title="${ratio}:1 harbor rate">${ratio}:1</span>`
-                : ""
-            }
-          </div>
-        </div>
-      `;
-      }).join("")}
-    `;
-  }
-
-  private renderCatanMapDiceHud(state: CatanState): string {
-    if (!state.lastRoll) {
-      return `
-        <div class="map-dice-hud">
-          <div class="map-dice-hud__row">
-            ${renderRollDiceButtonGraphicSvg(28)}
-            <span class="t-label muted">Roll dice to produce</span>
-          </div>
-        </div>
-      `;
-    }
-
-    const { die1, die2, total } = state.lastRoll;
-    const isSeven = total === 7;
-    const producedByRes: Partial<Record<ResourceType, number>> = {};
-    let goldHexes = 0;
-    let blockedHexes = 0;
-
-    if (!isSeven) {
-      for (const hId of state.topology.hexOrder) {
-        const tile = state.hexes[hId]!;
-        if (tile.numberToken !== total) continue;
-        if (state.robberHexId === hId) {
-          blockedHexes++;
-          continue;
-        }
-        if (tile.terrain === "gold") {
-          goldHexes++;
-        } else {
-          const res = TERRAIN_TO_RESOURCE[tile.terrain];
-          if (res) {
-            producedByRes[res] = (producedByRes[res] ?? 0) + 1;
-          }
-        }
-      }
-    }
-
-    const prodEntries = RESOURCES.filter((r) => (producedByRes[r] ?? 0) > 0);
-    let yieldsHtml = "";
-    if (isSeven) {
-      yieldsHtml = `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#ef4444", 18)} 7 rolled · robber active</span>`;
-    } else if (prodEntries.length > 0 || goldHexes > 0) {
-      yieldsHtml = [
-        ...prodEntries.map(
-          (r) =>
-            `<span class="map-yield-chip" title="${RESOURCE_META[r].label} hex produced">${renderMiniResourceCardSvg(r, 36, 23)}${
-              (producedByRes[r] ?? 0) > 1 ? ` ×${producedByRes[r]}` : ""
-            }</span>`
-        ),
-        goldHexes > 0
-          ? `<span class="map-yield-chip">${renderActionPieceIconSvg("year_of_plenty", "#facc15", 18)} Gold ×${goldHexes}</span>`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("");
-    } else if (blockedHexes > 0) {
-      yieldsHtml = `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#f87171", 16)} Blocked by robber</span>`;
-    } else {
-      yieldsHtml = `<span class="t-label muted">No matching island hex</span>`;
-    }
-
-    return `
-      <div class="map-dice-hud ${isSeven ? "map-dice-hud--seven" : "map-dice-hud--rolled"}">
-        <div class="map-dice-hud__row">
-          ${renderDieSvg(die1, 34)}
-          ${renderDieSvg(die2, 34)}
-          <span class="map-dice-hud__total ${isSeven ? "map-dice-hud__total--seven" : ""}">= ${total}</span>
-        </div>
-        <div class="map-dice-hud__yields">
-          ${yieldsHtml}
-        </div>
-      </div>
-    `;
-  }
-
-  private renderMissingCostBadge(
-    have: ResourceMap,
-    cost: ResourceMap
-  ): string {
-    const missing: string[] = [];
-    for (const r of RESOURCES) {
-      const diff = (cost[r] ?? 0) - (have[r] ?? 0);
-      for (let i = 0; i < diff; i++) {
-        missing.push(
-          `<span class="cost-pip res-${r}" title="Need ${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r, 11)}</span>`
-        );
-      }
-    }
-    return `<span class="cost-pip-strip">${missing.join("")}</span>`;
-  }
-
-  private renderCatanSpotPopover(
-    state: CatanState,
-    actingPlayer: CatanState["players"][number] | null,
-    legalActions: CatanAction[]
-  ): string {
-    if (
-      !this.selectedBoardSpot ||
-      !actingPlayer ||
-      state.phase === "GAME_OVER"
-    ) {
-      return "";
-    }
-
-    const spot = this.selectedBoardSpot;
-    const { xPct, yPct } = getBoardSpotPercentPosition(state, spot);
-    const belowClass = yPct < 36 ? "map-spot-popover--below" : "";
-    const pColor = actingPlayer.color;
-    const actionItems: string[] = [];
-    let titleHtml = "";
-    let hintHtml = "";
-
-    if (spot.kind === "edge") {
-      const eNode = state.topology.edges[spot.id];
-      if (!eNode) return "";
-      const route = state.edges[spot.id];
-      const hasSea = eNode.adjacentHexIds.some(
-        (hId) => state.hexes[hId]?.terrain === "sea"
+/**
+ * Thin Imperative I/O Boundary Helpers (Storage & Dropdown DOM)
+ */
+function loadDeviceGuestsFromStorage(): GuestSession[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage?.getItem(DEVICE_GUESTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter(
+        (g): g is GuestSession =>
+          Boolean(g && typeof g.id === "string" && typeof g.name === "string")
       );
-      const hasLand = eNode.adjacentHexIds.some((hId) => {
-        const t = state.hexes[hId]?.terrain;
-        return t && t !== "sea" && t !== "fog";
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return [];
+}
+
+function saveDeviceGuestsToStorage(deviceGuests: readonly GuestSession[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage?.setItem(
+      DEVICE_GUESTS_STORAGE_KEY,
+      JSON.stringify(deviceGuests)
+    );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function loadSavedGuestSessionFromStorage(): GuestSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage?.getItem(GUEST_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as GuestSession;
+    if (parsed && parsed.id && parsed.name) {
+      return parsed;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return null;
+}
+
+function saveGuestSessionToStorage(session: GuestSession): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage?.setItem(GUEST_STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function clearGuestSessionFromStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage?.removeItem(GUEST_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function closeDropdownElement(dd: HTMLElement): void {
+  dd.classList.remove("is-open");
+  const trigger = dd.querySelector(
+    ".ga-dropdown__trigger"
+  ) as HTMLButtonElement | null;
+  const menu = dd.querySelector(".ga-dropdown__menu") as HTMLElement | null;
+  if (trigger) trigger.setAttribute("aria-expanded", "false");
+  if (menu) menu.hidden = true;
+}
+
+function registerGlobalDropdownDismiss(root: HTMLElement): void {
+  if (typeof document === "undefined") return;
+  document.addEventListener("pointerdown", (e) => {
+    const target = e.target as Node | null;
+    root.querySelectorAll(".ga-dropdown.is-open").forEach((dd) => {
+      if (!target || !dd.contains(target)) {
+        closeDropdownElement(dd as HTMLElement);
+      }
+    });
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      root.querySelectorAll(".ga-dropdown.is-open").forEach((dd) => {
+        const trigger = dd.querySelector(
+          ".ga-dropdown__trigger"
+        ) as HTMLButtonElement | null;
+        closeDropdownElement(dd as HTMLElement);
+        trigger?.focus();
       });
-      const spotKindLabel =
-        hasSea && hasLand
-          ? "Coastal edge"
-          : hasSea
-            ? "Sea lane"
-            : "Island path";
-      titleHtml = `${renderActionPieceIconSvg(hasSea && !hasLand ? "ship" : "road", pColor, 18)} <span>${spotKindLabel}</span>`;
+    }
+  });
+}
 
-      const canBuildRoadHere = legalActions.some(
-        (a) => a.type === "BUILD_ROAD" && a.edgeId === spot.id
-      );
-      const canBuildShipHere = legalActions.some(
-        (a) => a.type === "BUILD_SHIP" && a.edgeId === spot.id
-      );
-      const canSetupRoadHere = legalActions.some(
-        (a) =>
-          a.type === "PLACE_SETUP_EDGE" &&
-          a.edgeId === spot.id &&
-          a.edgeKind === "road"
-      );
-      const canSetupShipHere = legalActions.some(
-        (a) =>
-          a.type === "PLACE_SETUP_EDGE" &&
-          a.edgeId === spot.id &&
-          a.edgeKind === "ship"
-      );
-      const moveFromHere = legalActions.some(
-        (a) => a.type === "MOVE_SHIP" && a.fromEdgeId === spot.id
-      );
-      const moveToHere = this.selectedMoveFromEdgeId
-        ? legalActions.some(
-            (a) =>
-              a.type === "MOVE_SHIP" &&
-              a.fromEdgeId === this.selectedMoveFromEdgeId &&
-              a.toEdgeId === spot.id
-          )
-        : false;
+function bindDropdownEventsOnRoot(root: HTMLElement): void {
+  root.querySelectorAll("[data-dropdown-root]").forEach((el) => {
+    const dd = el as HTMLElement;
+    const selectEl = dd.querySelector(
+      ".ga-dropdown__native"
+    ) as HTMLSelectElement | null;
+    const trigger = dd.querySelector(
+      ".ga-dropdown__trigger"
+    ) as HTMLButtonElement | null;
+    const menu = dd.querySelector(".ga-dropdown__menu") as HTMLElement | null;
+    const valueSpan = dd.querySelector(
+      ".ga-dropdown__value"
+    ) as HTMLElement | null;
+    const metaSpan = dd.querySelector(
+      ".ga-dropdown__label-group .ga-dropdown__meta"
+    ) as HTMLElement | null;
 
-      if (canSetupRoadHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="setup_road" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("road", pColor, 18)} <span>Place starting road</span></button>`
-        );
-      }
-      if (canSetupShipHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="setup_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("ship", pColor, 18)} <span>Place starting ship</span></button>`
-        );
-      }
-      if (canBuildRoadHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="build_road" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("road", pColor, 18)} Build road</span>
-            ${state.phase === "ROAD_BUILDING_DEV" ? `<span class="ga-chip">Free</span>` : this.renderCostPipStrip(BUILDING_COSTS.road)}
-          </button>`
-        );
-      }
-      if (canBuildShipHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="build_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("ship", pColor, 18)} Build ship</span>
-            ${state.phase === "ROAD_BUILDING_DEV" ? `<span class="ga-chip">Free</span>` : this.renderCostPipStrip(BUILDING_COSTS.ship)}
-          </button>`
-        );
-      }
-      if (moveToHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="complete_move_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_ship", pColor, 18)} <span>Sail ship here</span></button>`
-        );
-      }
-      if (moveFromHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="start_move_ship" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_ship", pColor, 18)} <span>Move this ship</span></button>`
-        );
-      }
+    if (!selectEl || !trigger || !menu) return;
 
-      if (actionItems.length === 0) {
-        if (route) {
-          const owner = state.players.find((p) => p.id === route.ownerId);
-          hintHtml = `<div class="t-label muted" style="display: flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg(route.type, owner?.color ?? pColor, 18)} <span>${owner?.name ?? "Player"} ${route.type}</span></div>`;
-        } else {
-          const roadGeomOk = getLegalRoadEdges(
-            state,
-            actingPlayer.id,
-            null
-          ).includes(spot.id);
-          const shipGeomOk =
-            state.config.enableSeafarers &&
-            getLegalShipEdges(state, actingPlayer.id, null).includes(spot.id);
-          if (roadGeomOk && !hasResources(actingPlayer.resources, BUILDING_COSTS.road)) {
-            hintHtml = `
-              <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-                <span>Road needs</span>
-                ${this.renderMissingCostBadge(actingPlayer.resources, BUILDING_COSTS.road)}
-              </div>
-              ${
-                state.phase === "MAIN_PHASE" && legalActions.length > 0
-                  ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
-                  : ""
-              }
-            `;
-          } else if (shipGeomOk && !hasResources(actingPlayer.resources, BUILDING_COSTS.ship)) {
-            hintHtml = `
-              <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-                <span>Ship needs</span>
-                ${this.renderMissingCostBadge(actingPlayer.resources, BUILDING_COSTS.ship)}
-              </div>
-              ${
-                state.phase === "MAIN_PHASE" && legalActions.length > 0
-                  ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
-                  : ""
-              }
-            `;
-          } else {
-            hintHtml = `<div class="t-label muted">Connect a road or ship to build on this edge.</div>`;
-          }
-        }
-      }
-    } else if (spot.kind === "vertex") {
-      const vNode = state.topology.vertices[spot.id];
-      if (!vNode) return "";
-      const existing = state.buildings[spot.id];
-      const harbor = state.harbors.find((h) => {
-        const he = state.topology.edges[h.edgeId];
-        return he && (he.v1 === spot.id || he.v2 === spot.id);
+    const options = Array.from(
+      menu.querySelectorAll(".ga-dropdown__option")
+    ) as HTMLButtonElement[];
+
+    const openMenu = (focusSelected = false) => {
+      if (trigger.disabled) return;
+      root.querySelectorAll(".ga-dropdown.is-open").forEach((other) => {
+        if (other !== dd) closeDropdownElement(other as HTMLElement);
       });
-      const spotTitle = harbor
-        ? harbor.type === "generic"
-          ? "3:1 Harbor spot"
-          : `2:1 ${RESOURCE_META[harbor.type].label} port`
-        : existing
-          ? existing.type === "city"
-            ? "Fortified city"
-            : "Settlement"
-          : "Island intersection";
-      titleHtml = `${renderActionPieceIconSvg(existing?.type === "city" ? "city" : "settlement", existing ? state.players.find((p) => p.id === existing.ownerId)?.color ?? pColor : pColor, 18)} <span>${spotTitle}</span>`;
-
-      const canSetupSettleHere = legalActions.some(
-        (a) => a.type === "PLACE_SETUP_SETTLEMENT" && a.vertexId === spot.id
-      );
-      const canSettleHere = legalActions.some(
-        (a) => a.type === "BUILD_SETTLEMENT" && a.vertexId === spot.id
-      );
-      const canCityHere = legalActions.some(
-        (a) => a.type === "BUILD_CITY" && a.vertexId === spot.id
-      );
-      const canWallHere = legalActions.some(
-        (a) => a.type === "BUILD_CITY_WALL" && a.vertexId === spot.id
-      );
-
-      if (canSetupSettleHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="setup_settlement" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("settlement", pColor, 18)} <span>Place starting settlement</span></button>`
-        );
+      dd.classList.add("is-open");
+      trigger.setAttribute("aria-expanded", "true");
+      menu.hidden = false;
+      if (focusSelected) {
+        const activeOpt =
+          options.find((o) => o.getAttribute("aria-selected") === "true") ??
+          options[0];
+        activeOpt?.focus();
       }
-      if (canSettleHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="build_settlement" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("settlement", pColor, 18)} Build settlement</span>
-            ${this.renderCostPipStrip(BUILDING_COSTS.settlement)}
-          </button>`
-        );
-      }
-      if (canCityHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="build_city" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("city", pColor, 18)} Upgrade city</span>
-            ${this.renderCostPipStrip(BUILDING_COSTS.city)}
-          </button>`
-        );
-      }
-      if (canWallHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="build_wall" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("wall", pColor, 18)} Build city wall</span>
-            ${this.renderCostPipStrip(BUILDING_COSTS.cityWall)}
-          </button>`
-        );
-      }
+    };
 
-      if (actionItems.length === 0) {
-        if (
-          existing &&
-          existing.ownerId === actingPlayer.id &&
-          existing.type === "settlement" &&
-          !hasResources(actingPlayer.resources, BUILDING_COSTS.city)
-        ) {
-          hintHtml = `
-            <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-              <span>City upgrade needs</span>
-              ${this.renderMissingCostBadge(actingPlayer.resources, BUILDING_COSTS.city)}
-            </div>
-            ${
-              state.phase === "MAIN_PHASE" && legalActions.length > 0
-                ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
-                : ""
-            }
-          `;
-        } else if (
-          !existing &&
-          getLegalSettlementVertices(state, actingPlayer.id, false).includes(
-            spot.id
-          ) &&
-          !hasResources(actingPlayer.resources, BUILDING_COSTS.settlement)
-        ) {
-          hintHtml = `
-            <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-              <span>Settlement needs</span>
-              ${this.renderMissingCostBadge(actingPlayer.resources, BUILDING_COSTS.settlement)}
-            </div>
-            ${
-              state.phase === "MAIN_PHASE" && legalActions.length > 0
-                ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
-                : ""
-            }
-          `;
-        } else if (existing) {
-          const owner = state.players.find((p) => p.id === existing.ownerId);
-          hintHtml = `<div class="t-label muted">${owner?.name ?? "Player"} ${existing.type}${existing.hasWall ? " · walled" : ""}</div>`;
-        } else {
-          const adjOccupied = vNode.adjacentVertexIds.some(
-            (nbV) => Boolean(state.buildings[nbV])
-          );
-          hintHtml = `<div class="t-label muted">${
-            adjOccupied
-              ? "Distance rule: adjacent intersection occupied."
-              : "Connect your road or ship to settle here."
-          }</div>`;
-        }
-      }
-    } else {
-      const tile = state.hexes[spot.id];
-      if (!tile) return "";
-      const res = TERRAIN_TO_RESOURCE[tile.terrain];
-      const terrainName =
-        tile.terrain.charAt(0).toUpperCase() + tile.terrain.slice(1);
-      titleHtml = `${
-        res
-          ? renderMiniResourceCardSvg(res, 32, 20)
-          : renderActionPieceIconSvg(
-              tile.terrain === "sea" ? "ship" : "robber",
-              pColor,
-              18
-            )
-      } <span>${terrainName}${tile.numberToken ? ` · #${tile.numberToken}` : ""}</span>`;
-
-      const canRobHere = legalActions.some(
-        (a) => a.type === "MOVE_ROBBER" && a.hexId === spot.id
-      );
-      const canPirateHere = legalActions.some(
-        (a) => a.type === "MOVE_PIRATE" && a.hexId === spot.id
-      );
-      const canPlayKnight = legalActions.some((a) => a.type === "PLAY_KNIGHT");
-
-      if (canRobHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="move_robber" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("robber", pColor, 18)} <span>Move robber here</span></button>`
-        );
-      }
-      if (canPirateHere) {
-        actionItems.push(
-          `<button type="button" data-spot-action="move_pirate" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("pirate", pColor, 18)} <span>Move pirate here</span></button>`
-        );
-      }
-      if (
-        canPlayKnight &&
-        ((tile.terrain !== "sea" && state.robberHexId !== spot.id) ||
-          (tile.terrain === "sea" &&
-            state.config.enableSeafarers &&
-            state.pirateHexId !== spot.id))
-      ) {
-        actionItems.push(
-          `<button type="button" data-spot-action="play_knight" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("knight", pColor, 18)} <span>Play knight card</span></button>`
-        );
-      }
-
-      if (actionItems.length === 0) {
-        hintHtml = `<div class="t-label muted">${
-          state.robberHexId === spot.id
-            ? "Robber currently blocks this tile."
-            : state.pirateHexId === spot.id
-              ? "Pirate ship currently blocks this sea."
-              : res
-                ? `Produces ${RESOURCE_META[res].label.toLowerCase()} on roll ${tile.numberToken}.`
-                : "No resource yield on this tile."
-        }</div>`;
-      }
-    }
-
-    return `
-      <div class="map-spot-popover ${belowClass}" style="left: ${xPct.toFixed(1)}%; top: ${yPct.toFixed(1)}%;">
-        <div class="map-spot-popover__head">
-          <div class="map-spot-popover__title">${titleHtml}</div>
-          <button type="button" id="btn-close-spot-popover" class="map-spot-popover__close" aria-label="Close spot menu">×</button>
-        </div>
-        <div class="map-spot-popover__actions">
-          ${actionItems.join("")}
-          ${hintHtml}
-        </div>
-      </div>
-    `;
-  }
-
-  private renderActiveTradeOfferCard(
-    state: CatanState,
-    actingPlayer: CatanState["players"][number],
-    canManageMyTrade = false
-  ): string {
-    const offer = state.activeTradeOffer!;
-    const fromP = state.players.find((p) => p.id === offer.fromPlayerId)!;
-    const isResponder = actingPlayer.id !== offer.fromPlayerId;
-    const room = this.getActiveRoom();
-    const canRespond =
-      isResponder &&
-      (!actingPlayer.isBot || room.allBots) &&
-      this.canControlPlayerOnThisDevice(room, actingPlayer.id);
-    const canManage = !canRespond && canManageMyTrade;
-    const acceptedIds = offer.acceptedBy ?? [];
-    const acceptedPartners = acceptedIds
-      .map((pid) => state.players.find((p) => p.id === pid))
-      .filter((p): p is CatanState["players"][number] => Boolean(p));
-    const targetedOpponents = state.players.filter(
-      (p) =>
-        p.id !== offer.fromPlayerId &&
-        (offer.toPlayerId === null || offer.toPlayerId === p.id)
-    );
-    const pendingResponders = targetedOpponents.filter(
-      (p) => !acceptedIds.includes(p.id) && !offer.declinedBy.includes(p.id)
-    );
-
-    const statusLabel = canRespond
-      ? `${escapeAttr(actingPlayer.name)} responding`
-      : acceptedPartners.length > 0
-        ? pendingResponders.length > 0
-          ? "Select partner now or wait for others"
-          : "Select partner to complete trade"
-        : "Awaiting player response";
-
-    const responderChipsHtml = canManage
-      ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px;">
-          ${targetedOpponents
-            .map((op) => {
-              const didAccept = acceptedIds.includes(op.id);
-              const didDecline = offer.declinedBy.includes(op.id);
-              const chipCls = didAccept
-                ? "ga-chip ga-chip--ok"
-                : didDecline
-                  ? "ga-chip"
-                  : "ga-chip ga-chip--warn";
-              const stateText = didAccept
-                ? "Accepted"
-                : didDecline
-                  ? "Declined"
-                  : "Responding...";
-              return `<span class="${chipCls}" style="display: inline-flex; align-items: center; gap: 5px;">
-                <span class="player-dot" style="background: ${op.color}; width: 7px; height: 7px;"></span>
-                ${escapeAttr(op.name)} · ${stateText}
-              </span>`;
-            })
-            .join("")}
-        </div>`
-      : "";
-
-    return `
-      <div class="ga-trade-head">
-        <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-          <span class="player-dot" style="background: ${fromP.color}"></span>
-          <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(fromP.name)} trade offer</strong>
-          ${responderChipsHtml}
-        </div>
-        <span class="t-label muted">${statusLabel}</span>
-      </div>
-
-      <div class="ga-res-matrix">
-        ${this.renderResourceColumnHeaders(
-          canRespond
-            ? actingPlayer.resources
-            : canManage
-              ? fromP.resources
-              : undefined
-        )}
-
-        <div class="ga-res-matrix__row-label">
-          <span class="ga-res-row-dot ga-res-row-dot--give"></span>Gives
-        </div>
-        ${RESOURCES.map((r) => {
-          const amt = offer.give[r] ?? 0;
-          return `
-            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-give" : ""}" style="justify-content: center;">
-              <span class="ga-res-step-val">${amt > 0 ? `+${amt}` : "—"}</span>
-            </div>
-          `;
-        }).join("")}
-
-        <div class="ga-res-matrix__row-label">
-          <span class="ga-res-row-dot ga-res-row-dot--want"></span>Wants
-        </div>
-        ${RESOURCES.map((r) => {
-          const amt = offer.want[r] ?? 0;
-          return `
-            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-want" : ""}" style="justify-content: center;">
-              <span class="ga-res-step-val">${amt > 0 ? `−${amt}` : "—"}</span>
-            </div>
-          `;
-        }).join("")}
-      </div>
-
-      <div class="ga-trade-preview">
-        <span class="t-label muted">Inspect the map above while deciding on this trade</span>
-        <div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto;">
-          ${
-            canRespond
-              ? `
-                <button type="button" data-decline-trade="${actingPlayer.id}" class="btn btn--secondary btn--sm">Decline</button>
-                <button type="button" data-accept-trade="${actingPlayer.id}" class="btn btn--primary btn--sm action-btn-graphic" ${
-                  !hasResources(actingPlayer.resources, offer.want)
-                    ? "disabled"
-                    : ""
-                }>${renderActionPieceIconSvg("domestic_trade", actingPlayer.color, 16)} <span>Accept</span></button>
-              `
-              : ""
-          }
-          ${
-            canManage
-              ? `
-                ${acceptedPartners
-                  .map(
-                    (partner) => `
-                      <button type="button" data-confirm-trade="${escapeAttr(partner.id)}" class="btn btn--primary btn--sm action-btn-graphic">
-                        <span class="player-dot" style="background: ${partner.color}"></span>
-                        <span>Trade with ${escapeAttr(partner.name)}</span>
-                      </button>
-                    `
-                  )
-                  .join("")}
-                <button type="button" id="btn-cancel-domestic" class="btn btn--secondary btn--sm">Cancel offer</button>
-              `
-              : ""
-          }
-        </div>
-      </div>
-    `;
-  }
-
-  private renderCatanMapDecisionPopup(
-    state: CatanState,
-    actingPlayer: CatanState["players"][number] | null,
-    legalActions: CatanAction[]
-  ): string {
-    if (!actingPlayer || state.phase === "GAME_OVER" || this.autoPlayBots) {
-      return "";
-    }
-
-    if (state.phase === "PRE_ROLL") {
-      const canKnight = legalActions.some((a) => a.type === "PLAY_KNIGHT");
-      return `
-        <div class="map-decision-popup map-decision-popup--compact">
-          <button type="button" id="btn-roll-dice" class="btn btn--primary btn-roll-graphic">
-            <span class="roll-dice-btn-graphic" style="display: inline-flex; align-items: center;">${renderRollDiceButtonGraphicSvg(32)}</span>
-            <span>Roll dice</span>
-          </button>
-          ${
-            canKnight
-              ? `<button type="button" id="btn-play-knight" class="btn btn--secondary action-btn-graphic">
-                   ${renderActionPieceIconSvg("knight", actingPlayer.color, 18)}
-                   <span>Play knight</span>
-                 </button>`
-              : ""
-          }
-        </div>
-      `;
-    }
-
-    if (state.phase === "STEAL_RESOURCE") {
-      return `
-        <div class="map-decision-popup map-decision-popup--compact">
-          <span class="action-prompt"><strong>Steal 1 card:</strong></span>
-          ${state.stealCandidates
-            .map((vId) => {
-              const victim = state.players.find((p) => p.id === vId)!;
-              return `<button type="button" data-steal-victim="${vId}" class="btn btn--primary btn--sm action-btn-graphic">
-                <span class="player-dot" style="background: ${victim.color}"></span>
-                <span>${victim.name} (${getPlayerResourceCount(victim)})</span>
-              </button>`;
-            })
-            .join("")}
-        </div>
-      `;
-    }
-
-    return "";
-  }
-
-  private renderCatanActionDock(
-    state: CatanState,
-    actingPlayer: CatanState["players"][number] | null,
-    legalActions: CatanAction[],
-    canCancelMyTrade = false
-  ): string {
-    if (state.phase === "GAME_OVER" || !actingPlayer) {
-      const winner = state.players.find((p) => p.id === state.winnerId);
-      return `<div class="action-buttons" style="justify-content: space-between;">
-        <span class="action-prompt"><strong>Match complete.</strong> ${winner?.name ?? "Player"} wins Catan with ${
-          winner ? computePlayerVictoryPoints(state, winner.id, false) : 0
-        } victory points.</span>
-        <button type="button" id="btn-goto-setup-finished" class="btn btn--primary btn--sm">Configure next game${DRAWN_ARROW_SVG}</button>
-      </div>`;
-    }
-
-    const pColor = actingPlayer.color;
-
-    if (
-      state.phase === "SETUP_SETTLEMENT_1" ||
-      state.phase === "SETUP_SETTLEMENT_2"
-    ) {
-      return `<div class="action-buttons">
-        ${renderActionPieceIconSvg("settlement", pColor, 22)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click any pulsing intersection on the map to place a starting settlement.</span>
-      </div>`;
-    }
-
-    if (state.phase === "SETUP_ROAD_1" || state.phase === "SETUP_ROAD_2") {
-      const anchor = state.lastSetupSettlementVertexId;
-      const canShip =
-        state.config.enableSeafarers &&
-        getLegalShipEdges(state, actingPlayer.id, anchor).length > 0;
-      return `<div class="action-buttons">
-        ${renderActionPieceIconSvg(this.setupEdgeKind, pColor, 22)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click a pulsing edge next to your settlement to place a starting ${this.setupEdgeKind}.</span>
-        ${
-          canShip
-            ? `<button type="button" id="btn-toggle-setup-edge" class="btn btn--secondary btn--sm is-selected action-btn-graphic">
-                 ${renderActionPieceIconSvg(this.setupEdgeKind === "road" ? "ship" : "road", pColor, 18)}
-                 <span>Switch to ${this.setupEdgeKind === "road" ? "ship" : "road"}</span>
-               </button>`
-            : ""
-        }
-      </div>`;
-    }
-
-    if (state.phase === "DISCARD_ON_SEVEN") {
-      if (this.autoPlayBots) {
-        return `<div class="action-buttons"><span class="action-prompt"><strong>Roll of 7:</strong> Resolving discards...</span></div>`;
-      }
-      const req = state.pendingDiscards[actingPlayer.id] ?? 0;
-      const currentSelected = totalResourceCount(this.discardSelection);
-      return `
-        <div class="sub-modal sub-modal--trade sub-modal--discard">
-          <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Roll of 7 · ${escapeAttr(actingPlayer.name)}:</strong> Discard ${req} cards</span>
-            <span class="ga-chip ${currentSelected === req ? "ga-chip--ok" : "ga-chip--warn"} ga-num">${currentSelected}/${req} selected</span>
-          </div>
-          <div class="ga-res-matrix">
-            ${this.renderResourceColumnHeaders(actingPlayer.resources)}
-            <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--give"></span>Discard
-            </div>
-            ${RESOURCES.map((r) => {
-              const sel = this.discardSelection[r];
-              const have = actingPlayer.resources[r];
-              return `
-                <div class="ga-res-cell ${sel > 0 ? "ga-res-cell--active-give" : ""}">
-                  <button type="button" data-discard-sub="${r}" class="ga-res-step-btn" ${sel <= 0 ? "disabled" : ""}>−</button>
-                  <span class="ga-res-step-val">${sel}</span>
-                  <button type="button" data-discard-add="${r}" class="ga-res-step-btn" ${sel >= have || currentSelected >= req ? "disabled" : ""}>+</button>
-                </div>
-              `;
-            }).join("")}
-          </div>
-          <div class="ga-trade-preview">
-            <button type="button" id="btn-discard-reset" class="btn btn--secondary btn--sm">Reset</button>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" id="btn-discard-auto" class="btn btn--secondary btn--sm">Auto-pick ${req}</button>
-              <button type="button" id="btn-discard-submit" class="btn btn--primary btn--sm" ${currentSelected !== req ? "disabled" : ""}>Confirm discard</button>
-            </div>
-          </div>
-        </div>
-        <div class="action-buttons">
-          ${renderActionPieceIconSvg("robber", pColor, 20)}
-          <span class="action-prompt"><strong>Roll of 7:</strong> Select ${req} resource cards below while keeping the map in view.</span>
-        </div>`;
-    }
-
-    if (state.phase === "GOLD_RESOURCE_SELECTION") {
-      if (this.autoPlayBots) {
-        return `<div class="action-buttons"><span class="action-prompt"><strong>Gold river:</strong> Selecting resources...</span></div>`;
-      }
-      const rem = state.pendingGoldPicks[actingPlayer.id] ?? 0;
-      return `
-        <div class="sub-modal sub-modal--trade sub-modal--gold">
-          <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Gold river · ${escapeAttr(actingPlayer.name)}:</strong> Pick ${rem} free resource${rem === 1 ? "" : "s"}</span>
-            <span class="ga-chip ga-chip--warn ga-num">${rem} left</span>
-          </div>
-          <div class="ga-res-matrix">
-            ${this.renderResourceColumnHeaders(actingPlayer.resources)}
-            <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--want"></span>Take 1
-            </div>
-            ${RESOURCES.map(
-              (r) => `
-                <button type="button" data-gold-pick="${r}" class="ga-res-port-btn is-selected-want" ${state.bank[r] <= 0 ? "disabled" : ""}>
-                  <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
-                </button>
-              `
-            ).join("")}
-          </div>
-        </div>
-        <div class="action-buttons">
-          ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
-          <span class="action-prompt"><strong>Gold river:</strong> Select your free resource card in the tray below.</span>
-        </div>`;
-    }
-
-    if (state.phase === "MOVE_ROBBER_OR_PIRATE") {
-      return `<div class="action-buttons">
-        ${renderActionPieceIconSvg(this.robberOrPirateMode, pColor, 22)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click any pulsing hex on the map to move the ${
-          this.robberOrPirateMode === "pirate" ? "pirate ship" : "robber"
-        }.</span>
-        ${
-          state.config.enableSeafarers
-            ? `<button type="button" id="btn-toggle-robber-pirate" class="btn btn--secondary btn--sm is-selected action-btn-graphic">
-                 ${renderActionPieceIconSvg(this.robberOrPirateMode === "robber" ? "pirate" : "robber", pColor, 18)}
-                 <span>Switch to ${
-                   this.robberOrPirateMode === "robber"
-                     ? "pirate (sea)"
-                     : "robber (land)"
-                 }</span>
-               </button>`
-            : ""
-        }
-      </div>`;
-    }
-
-    if (state.phase === "STEAL_RESOURCE") {
-      return `<div class="action-buttons">
-        ${renderActionPieceIconSvg("robber", pColor, 20)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Choose an adjacent player on the map popup above to draw 1 card.</span>
-      </div>`;
-    }
-
-    if (state.phase === "ROAD_BUILDING_DEV") {
-      return `<div class="action-buttons">
-        ${renderActionPieceIconSvg("road_building", pColor, 22)}
-        <span class="action-prompt"><strong>Road building active:</strong> Click a highlighted edge on the map (${state.freeRoadsRemaining} free ${state.freeRoadsRemaining === 1 ? "route" : "routes"} left).</span>
-      </div>`;
-    }
-
-    if (state.phase === "PRE_ROLL") {
-      if (this.autoPlayBots) {
-        return `<div class="action-buttons">
-          <button type="button" id="btn-roll-dice" class="btn btn--primary btn--sm action-btn-graphic">${renderRollDiceButtonGraphicSvg(24)} <span>Roll dice</span></button>
-        </div>`;
-      }
-      return `<div class="action-buttons">
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Roll the dice directly on the map above to start your turn (or click any map hex to inspect).</span>
-      </div>`;
-    }
-
-    if (state.phase === "MAIN_PHASE" && state.activeTradeOffer) {
-      if (this.autoPlayBots) {
-        return `<div class="sub-modal sub-modal--trade sub-modal--trade-offer">${this.renderActiveTradeOfferCard(
-          state,
-          actingPlayer,
-          canCancelMyTrade
-        )}</div>`;
-      }
-      return `
-        <div class="sub-modal sub-modal--trade sub-modal--trade-offer">${this.renderActiveTradeOfferCard(
-          state,
-          actingPlayer,
-          canCancelMyTrade
-        )}</div>
-        <div class="action-buttons">
-          ${renderActionPieceIconSvg("domestic_trade", pColor, 20)}
-          <span class="action-prompt"><strong>Active player trade:</strong> Inspect the map above and respond to the resource offer below.</span>
-        </div>`;
-    }
-
-    const canRoad = legalActions.some((a) => a.type === "BUILD_ROAD");
-    const canShip = legalActions.some((a) => a.type === "BUILD_SHIP");
-    const canMoveShip = legalActions.some((a) => a.type === "MOVE_SHIP");
-    const canSettlement = legalActions.some(
-      (a) => a.type === "BUILD_SETTLEMENT"
-    );
-    const canCity = legalActions.some((a) => a.type === "BUILD_CITY");
-    const canWall = legalActions.some((a) => a.type === "BUILD_CITY_WALL");
-    const canBuyDev = legalActions.some((a) => a.type === "BUY_DEV_CARD");
-    const canKnight = legalActions.some((a) => a.type === "PLAY_KNIGHT");
-    const canRoadBuildDev = legalActions.some(
-      (a) => a.type === "PLAY_ROAD_BUILDING"
-    );
-    const canYoP = legalActions.some((a) => a.type === "PLAY_YEAR_OF_PLENTY");
-    const canMonopoly = legalActions.some((a) => a.type === "PLAY_MONOPOLY");
-    const canMaritime = legalActions.some((a) => a.type === "MARITIME_TRADE");
-
-    const renderTradeModeTabs = (): string => `
-      <div class="ga-trade-tabs" role="tablist" aria-label="Trade mode">
-        <button type="button" role="tab" aria-selected="${
-          this.buildMode === "maritime_trade"
-        }" data-trade-tab="maritime_trade" class="ga-trade-tab ${
-          this.buildMode === "maritime_trade" ? "is-active" : ""
-        }">
-          ${renderActionPieceIconSvg("maritime_trade", pColor, 15)}
-          <span>Bank and harbors</span>
-        </button>
-        <button type="button" role="tab" aria-selected="${
-          this.buildMode === "domestic_trade"
-        }" data-trade-tab="domestic_trade" class="ga-trade-tab ${
-          this.buildMode === "domestic_trade" ? "is-active" : ""
-        }">
-          ${renderActionPieceIconSvg("domestic_trade", pColor, 15)}
-          <span>Player trade</span>
-        </button>
-      </div>
-    `;
-
-    let subModalHtml = "";
-    if (this.buildMode === "maritime_trade") {
-      const ratios = getPlayerTradeRatios(state, actingPlayer.id);
-      let giveCredits = 0;
-      for (const r of RESOURCES) {
-        giveCredits += Math.floor(this.maritimeGive[r] / ratios[r]);
-      }
-      const receiveCount = totalResourceCount(this.maritimeWant);
-      const canExec =
-        giveCredits > 0 &&
-        giveCredits === receiveCount &&
-        RESOURCES.every(
-          (r) =>
-            !(this.maritimeGive[r] > 0 && this.maritimeWant[r] > 0) &&
-            this.maritimeGive[r] % ratios[r] === 0 &&
-            actingPlayer.resources[r] >= this.maritimeGive[r] &&
-            state.bank[r] >= this.maritimeWant[r]
-        );
-
-      const giveCardsPreview = RESOURCES.filter((r) => this.maritimeGive[r] > 0)
-        .map(
-          (r) =>
-            `<span class="map-yield-chip">−${this.maritimeGive[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
-        )
-        .join("");
-      const wantCardsPreview = RESOURCES.filter((r) => this.maritimeWant[r] > 0)
-        .map(
-          (r) =>
-            `<span class="map-yield-chip">+${this.maritimeWant[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
-        )
-        .join("");
-
-      const statusHint =
-        giveCredits === 0 && receiveCount === 0
-          ? "Offer harbor bundles (+4, +3, or +2) for your request"
-          : giveCredits > receiveCount
-            ? `Add ${giveCredits - receiveCount} more requested card${
-                giveCredits - receiveCount === 1 ? "" : "s"
-              }`
-            : receiveCount > giveCredits
-              ? `Add ${receiveCount - giveCredits} more harbor bundle${
-                  receiveCount - giveCredits === 1 ? "" : "s"
-                } for request`
-              : `${giveCredits} bank trade${
-                  giveCredits === 1 ? "" : "s"
-                } ready`;
-
-      subModalHtml = `<div class="sub-modal sub-modal--trade">
-        <div class="ga-trade-head">
-          ${renderTradeModeTabs()}
-          <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
-            <span class="ga-chip ${
-              canExec
-                ? "ga-chip--ok"
-                : giveCredits > 0 || receiveCount > 0
-                  ? "ga-chip--warn"
-                  : ""
-            } ga-num">${escapeAttr(statusHint)}</span>
-            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
-          </div>
-        </div>
-
-        <div class="ga-res-matrix">
-          ${this.renderResourceColumnHeaders(
-            actingPlayer.resources,
-            undefined,
-            ratios
-          )}
-
-          <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
-          </div>
-          ${RESOURCES.map((r) => {
-            const ratio = ratios[r];
-            const val = this.maritimeGive[r];
-            const canAddBundle = actingPlayer.resources[r] >= val + ratio;
-            return `
-              <div class="ga-res-cell ${
-                val > 0 ? "ga-res-cell--active-give" : ""
-              }">
-                <button type="button" data-maritime-give-dec="${r}" class="ga-res-step-btn" ${
-                  val <= 0 ? "disabled" : ""
-                }>−</button>
-                <span class="ga-res-step-val">${val}</span>
-                <button type="button" data-maritime-give="${r}" class="ga-res-step-btn" title="Offer ${ratio} ${
-                  RESOURCE_META[r].label
-                } (${ratio}:1 rate)" ${!canAddBundle ? "disabled" : ""}>+</button>
-              </div>
-            `;
-          }).join("")}
-
-          <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
-          </div>
-          ${RESOURCES.map((r) => {
-            const val = this.maritimeWant[r];
-            const bankAvail = state.bank[r];
-            return `
-              <div class="ga-res-cell ${
-                val > 0 ? "ga-res-cell--active-want" : ""
-              }">
-                <button type="button" data-maritime-receive-dec="${r}" class="ga-res-step-btn" ${
-                  val <= 0 ? "disabled" : ""
-                }>−</button>
-                <span class="ga-res-step-val">${val}</span>
-                <button type="button" data-maritime-receive="${r}" class="ga-res-step-btn" ${
-                  val >= bankAvail ? "disabled" : ""
-                }>+</button>
-              </div>
-            `;
-          }).join("")}
-        </div>
-
-        <div class="ga-trade-preview">
-          <div class="ga-trade-bundle">
-            ${
-              giveCardsPreview || wantCardsPreview
-                ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
-                : `<span class="t-label muted">Use + and − in each column to set your offer and request</span>`
-            }
-          </div>
-          <div style="display: flex; gap: 6px;">
-            <button type="button" id="btn-maritime-reset" class="btn btn--secondary btn--sm">Reset</button>
-            <button type="button" id="btn-exec-maritime" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
-              !canExec ? "disabled" : ""
-            }>
-              ${renderActionPieceIconSvg("maritime_trade", pColor, 16)}
-              <span>Trade with bank</span>
-            </button>
-          </div>
-        </div>
-      </div>`;
-    } else if (this.buildMode === "domestic_trade") {
-      const ratios = getPlayerTradeRatios(state, actingPlayer.id);
-      const canPropose =
-        totalResourceCount(this.domesticGive) > 0 &&
-        totalResourceCount(this.domesticWant) > 0 &&
-        RESOURCES.every(
-          (r) => !(this.domesticGive[r] > 0 && this.domesticWant[r] > 0)
-        ) &&
-        hasResources(actingPlayer.resources, this.domesticGive);
-
-      const giveCardsPreview = RESOURCES.filter((r) => this.domesticGive[r] > 0)
-        .map(
-          (r) =>
-            `<span class="map-yield-chip">−${this.domesticGive[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
-        )
-        .join("");
-      const wantCardsPreview = RESOURCES.filter((r) => this.domesticWant[r] > 0)
-        .map(
-          (r) =>
-            `<span class="map-yield-chip">+${this.domesticWant[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
-        )
-        .join("");
-
-      subModalHtml = `<div class="sub-modal sub-modal--trade">
-        <div class="ga-trade-head">
-          ${renderTradeModeTabs()}
-          <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
-            <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">Open to all players · pick partner after accept</span>
-            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
-          </div>
-        </div>
-
-        <div class="ga-res-matrix">
-          ${this.renderResourceColumnHeaders(
-            actingPlayer.resources,
-            undefined,
-            ratios
-          )}
-
-          <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
-          </div>
-          ${RESOURCES.map((r) => {
-            const val = this.domesticGive[r];
-            const max = actingPlayer.resources[r];
-            return `
-              <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-give" : ""}">
-                <button type="button" data-dom-give-dec="${r}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
-                <span class="ga-res-step-val">${val}</span>
-                <button type="button" data-dom-give="${r}" class="ga-res-step-btn" ${val >= max ? "disabled" : ""}>+</button>
-              </div>
-            `;
-          }).join("")}
-
-          <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
-          </div>
-          ${RESOURCES.map((r) => {
-            const val = this.domesticWant[r];
-            return `
-              <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-want" : ""}">
-                <button type="button" data-dom-want-dec="${r}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
-                <span class="ga-res-step-val">${val}</span>
-                <button type="button" data-dom-want="${r}" class="ga-res-step-btn">+</button>
-              </div>
-            `;
-          }).join("")}
-        </div>
-
-        <div class="ga-trade-preview">
-          <div class="ga-trade-bundle">
-            ${
-              giveCardsPreview || wantCardsPreview
-                ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
-                : `<span class="t-label muted">Use + and − in each column to set your offer and request</span>`
-            }
-          </div>
-          <div style="display: flex; gap: 6px;">
-            <button type="button" id="btn-dom-reset" class="btn btn--secondary btn--sm">Reset</button>
-            <button type="button" id="btn-dom-propose" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
-              !canPropose ? "disabled" : ""
-            }>
-              ${renderActionPieceIconSvg("domestic_trade", pColor, 16)}
-              <span>Send trade offer</span>
-            </button>
-          </div>
-        </div>
-      </div>`;
-    } else if (this.buildMode === "year_of_plenty") {
-      subModalHtml = `<div class="sub-modal">
-        <div class="ga-trade-head">
-          <div style="display: inline-flex; align-items: center; gap: 7px;">
-            ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
-            <strong style="font-size: var(--t-small); font-weight: 500;">Year of plenty — choose 2 free bank cards</strong>
-          </div>
-          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
-        </div>
-        <div class="ga-res-matrix">
-          ${this.renderResourceColumnHeaders(undefined, state.bank)}
-
-          <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>1st card
-          </div>
-          ${RESOURCES.map(
-            (r) => `
-              <button type="button" data-yop-pick1="${r}" class="ga-res-port-btn ${
-                this.yopRes1 === r ? "is-selected-want" : ""
-              }" ${state.bank[r] <= 0 ? "disabled" : ""}>
-                <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
-              </button>
-            `
-          ).join("")}
-
-          <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>2nd card
-          </div>
-          ${RESOURCES.map(
-            (r) => `
-              <button type="button" data-yop-pick2="${r}" class="ga-res-port-btn ${
-                this.yopRes2 === r ? "is-selected-want" : ""
-              }" ${
-                state.bank[r] <= (this.yopRes1 === r ? 1 : 0) ? "disabled" : ""
-              }>
-                <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
-              </button>
-            `
-          ).join("")}
-        </div>
-        <div class="ga-trade-preview">
-          <div class="ga-trade-bundle">
-            ${renderMiniResourceCardSvg(this.yopRes1, 42, 27)}
-            ${renderMiniResourceCardSvg(this.yopRes2, 42, 27)}
-          </div>
-          <button type="button" id="btn-exec-yop" class="btn btn--primary btn--sm">Take 2 resources</button>
-        </div>
-      </div>`;
-    } else if (this.buildMode === "monopoly") {
-      subModalHtml = `<div class="sub-modal">
-        <div class="ga-trade-head">
-          <div style="display: inline-flex; align-items: center; gap: 7px;">
-            ${renderActionPieceIconSvg("monopoly", pColor, 20)}
-            <strong style="font-size: var(--t-small); font-weight: 500;">Monopoly — claim every opponent copy of 1 resource</strong>
-          </div>
-          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
-        </div>
-        <div class="ga-res-matrix">
-          ${this.renderResourceColumnHeaders(actingPlayer.resources)}
-          <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Claim all
-          </div>
-          ${RESOURCES.map(
-            (r) => `
-              <button type="button" data-mono-pick="${r}" class="ga-res-port-btn ${
-                this.monoRes === r ? "is-selected-want" : ""
-              }">
-                <span style="font-size: 13px; font-weight: 600;">${RESOURCE_META[r].label}</span>
-              </button>
-            `
-          ).join("")}
-        </div>
-        <div class="ga-trade-preview">
-          <div class="ga-trade-bundle">
-            ${renderMiniResourceCardSvg(this.monoRes, 44, 28)}
-          </div>
-          <button type="button" id="btn-exec-mono" class="btn btn--primary btn--sm">Claim all ${RESOURCE_META[this.monoRes].label.toLowerCase()}</button>
-        </div>
-      </div>`;
-    }
-
-    return `
-      ${subModalHtml}
-      <div class="action-buttons">
-        <button type="button" id="btn-mode-road" class="btn btn--secondary btn--sm action-btn-graphic ${
-          this.buildMode === "road" ? "is-selected" : ""
-        }" ${!canRoad ? "disabled" : ""}>
-          ${renderActionPieceIconSvg("road", pColor, 18)}
-          <span>Road</span>
-          ${this.renderCostPipStrip(BUILDING_COSTS.road)}
-        </button>
-        ${
-          state.config.enableSeafarers
-            ? `<button type="button" id="btn-mode-ship" class="btn btn--secondary btn--sm action-btn-graphic ${
-                this.buildMode === "ship" ? "is-selected" : ""
-              }" ${!canShip ? "disabled" : ""}>
-                ${renderActionPieceIconSvg("ship", pColor, 18)}
-                <span>Ship</span>
-                ${this.renderCostPipStrip(BUILDING_COSTS.ship)}
-              </button>
-              <button type="button" id="btn-mode-moveship" class="btn btn--secondary btn--sm action-btn-graphic ${
-                this.buildMode === "move_ship" ? "is-selected" : ""
-              }" ${!canMoveShip ? "disabled" : ""}>
-                ${renderActionPieceIconSvg("move_ship", pColor, 18)}
-                <span>Move ship</span>
-              </button>`
-            : ""
-        }
-        <button type="button" id="btn-mode-settlement" class="btn btn--secondary btn--sm action-btn-graphic ${
-          this.buildMode === "settlement" ? "is-selected" : ""
-        }" ${!canSettlement ? "disabled" : ""}>
-          ${renderActionPieceIconSvg("settlement", pColor, 18)}
-          <span>Settlement</span>
-          ${this.renderCostPipStrip(BUILDING_COSTS.settlement)}
-        </button>
-        <button type="button" id="btn-mode-city" class="btn btn--secondary btn--sm action-btn-graphic ${
-          this.buildMode === "city" ? "is-selected" : ""
-        }" ${!canCity ? "disabled" : ""}>
-          ${renderActionPieceIconSvg("city", pColor, 18)}
-          <span>City</span>
-          ${this.renderCostPipStrip(BUILDING_COSTS.city)}
-        </button>
-        ${
-          state.config.enableCityWalls
-            ? `<button type="button" id="btn-mode-wall" class="btn btn--secondary btn--sm action-btn-graphic ${
-                this.buildMode === "wall" ? "is-selected" : ""
-              }" ${!canWall ? "disabled" : ""}>
-                ${renderActionPieceIconSvg("wall", pColor, 18)}
-                <span>Wall</span>
-                ${this.renderCostPipStrip(BUILDING_COSTS.cityWall)}
-              </button>`
-            : ""
-        }
-        <button type="button" id="btn-buy-dev" class="btn btn--secondary btn--sm action-btn-graphic" ${
-          !canBuyDev ? "disabled" : ""
-        }>
-          ${renderActionPieceIconSvg("dev_card", pColor, 18)}
-          <span>Dev card</span>
-          ${this.renderCostPipStrip(BUILDING_COSTS.devCard)}
-        </button>
-        ${
-          state.phase === "MAIN_PHASE"
-            ? `<button type="button" id="btn-mode-maritime" class="btn btn--secondary btn--sm action-btn-graphic ${
-                this.buildMode === "maritime_trade" ? "is-selected" : ""
-              }" title="${
-                canMaritime
-                  ? "Trade resources with the bank or harbors"
-                  : "Inspect harbor rates or switch to player trade"
-              }">
-                ${renderActionPieceIconSvg("maritime_trade", pColor, 18)}
-                <span>Bank trade</span>
-              </button>
-              <button type="button" id="btn-mode-domestic" class="btn btn--secondary btn--sm action-btn-graphic ${
-                this.buildMode === "domestic_trade" ? "is-selected" : ""
-              }">
-                ${renderActionPieceIconSvg("domestic_trade", pColor, 18)}
-                <span>Player trade</span>
-              </button>`
-            : ""
-        }
-        ${
-          canKnight
-            ? `<button type="button" id="btn-play-knight" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("knight", pColor, 18)} <span>Knight</span></button>`
-            : ""
-        }
-        ${
-          canRoadBuildDev
-            ? `<button type="button" id="btn-play-roadbuild" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("road_building", pColor, 18)} <span>2 roads</span></button>`
-            : ""
-        }
-        ${
-          canYoP
-            ? `<button type="button" id="btn-mode-yop" class="btn btn--secondary btn--sm action-btn-graphic ${
-                this.buildMode === "year_of_plenty" ? "is-selected" : ""
-              }">${renderActionPieceIconSvg("year_of_plenty", pColor, 18)} <span>Year of plenty</span></button>`
-            : ""
-        }
-        ${
-          canMonopoly
-            ? `<button type="button" id="btn-mode-mono" class="btn btn--secondary btn--sm action-btn-graphic ${
-                this.buildMode === "monopoly" ? "is-selected" : ""
-              }">${renderActionPieceIconSvg("monopoly", pColor, 18)} <span>Monopoly</span></button>`
-            : ""
-        }
-        <button type="button" id="btn-end-turn" class="btn btn--primary btn--sm action-btn-graphic" style="margin-left: auto;">
-          <span>${
-            state.phase === "SPECIAL_BUILDING"
-              ? "Finish build"
-              : "End turn"
-          }</span>
-          ${renderActionPieceIconSvg("end_turn", pColor, 16)}
-        </button>
-      </div>
-    `;
-  }
-
-  private renderCatanPlayerCard(
-    state: CatanState,
-    p: CatanState["players"][number],
-    isActing: boolean
-  ): string {
-    const visibleVp = computePlayerVictoryPoints(state, p.id, true);
-    const totalVp = computePlayerVictoryPoints(state, p.id, false);
-    const showPrivateHand = !p.handRedacted || state.phase === "GAME_OVER";
-    const cardCount = getPlayerResourceCount(p);
-    const safeLimit = getPlayerSafeHandLimit(state, p.id);
-    const unplayedDevs = p.devCards.filter((c) => !c.played);
-    const botBadge = p.isBot
-      ? `Bot · ${BOT_DIFFICULTY_META[p.botDifficulty ?? "smart"].badge}`
-      : p.id === this.currentUserId
-        ? "You · Guest"
-        : "Guest";
-
-    const hiddenCardIconSvg = `<svg width="13" height="15" viewBox="0 0 14 16" aria-hidden="true"><rect x="1.5" y="1" width="11" height="14" rx="2.2" fill="#27272a" stroke="#a1a1aa" stroke-width="1.2"/><path d="M4.2 4.5h5.6M4.2 8h5.6M4.2 11.5h3.6" stroke="#fb923c" stroke-width="1.1" stroke-linecap="round"/></svg>`;
-
-    return `
-      <div class="player-card ${isActing ? "active-turn" : ""}">
-        <div class="player-header">
-          <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
-            <span class="player-dot" style="background: ${p.color}"></span>
-            <strong class="player-card__name">${escapeAttr(p.name)}</strong>
-            <span class="ga-chip">${botBadge}</span>
-          </div>
-          <span class="ga-chip ga-chip--warn ga-num">${
-            showPrivateHand
-              ? `${totalVp} VP${totalVp !== visibleVp ? ` (${visibleVp})` : ""}`
-              : `${visibleVp} VP`
-          }</span>
-        </div>
-
-        <div class="player-card__hud-row">
-          <div class="res-pills">
-            ${
-              showPrivateHand
-                ? RESOURCES.map(
-                    (r) =>
-                      `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r)} ${p.resources[r]}</span>`
-                  ).join("")
-                : `<span class="res-pill res-pill--hidden ga-num" title="Hidden resource cards in hand">${hiddenCardIconSvg} ${cardCount} ${
-                    cardCount === 1 ? "card" : "cards"
-                  }</span>`
-            }
-            <span class="ga-chip ga-num" title="Cards in hand vs safe limit on 7">${cardCount}/${safeLimit}</span>
-          </div>
-
-          <div class="player-card__stats">
-            <span title="Longest route">R <strong class="ga-num">${p.longestRoadLength}</strong></span>
-            <span title="Knights played">K <strong class="ga-num">${p.knightsPlayed}</strong></span>
-            <span title="Unplayed dev cards">D <strong class="ga-num">${unplayedDevs.length}</strong></span>
-            ${
-              state.config.enableHarbormaster
-                ? `<span title="Harbor points">H <strong class="ga-num">${p.harborPoints}</strong></span>`
-                : ""
-            }
-            ${
-              p.bonusVictoryPoints > 0
-                ? `<span title="Island bonus">+<strong class="ga-num">${p.bonusVictoryPoints}</strong></span>`
-                : ""
-            }
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  public switchTradeMode(nextMode: "maritime_trade" | "domestic_trade"): void {
-    this.selectedBoardSpot = null;
-    if (this.buildMode === "domestic_trade" && nextMode === "maritime_trade") {
-      this.maritimeWant = { ...this.domesticWant };
-    } else if (
-      this.buildMode === "maritime_trade" &&
-      nextMode === "domestic_trade"
-    ) {
-      this.domesticWant = { ...this.maritimeWant };
-    } else if (nextMode === "maritime_trade") {
-      if (
-        totalResourceCount(this.maritimeWant) === 0 &&
-        totalResourceCount(this.domesticWant) > 0
-      ) {
-        this.maritimeWant = { ...this.domesticWant };
+    trigger.addEventListener("click", () => {
+      if (trigger.disabled) return;
+      if (dd.classList.contains("is-open")) {
+        closeDropdownElement(dd);
       } else {
-        this.domesticWant = { ...this.maritimeWant };
+        openMenu(false);
       }
-    } else {
-      if (
-        totalResourceCount(this.domesticWant) === 0 &&
-        totalResourceCount(this.maritimeWant) > 0
-      ) {
-        this.domesticWant = { ...this.maritimeWant };
-      } else {
-        this.maritimeWant = { ...this.domesticWant };
+    });
+
+    trigger.addEventListener("keydown", (e) => {
+      if (trigger.disabled) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        openMenu(true);
       }
-    }
+    });
 
-    for (const r of RESOURCES) {
-      if (this.maritimeWant[r] > 0) {
-        this.maritimeGive[r] = 0;
+    menu.addEventListener("keydown", (e) => {
+      const idx = options.indexOf(
+        document.activeElement as HTMLButtonElement
+      );
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = options[(idx + 1 + options.length) % options.length];
+        next?.focus();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const prev = options[(idx - 1 + options.length) % options.length];
+        prev?.focus();
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        options[0]?.focus();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        options[options.length - 1]?.focus();
+      } else if (e.key === "Tab") {
+        closeDropdownElement(dd);
       }
-      if (this.domesticWant[r] > 0) {
-        this.domesticGive[r] = 0;
-      }
-    }
+    });
 
-    this.buildMode = nextMode;
-    this.render();
-  }
+    options.forEach((optBtn) => {
+      optBtn.addEventListener("click", () => {
+        const nextVal = optBtn.getAttribute("data-dropdown-value") ?? "";
+        const nextLabel = optBtn.getAttribute("data-dropdown-label") ?? "";
+        const nextMeta = optBtn.getAttribute("data-dropdown-meta") ?? "";
 
-  private setSharedTradeWant(resource: ResourceType, amount: number): void {
-    const clamped = Math.max(0, amount);
-    this.maritimeWant[resource] = clamped;
-    this.domesticWant[resource] = clamped;
-    if (clamped > 0) {
-      this.maritimeGive[resource] = 0;
-      this.domesticGive[resource] = 0;
-    }
-  }
-
-  private bindDropdownEvents(): void {
-    this.root.querySelectorAll("[data-dropdown-root]").forEach((el) => {
-      const dd = el as HTMLElement;
-      const selectEl = dd.querySelector(
-        ".ga-dropdown__native"
-      ) as HTMLSelectElement | null;
-      const trigger = dd.querySelector(
-        ".ga-dropdown__trigger"
-      ) as HTMLButtonElement | null;
-      const menu = dd.querySelector(".ga-dropdown__menu") as HTMLElement | null;
-      const valueSpan = dd.querySelector(
-        ".ga-dropdown__value"
-      ) as HTMLElement | null;
-      const metaSpan = dd.querySelector(
-        ".ga-dropdown__label-group .ga-dropdown__meta"
-      ) as HTMLElement | null;
-
-      if (!selectEl || !trigger || !menu) return;
-
-      const options = Array.from(
-        menu.querySelectorAll(".ga-dropdown__option")
-      ) as HTMLButtonElement[];
-
-      const openMenu = (focusSelected = false) => {
-        if (trigger.disabled) return;
-        this.root.querySelectorAll(".ga-dropdown.is-open").forEach((other) => {
-          if (other !== dd) this.closeDropdownElement(other as HTMLElement);
-        });
-        dd.classList.add("is-open");
-        trigger.setAttribute("aria-expanded", "true");
-        menu.hidden = false;
-        if (focusSelected) {
-          const activeOpt =
-            options.find((o) => o.getAttribute("aria-selected") === "true") ??
-            options[0];
-          activeOpt?.focus();
+        selectEl.value = nextVal;
+        if (valueSpan) valueSpan.textContent = nextLabel;
+        if (metaSpan) {
+          metaSpan.textContent = nextMeta;
+          metaSpan.hidden = !nextMeta;
         }
-      };
-
-      trigger.addEventListener("click", () => {
-        if (trigger.disabled) return;
-        if (dd.classList.contains("is-open")) {
-          this.closeDropdownElement(dd);
-        } else {
-          openMenu(false);
-        }
-      });
-
-      trigger.addEventListener("keydown", (e) => {
-        if (trigger.disabled) return;
-        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          e.preventDefault();
-          openMenu(true);
-        }
-      });
-
-      menu.addEventListener("keydown", (e) => {
-        const idx = options.indexOf(
-          document.activeElement as HTMLButtonElement
+        options.forEach((o) =>
+          o.setAttribute("aria-selected", o === optBtn ? "true" : "false")
         );
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          const next = options[(idx + 1 + options.length) % options.length];
-          next?.focus();
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          const prev = options[(idx - 1 + options.length) % options.length];
-          prev?.focus();
-        } else if (e.key === "Home") {
-          e.preventDefault();
-          options[0]?.focus();
-        } else if (e.key === "End") {
-          e.preventDefault();
-          options[options.length - 1]?.focus();
-        } else if (e.key === "Tab") {
-          this.closeDropdownElement(dd);
-        }
-      });
-
-      options.forEach((optBtn) => {
-        optBtn.addEventListener("click", () => {
-          const nextVal = optBtn.getAttribute("data-dropdown-value") ?? "";
-          const nextLabel = optBtn.getAttribute("data-dropdown-label") ?? "";
-          const nextMeta = optBtn.getAttribute("data-dropdown-meta") ?? "";
-
-          selectEl.value = nextVal;
-          if (valueSpan) valueSpan.textContent = nextLabel;
-          if (metaSpan) {
-            metaSpan.textContent = nextMeta;
-            metaSpan.hidden = !nextMeta;
-          }
-          options.forEach((o) =>
-            o.setAttribute("aria-selected", o === optBtn ? "true" : "false")
-          );
-          this.closeDropdownElement(dd);
-          selectEl.dispatchEvent(new Event("change", { bubbles: true }));
-        });
+        closeDropdownElement(dd);
+        selectEl.dispatchEvent(new Event("change", { bubbles: true }));
       });
     });
+  });
+}
+
+export interface RoomsMapView {
+  readonly size: number;
+  get(roomId: string): ClientRoom | undefined;
+  has(roomId: string): boolean;
+  set(roomId: string, room: ClientRoom): RoomsMapView;
+  delete(roomId: string): boolean;
+  keys(): IterableIterator<string>;
+  values(): IterableIterator<ClientRoom>;
+  entries(): IterableIterator<[string, ClientRoom]>;
+  forEach(cb: (room: ClientRoom, roomId: string) => void): void;
+  [Symbol.iterator](): IterableIterator<[string, ClientRoom]>;
+}
+
+export interface MultiGamePlatformApp {
+  readonly root: HTMLElement;
+  viewMode: AppViewMode;
+  lobbyGameFilter: "all" | SupportedGameId;
+  lobbyHeroEnteredOnce: boolean;
+  loginHeroEnteredOnce: boolean;
+  useServerBackend: boolean;
+  staticHostOnly: boolean;
+  serverReachable: boolean;
+  isAuthenticated: boolean;
+  addingAdditionalGuest: boolean;
+  returnViewAfterAddGuest: AppViewMode;
+  loginDraftName: string;
+  loginErrorMsg: string;
+  currentUserId: string;
+  currentUserName: string;
+  deviceGuests: GuestSession[];
+  localFriendDraftName: string;
+  hidePassAndPlayHand: boolean;
+  createRoomName: string;
+  createRoomGameId: SupportedGameId;
+  createRoomMode: "online" | "offline";
+  readonly rooms: RoomsMapView;
+  nextRoomNum: number;
+  activeRoomId: string;
+  buildMode: BuildMode;
+  selectedBoardSpot: BoardSpotSelection | null;
+  setupEdgeKind: "road" | "ship";
+  robberOrPirateMode: "robber" | "pirate";
+  selectedMoveFromEdgeId: string | null;
+  discardSelection: ResourceMap;
+  tradeGiveRes: ResourceType;
+  tradeReceiveRes: ResourceType;
+  maritimeGive: ResourceMap;
+  maritimeWant: ResourceMap;
+  domesticGive: ResourceMap;
+  domesticWant: ResourceMap;
+  domesticTargetPlayerId: string;
+  yopRes1: ResourceType;
+  yopRes2: ResourceType;
+  monoRes: ResourceType;
+  splendorDraftGems: Partial<Record<GemColor, number>>;
+  azulSelectedDraft: {
+    source: AzulDraftSource;
+    color: AzulTileColor;
+  } | null;
+  autoPlayBots: boolean;
+  autoRespondBotsToHuman: boolean;
+  autoPlaySpeedMs: number;
+  render(): void;
+  signInAsGuest(rawName?: string, existingGuestId?: string): boolean;
+  startSoloGameFromLogin(rawName?: string): boolean;
+  startOfflineLocalFromLogin(rawName?: string): boolean;
+  openAddGuestView(): void;
+  switchActiveGuest(guestId: string): void;
+  signOutGuest(): void;
+  getRoomBounds(room: {
+    gameId: SupportedGameId;
+    config: { scenarioId: ScenarioId };
+  }): { minPlayers: number; maxPlayers: number };
+  createLocalRoom(opts: CreateLocalRoomOptions): ClientRoom;
+  getActiveRoom(): ClientRoom;
+  getRoomState(room: ClientRoom): any | null;
+  canControlPlayerOnThisDevice(
+    room: ClientRoom,
+    playerId: string | null
+  ): boolean;
+  rebuildRoomSeats(room: ClientRoom): void;
+  addLocalFriendToRoom(room: ClientRoom, rawName: string): void;
+  removePlayerFromRoom(room: ClientRoom, targetPlayerId: string): void;
+  createAndOpenRoom(): void;
+  enterOrJoinRoom(roomId: string): void;
+  leaveActiveRoom(): void;
+  startRoomMatch(roomId: string): void;
+  resetSubModes(): void;
+  dispatchUiAction(playerId: string, action: any): void;
+  dispatch(playerId: string, action: any): void;
+  stepOneBotMove(): boolean;
+  finishSetupWithBots(): void;
+  undoMatch(): void;
+  redoMatch(): void;
+  toggleAutoRespondBots(): void;
+  toggleAutoPlay(): void;
+  stopAutoPlay(): void;
+  switchTradeMode(nextMode: "maritime_trade" | "domestic_trade" | null): void;
+  setSharedTradeWant(resource: ResourceType, amount: number): void;
+}
+
+export interface MultiGamePlatformAppConstructor {
+  new (
+    root: HTMLElement,
+    options?: MultiGamePlatformAppOptions
+  ): MultiGamePlatformApp;
+  (
+    root: HTMLElement,
+    options?: MultiGamePlatformAppOptions
+  ): MultiGamePlatformApp;
+}
+
+export function createMultiGamePlatformApp(
+  root: HTMLElement,
+  options?: MultiGamePlatformAppOptions
+): MultiGamePlatformApp {
+  const isStaticHost =
+    Boolean(options?.staticHostOnly) ||
+    (typeof document !== "undefined" &&
+      Boolean(document.documentElement?.hasAttribute("data-static-only"))) ||
+    (typeof window !== "undefined" &&
+      Boolean(window.location?.hostname?.endsWith(".github.io")));
+  const isBrowserHttp =
+    !options?.forceLocalMode &&
+    typeof window !== "undefined" &&
+    typeof fetch === "function" &&
+    Boolean(window.location?.protocol?.startsWith("http"));
+
+  let model: AppModel = createInitialAppModelPure(options, {
+    isStaticHost,
+    isBrowserHttp,
+    randomGuestSuffix: 100 + Math.floor(Math.random() * 900),
+    deviceGuests: loadDeviceGuestsFromStorage(),
+    savedGuest: loadSavedGuestSessionFromStorage(),
+    nowMs: Date.now(),
+  });
+
+  if (model.isAuthenticated) {
+    saveDeviceGuestsToStorage(model.deviceGuests);
   }
 
-  private bindCommonIdentityEvents(): void {
-    this.bindDropdownEvents();
-    this.root
+  let ws: WebSocket | null = null;
+  let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let setupSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  let autoPlayTimer: ReturnType<typeof setInterval> | null = null;
+  let botResponseTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const roomLensCache = new Map<string, ClientRoom>();
+
+  const getOrCreateRoomLens = (roomId: string): ClientRoom => {
+    const cached = roomLensCache.get(roomId);
+    if (cached) return cached;
+
+    const initialSnapshot = model.rooms[roomId];
+    const targetObj: ClientRoom = initialSnapshot
+      ? { ...initialSnapshot, config: { ...initialSnapshot.config } }
+      : ({ roomId } as ClientRoom);
+
+    const configProxy = new Proxy({} as ClientRoomConfig, {
+      get(_cfgTarget, cfgProp) {
+        const live = model.rooms[roomId] ?? targetObj;
+        return (live.config as any)[cfgProp];
+      },
+      set(_cfgTarget, cfgProp, cfgValue) {
+        const live = model.rooms[roomId];
+        if (live) {
+          model = setRoomInModelPure(model, {
+            ...live,
+            config: {
+              ...live.config,
+              [cfgProp]: cfgValue,
+            },
+          });
+        } else {
+          (targetObj.config as any)[cfgProp] = cfgValue;
+        }
+        return true;
+      },
+      ownKeys() {
+        const live = model.rooms[roomId] ?? targetObj;
+        return Reflect.ownKeys(live.config);
+      },
+      getOwnPropertyDescriptor(_cfgTarget, cfgProp) {
+        const live = model.rooms[roomId] ?? targetObj;
+        return Object.getOwnPropertyDescriptor(live.config, cfgProp);
+      },
+    });
+
+    const lens = new Proxy(targetObj, {
+      get(_target, prop) {
+        const live = model.rooms[roomId] ?? targetObj;
+        if (prop === "config") return configProxy;
+        return (live as any)[prop];
+      },
+      set(_target, prop, value) {
+        const live = model.rooms[roomId];
+        if (live) {
+          model = setRoomInModelPure(model, {
+            ...live,
+            [prop]: value,
+          });
+        } else {
+          (targetObj as any)[prop] = value;
+        }
+        return true;
+      },
+      ownKeys() {
+        const live = model.rooms[roomId] ?? targetObj;
+        return Reflect.ownKeys(live);
+      },
+      getOwnPropertyDescriptor(_target, prop) {
+        const live = model.rooms[roomId] ?? targetObj;
+        return Object.getOwnPropertyDescriptor(live, prop);
+      },
+    });
+
+    roomLensCache.set(roomId, lens);
+    return lens;
+  };
+
+  const roomsFacade: RoomsMapView = {
+    get size() {
+      return model.roomOrder.length;
+    },
+    get(roomId: string) {
+      if (!Object.prototype.hasOwnProperty.call(model.rooms, roomId)) {
+        return undefined;
+      }
+      return getOrCreateRoomLens(roomId);
+    },
+    has(roomId: string) {
+      return Object.prototype.hasOwnProperty.call(model.rooms, roomId);
+    },
+    set(roomId: string, room: ClientRoom) {
+      model = setRoomInModelPure(model, { ...room, roomId });
+      return roomsFacade;
+    },
+    delete(roomId: string) {
+      const existed = Object.prototype.hasOwnProperty.call(model.rooms, roomId);
+      if (existed) {
+        model = removeRoomFromModelPure(model, roomId);
+        roomLensCache.delete(roomId);
+      }
+      return existed;
+    },
+    keys() {
+      return [...model.roomOrder][Symbol.iterator]();
+    },
+    values() {
+      return model.roomOrder
+        .filter((id) => Object.prototype.hasOwnProperty.call(model.rooms, id))
+        .map((id) => getOrCreateRoomLens(id))[Symbol.iterator]();
+    },
+    entries() {
+      return model.roomOrder
+        .filter((id) => Object.prototype.hasOwnProperty.call(model.rooms, id))
+        .map(
+          (id) => [id, getOrCreateRoomLens(id)] as [string, ClientRoom]
+        )[Symbol.iterator]();
+    },
+    forEach(cb: (room: ClientRoom, roomId: string) => void) {
+      model.roomOrder.forEach((id) => {
+        if (Object.prototype.hasOwnProperty.call(model.rooms, id)) {
+          cb(getOrCreateRoomLens(id), id);
+        }
+      });
+    },
+    [Symbol.iterator]() {
+      return roomsFacade.entries();
+    },
+  };
+
+  const sendWsMessage = (msg: Record<string, unknown>): void => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(msg));
+    }
+  };
+
+  const stopAutoPlay = (): void => {
+    model = { ...model, autoPlayBots: false };
+    if (autoPlayTimer) {
+      clearInterval(autoPlayTimer);
+      autoPlayTimer = null;
+    }
+    if (botResponseTimeout) {
+      clearTimeout(botResponseTimeout);
+      botResponseTimeout = null;
+    }
+  };
+
+  const renderPreservingFocus = (): void => {
+    const activeEl =
+      typeof document !== "undefined"
+        ? (document.activeElement as HTMLElement | null)
+        : null;
+    if (
+      activeEl &&
+      (activeEl.id === "inp-create-room-name" ||
+        activeEl.id === "setup-room-name" ||
+        activeEl.id === "inp-guest-name" ||
+        activeEl.id === "inp-local-friend-name")
+    ) {
+      return;
+    }
+    render();
+  };
+
+  const connectServerRealtime = (): void => {
+    if (!model.useServerBackend || typeof WebSocket === "undefined") return;
+    if (
+      ws &&
+      (ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${proto}//${window.location.host}`);
+    ws = socket;
+
+    socket.addEventListener("open", () => {
+      model = { ...model, serverReachable: true };
+      const active = model.rooms[model.activeRoomId];
+      if (
+        (model.viewMode === "room_setup" || model.viewMode === "in_game") &&
+        active &&
+        !active.isOfflineLocal
+      ) {
+        sendWsMessage({
+          type: "SUBSCRIBE_ROOM",
+          roomId: active.roomId,
+          playerId: model.currentUserId,
+        });
+      }
+    });
+
+    socket.addEventListener("message", (ev) => {
+      try {
+        const msg = JSON.parse(String(ev.data));
+        if (msg.type === "LOBBY_ROOMS" && Array.isArray(msg.rooms)) {
+          model = syncOnlineLobbyRoomsPure(model, msg.rooms);
+          if (model.viewMode === "lobby") {
+            renderPreservingFocus();
+          }
+        } else if (msg.type === "ROOM_STATE" && msg.room) {
+          const prevStatus = model.rooms[msg.room.roomId]?.status;
+          const upserted = upsertRoomFromSummaryPure(
+            model,
+            msg.room,
+            msg.state,
+            msg.actingPlayerId
+          );
+          model = upserted.model;
+          const updated = upserted.room;
+          if (updated.roomId === model.activeRoomId) {
+            if (
+              model.viewMode === "room_setup" &&
+              prevStatus !== "in_progress" &&
+              updated.status === "in_progress"
+            ) {
+              model = resetSubModesPure({ ...model, viewMode: "in_game" });
+            }
+            if (updated.status === "finished") {
+              stopAutoPlay();
+            }
+            renderPreservingFocus();
+          }
+        }
+      } catch {
+        // Ignore malformed frame
+      }
+    });
+
+    socket.addEventListener("close", () => {
+      if (ws === socket) {
+        ws = null;
+      }
+      if (model.isAuthenticated && model.useServerBackend) {
+        if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = setTimeout(() => connectServerRealtime(), 1500);
+      }
+    });
+  };
+
+  const fetchLobbyRooms = async (): Promise<void> => {
+    if (!model.useServerBackend) return;
+    try {
+      const res = await fetch("/api/rooms");
+      const ct = res.headers.get("content-type") ?? "";
+      if (!res.ok || !ct.includes("application/json")) {
+        model = {
+          ...model,
+          staticHostOnly: true,
+          useServerBackend: false,
+          serverReachable: false,
+          createRoomMode: "offline",
+        };
+        if (wsReconnectTimer) {
+          clearTimeout(wsReconnectTimer);
+          wsReconnectTimer = null;
+        }
+        if (model.viewMode === "lobby") {
+          renderPreservingFocus();
+        }
+        return;
+      }
+      model = { ...model, serverReachable: true };
+      connectServerRealtime();
+      const data = await res.json();
+      if (Array.isArray(data.rooms)) {
+        model = syncOnlineLobbyRoomsPure(model, data.rooms);
+        if (model.viewMode === "lobby") {
+          renderPreservingFocus();
+        }
+      }
+    } catch {
+      model = {
+        ...model,
+        serverReachable: false,
+        createRoomMode: "offline",
+      };
+      if (model.viewMode === "lobby") {
+        renderPreservingFocus();
+      }
+    }
+  };
+
+  const pushServerRoomSetup = (room: ClientRoom, debounceMs = 0): void => {
+    if (!roomUsesServerPure(model, room)) return;
+    if (setupSyncTimer) {
+      clearTimeout(setupSyncTimer);
+      setupSyncTimer = null;
+    }
+    const send = async () => {
+      try {
+        const latest = model.rooms[room.roomId] ?? room;
+        const res = await fetch(
+          `/api/rooms/${encodeURIComponent(latest.roomId)}/setup`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              requesterId: model.currentUserId,
+              name: latest.name,
+              gameId: latest.gameId,
+              botCount: latest.botCount,
+              allBots: latest.allBots,
+              botDifficulty: latest.botDifficulty,
+              startingPlayerMode: latest.startingPlayerMode,
+              config: latest.config,
+            }),
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.room) {
+            model = upsertRoomFromSummaryPure(model, data.room).model;
+            renderPreservingFocus();
+          }
+        }
+      } catch {
+        // Ignore transient network errors
+      }
+    };
+    if (debounceMs > 0) {
+      setupSyncTimer = setTimeout(() => void send(), debounceMs);
+    } else {
+      void send();
+    }
+  };
+
+  const signInAsGuest = (
+    rawName?: string,
+    existingGuestId?: string
+  ): boolean => {
+    const res = resolveGuestSignInPure(
+      model,
+      rawName,
+      Math.random().toString(36).slice(2, 8),
+      Date.now(),
+      existingGuestId
+    );
+    model = res.model;
+    if (!res.ok) {
+      render();
+      return false;
+    }
+
+    saveGuestSessionToStorage(res.session);
+    saveDeviceGuestsToStorage(model.deviceGuests);
+    render();
+
+    if (model.useServerBackend) {
+      void fetchLobbyRooms();
+    }
+    return true;
+  };
+
+  const createLocalRoom = (opts: CreateLocalRoomOptions): ClientRoom => {
+    const created = createLocalRoomPure(model, opts, Date.now());
+    model = created.model;
+    if (opts.autoStart) {
+      startRoomMatch(created.room.roomId);
+    }
+    return getOrCreateRoomLens(created.room.roomId);
+  };
+
+  const startSoloGameFromLogin = (rawName?: string): boolean => {
+    const fallbackName =
+      (rawName ?? model.loginDraftName).trim() || "Player 1";
+    const ok = signInAsGuest(fallbackName);
+    if (!ok) return false;
+    model = { ...model, createRoomMode: "offline" };
+    const room = createLocalRoom({
+      name: `${model.currentUserName}'s solo table`,
+      gameId: model.createRoomGameId,
+      ownerId: model.currentUserId,
+      ownerName: model.currentUserName,
+      isOfflineLocal: true,
+      botCount: 3,
+      startingPlayerMode: "random",
+      autoStart: false,
+    });
+    model = resetSubModesPure({
+      ...model,
+      activeRoomId: room.roomId,
+      viewMode: "room_setup",
+    });
+    render();
+    return true;
+  };
+
+  const startOfflineLocalFromLogin = (rawName?: string): boolean => {
+    const fallbackName =
+      (rawName ?? model.loginDraftName).trim() || "Player 1";
+    const ok = signInAsGuest(fallbackName);
+    if (!ok) return false;
+    model = { ...model, createRoomMode: "offline" };
+    const room = createLocalRoom({
+      name: `${model.currentUserName}'s local table`,
+      gameId: model.createRoomGameId,
+      ownerId: model.currentUserId,
+      ownerName: model.currentUserName,
+      isOfflineLocal: true,
+      botCount: 0,
+      startingPlayerMode: "random",
+      autoStart: false,
+    });
+    model = resetSubModesPure({
+      ...model,
+      activeRoomId: room.roomId,
+      viewMode: "room_setup",
+    });
+    render();
+    return true;
+  };
+
+  const openAddGuestView = (): void => {
+    stopAutoPlay();
+    model = {
+      ...model,
+      returnViewAfterAddGuest:
+        model.viewMode === "login" ? "lobby" : model.viewMode,
+      addingAdditionalGuest: true,
+      loginErrorMsg: "",
+      loginDraftName: `Guest ${model.deviceGuests.length + 1}`,
+      viewMode: "login",
+    };
+    render();
+  };
+
+  const switchActiveGuest = (guestId: string): void => {
+    const found =
+      model.deviceGuests.find((g) => g.id === guestId) ??
+      USER_PROFILES.find((u) => u.id === guestId);
+    if (!found) return;
+
+    const session: GuestSession = {
+      id: found.id,
+      name: found.name,
+      mode: "guest",
+    };
+    model = {
+      ...model,
+      currentUserId: found.id,
+      currentUserName: found.name,
+      deviceGuests: upsertDeviceGuestListPure(model.deviceGuests, session),
+    };
+    saveGuestSessionToStorage(session);
+    saveDeviceGuestsToStorage(model.deviceGuests);
+
+    const active = model.rooms[model.activeRoomId];
+    if (
+      active &&
+      roomUsesServerPure(model, active) &&
+      (model.viewMode === "room_setup" || model.viewMode === "in_game")
+    ) {
+      sendWsMessage({
+        type: "SUBSCRIBE_ROOM",
+        roomId: active.roomId,
+        playerId: model.currentUserId,
+      });
+      void fetch(
+        `/api/rooms/${encodeURIComponent(active.roomId)}?playerId=${encodeURIComponent(model.currentUserId)}`
+      )
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.room) {
+            model = upsertRoomFromSummaryPure(
+              model,
+              data.room,
+              data.state,
+              data.actingPlayerId
+            ).model;
+            render();
+          }
+        })
+        .catch(() => {});
+    }
+
+    render();
+  };
+
+  const signOutGuest = (): void => {
+    stopAutoPlay();
+    if (model.useServerBackend && model.activeRoomId) {
+      const active = model.rooms[model.activeRoomId];
+      if (
+        active &&
+        !active.isOfflineLocal &&
+        active.status !== "in_progress" &&
+        model.deviceGuests.length <= 1
+      ) {
+        void fetch(
+          `/api/rooms/${encodeURIComponent(model.activeRoomId)}/leave`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ playerId: model.currentUserId }),
+          }
+        ).catch(() => {});
+      }
+      sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+    }
+    clearGuestSessionFromStorage();
+    model = resetSubModesPure({
+      ...model,
+      isAuthenticated: false,
+      addingAdditionalGuest: false,
+      loginErrorMsg: "",
+      loginDraftName: `Guest ${100 + Math.floor(Math.random() * 900)}`,
+      viewMode: "login",
+    });
+    render();
+  };
+
+  const getActiveRoom = (): ClientRoom => {
+    const active = getActiveRoomPure(model);
+    return getOrCreateRoomLens(active.roomId);
+  };
+
+  const rebuildRoomSeats = (roomLike: ClientRoom): void => {
+    const target = model.rooms[roomLike.roomId] ?? roomLike;
+    const rebuilt = rebuildRoomSeatsPure(target);
+    model = setRoomInModelPure(model, rebuilt);
+  };
+
+  const addLocalFriendToRoom = (room: ClientRoom, rawName: string): void => {
+    const liveRoom = model.rooms[room.roomId] ?? room;
+    const cleanName =
+      rawName.trim() || `Player ${liveRoom.humanPlayers.length + 1}`;
+    const bounds = getRoomBoundsPure(liveRoom);
+    if (liveRoom.humanPlayers.length >= bounds.maxPlayers) return;
+
+    if (roomUsesServerPure(model, liveRoom)) {
+      void (async () => {
+        try {
+          const res = await fetch(
+            `/api/rooms/${encodeURIComponent(liveRoom.roomId)}/local-players`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                requesterId: model.currentUserId,
+                playerName: cleanName.slice(0, 28),
+              }),
+            }
+          );
+          const data = await res.json();
+          if (!res.ok) {
+            alert(data.error ?? "Unable to add local player");
+            return;
+          }
+          model = upsertRoomFromSummaryPure(
+            { ...model, localFriendDraftName: "" },
+            data.room
+          ).model;
+          render();
+        } catch (err: any) {
+          alert(`Unable to add local player: ${err?.message ?? String(err)}`);
+        }
+      })();
+      return;
+    }
+
+    model = addOfflineLocalFriendPure(
+      model,
+      liveRoom.roomId,
+      rawName,
+      Math.random().toString(36).slice(2, 7)
+    );
+    render();
+  };
+
+  const removePlayerFromRoom = (
+    room: ClientRoom,
+    targetPlayerId: string
+  ): void => {
+    const liveRoom = model.rooms[room.roomId] ?? room;
+    if (targetPlayerId === liveRoom.ownerId) return;
+
+    if (roomUsesServerPure(model, liveRoom)) {
+      void (async () => {
+        try {
+          const res = await fetch(
+            `/api/rooms/${encodeURIComponent(liveRoom.roomId)}/remove-player`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                requesterId: model.currentUserId,
+                targetPlayerId,
+              }),
+            }
+          );
+          const data = await res.json();
+          if (!res.ok) {
+            alert(data.error ?? "Unable to remove player");
+            return;
+          }
+          model = upsertRoomFromSummaryPure(model, data.room).model;
+          render();
+        } catch (err: any) {
+          alert(`Unable to remove player: ${err?.message ?? String(err)}`);
+        }
+      })();
+      return;
+    }
+
+    model = removeOfflinePlayerPure(model, liveRoom.roomId, targetPlayerId);
+    render();
+  };
+
+  const createAndOpenRoom = (): void => {
+    const cleanName =
+      model.createRoomName.trim() ||
+      `${model.createRoomGameId} table ${model.nextRoomNum}`;
+
+    const openAsOfflineLocal =
+      model.createRoomMode === "offline" ||
+      !model.useServerBackend ||
+      !model.serverReachable;
+
+    if (!openAsOfflineLocal) {
+      void (async () => {
+        try {
+          const res = await fetch("/api/rooms", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: cleanName,
+              gameId: model.createRoomGameId,
+              ownerId: model.currentUserId,
+              hostName: model.currentUserName,
+              botCount: 0,
+              startingPlayerMode: "random",
+              autoStart: false,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            alert(data.error ?? "Unable to create room");
+            return;
+          }
+          const upserted = upsertRoomFromSummaryPure(
+            model,
+            data.room,
+            data.state,
+            data.actingPlayerId
+          );
+          const created = upserted.room;
+          model = resetSubModesPure({
+            ...upserted.model,
+            activeRoomId: created.roomId,
+            viewMode:
+              created.status === "in_progress" ? "in_game" : "room_setup",
+          });
+          sendWsMessage({
+            type: "SUBSCRIBE_ROOM",
+            roomId: created.roomId,
+            playerId: model.currentUserId,
+          });
+          render();
+        } catch {
+          model = {
+            ...model,
+            serverReachable: false,
+            createRoomMode: "offline",
+          };
+          const fallbackRoom = createLocalRoom({
+            name: cleanName,
+            gameId: model.createRoomGameId,
+            ownerId: model.currentUserId,
+            ownerName: model.currentUserName,
+            isOfflineLocal: true,
+            botCount: 0,
+            startingPlayerMode: "random",
+            autoStart: false,
+          });
+          model = resetSubModesPure({
+            ...model,
+            activeRoomId: fallbackRoom.roomId,
+            viewMode: "room_setup",
+          });
+          render();
+        }
+      })();
+      return;
+    }
+
+    const room = createLocalRoom({
+      name: cleanName,
+      gameId: model.createRoomGameId,
+      ownerId: model.currentUserId,
+      ownerName: model.currentUserName,
+      isOfflineLocal: true,
+      botCount: 0,
+      startingPlayerMode: "random",
+      autoStart: false,
+    });
+    model = resetSubModesPure({
+      ...model,
+      activeRoomId: room.roomId,
+      viewMode: "room_setup",
+    });
+    render();
+  };
+
+  const enterOrJoinRoom = (roomId: string): void => {
+    stopAutoPlay();
+    const room = model.rooms[roomId];
+    if (!room) return;
+    model = { ...model, activeRoomId: roomId };
+
+    if (roomUsesServerPure(model, room)) {
+      void (async () => {
+        try {
+          let latestRoom = room;
+          if (room.status === "lobby" || room.status === "finished") {
+            const joinRes = await fetch(
+              `/api/rooms/${encodeURIComponent(roomId)}/join`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  playerId: model.currentUserId,
+                  playerName: model.currentUserName,
+                }),
+              }
+            );
+            const joinData = await joinRes.json();
+            if (!joinRes.ok) {
+              alert(joinData.error ?? "Unable to join room");
+              return;
+            }
+            const upserted = upsertRoomFromSummaryPure(
+              model,
+              joinData.room,
+              joinData.state,
+              joinData.actingPlayerId
+            );
+            model = upserted.model;
+            latestRoom = upserted.room;
+          } else {
+            const getRes = await fetch(
+              `/api/rooms/${encodeURIComponent(roomId)}?playerId=${encodeURIComponent(model.currentUserId)}`
+            );
+            if (getRes.ok) {
+              const getData = await getRes.json();
+              const upserted = upsertRoomFromSummaryPure(
+                model,
+                getData.room,
+                getData.state,
+                getData.actingPlayerId
+              );
+              model = upserted.model;
+              latestRoom = upserted.room;
+            }
+          }
+
+          sendWsMessage({
+            type: "SUBSCRIBE_ROOM",
+            roomId,
+            playerId: model.currentUserId,
+          });
+          model = resetSubModesPure({
+            ...model,
+            viewMode:
+              latestRoom.status === "in_progress" ? "in_game" : "room_setup",
+          });
+          render();
+        } catch (err: any) {
+          alert(`Unable to enter room: ${err?.message ?? String(err)}`);
+        }
+      })();
+      return;
+    }
+
+    model = enterOfflineRoomPure(model, roomId);
+    render();
+  };
+
+  const leaveActiveRoom = (): void => {
+    const room = getActiveRoomPure(model);
+    if (!room) return;
+    stopAutoPlay();
+
+    if (roomUsesServerPure(model, room)) {
+      void (async () => {
+        try {
+          const res = await fetch(
+            `/api/rooms/${encodeURIComponent(room.roomId)}/leave`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ playerId: model.currentUserId }),
+            }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data.closed) {
+              model = removeRoomFromModelPure(model, room.roomId);
+              roomLensCache.delete(room.roomId);
+            }
+          }
+        } catch {
+          // Ignore network errors
+        }
+        sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+        model = resetSubModesPure({ ...model, viewMode: "lobby" });
+        await fetchLobbyRooms();
+        render();
+      })();
+      return;
+    }
+
+    model = leaveOfflineRoomPure(model, room.roomId);
+    render();
+  };
+
+  const scheduleBotAutoResponseIfNeeded = (): void => {
+    const room = getActiveRoomPure(model);
+    if (!room || roomUsesServerPure(model, room)) return;
+    if (botResponseTimeout) {
+      clearTimeout(botResponseTimeout);
+      botResponseTimeout = null;
+    }
+    if (!room.session || model.viewMode !== "in_game") return;
+    const state = room.session.getState();
+    if (state.phase === "GAME_OVER") return;
+
+    const actorId = getActingPlayerIdPure(room.gameId, state);
+    const actor = state.players.find((p: any) => p.id === actorId);
+
+    if (
+      room.gameId === "catan" &&
+      state.phase === "MAIN_PHASE" &&
+      state.activeTradeOffer &&
+      actor &&
+      actor.id !== state.activeTradeOffer.fromPlayerId &&
+      !hasResources(actor.resources, state.activeTradeOffer.want)
+    ) {
+      dispatch(actor.id, {
+        type: "DECLINE_DOMESTIC_TRADE",
+        offerId: state.activeTradeOffer.id,
+      });
+      return;
+    }
+
+    if (!model.autoRespondBotsToHuman || model.autoPlayBots) return;
+    if (actor && actor.isBot) {
+      botResponseTimeout = setTimeout(() => {
+        stepOneBotMove();
+      }, 140);
+    }
+  };
+
+  const startRoomMatch = (roomId: string): void => {
+    stopAutoPlay();
+    const room = model.rooms[roomId];
+    if (!room) return;
+
+    if (roomUsesServerPure(model, room)) {
+      void (async () => {
+        try {
+          const res = await fetch(
+            `/api/rooms/${encodeURIComponent(roomId)}/start`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ requesterId: model.currentUserId }),
+            }
+          );
+          const data = await res.json();
+          if (!res.ok) {
+            alert(data.error ?? "Cannot start match");
+            return;
+          }
+          const upserted = upsertRoomFromSummaryPure(
+            model,
+            data.room,
+            data.state,
+            data.actingPlayerId
+          );
+          model = resetSubModesPure({
+            ...upserted.model,
+            activeRoomId: roomId,
+            viewMode: "in_game",
+          });
+          sendWsMessage({
+            type: "SUBSCRIBE_ROOM",
+            roomId,
+            playerId: model.currentUserId,
+          });
+          render();
+        } catch (err: any) {
+          alert(`Unable to start match: ${err?.message ?? String(err)}`);
+        }
+      })();
+      return;
+    }
+
+    const startedRes = startOfflineRoomMatchPure(model, roomId);
+    model = startedRes.model;
+    if (!startedRes.started) return;
+    render();
+    scheduleBotAutoResponseIfNeeded();
+  };
+
+  const resetSubModes = (): void => {
+    model = resetSubModesPure(model);
+  };
+
+  const dispatch = (playerId: string, action: any): void => {
+    const room = getActiveRoomPure(model);
+    if (roomUsesServerPure(model, room)) {
+      void (async () => {
+        try {
+          const res = await fetch(
+            `/api/rooms/${encodeURIComponent(room.roomId)}/action`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                playerId,
+                requesterId: model.currentUserId,
+                action,
+              }),
+            }
+          );
+          const data = await res.json();
+          if (!res.ok) {
+            alert(`Action error: ${data.error ?? "Illegal action"}`);
+            return;
+          }
+          model = resetSubModesPure(
+            upsertRoomFromSummaryPure(
+              model,
+              data.room,
+              data.state,
+              data.actingPlayerId
+            ).model
+          );
+          render();
+        } catch (err: any) {
+          alert(`Action error: ${err?.message ?? String(err)}`);
+        }
+      })();
+      return;
+    }
+
+    if (!room.session) return;
+    try {
+      const prevActorId = getActingPlayerIdPure(
+        room.gameId,
+        room.session.getState()
+      );
+      const result = room.session.dispatch(playerId, action);
+      const nextActorId = getActingPlayerIdPure(room.gameId, result.state);
+      if (result.state.phase === "GAME_OVER") {
+        model = updateRoomInModelPure(model, room.roomId, (r) => ({
+          ...r,
+          status: "finished",
+        }));
+      } else if (
+        room.gameId === "catan" &&
+        prevActorId !== nextActorId &&
+        result.state.players.filter((p: any) => !p.isBot).length >= 2
+      ) {
+        const nextActor = result.state.players.find(
+          (p: any) => p.id === nextActorId
+        );
+        if (nextActor && !nextActor.isBot && model.hidePassAndPlayHand) {
+          model = { ...model, hidePassAndPlayHand: true };
+        }
+      }
+      model = resetSubModesPure(model);
+      render();
+      scheduleBotAutoResponseIfNeeded();
+    } catch (err: any) {
+      alert(`Action error: ${err?.message ?? String(err)}`);
+    }
+  };
+
+  const dispatchUiAction = (playerId: string, action: any): void => {
+    const room = getActiveRoomPure(model);
+    if (!canControlPlayerOnDevicePure(model, room, playerId)) {
+      return;
+    }
+    const rawState = getRoomStatePure(model, room);
+    if (rawState) {
+      const actingId = roomUsesServerPure(model, room)
+        ? room.remoteActingPlayerId ??
+          getActingPlayerIdPure(room.gameId, rawState)
+        : getActingPlayerIdPure(room.gameId, rawState);
+      const isTradeProposerAction =
+        room.gameId === "catan" &&
+        rawState.activeTradeOffer?.fromPlayerId === playerId &&
+        (action?.type === "CONFIRM_DOMESTIC_TRADE" ||
+          action?.type === "CANCEL_DOMESTIC_TRADE");
+      if (playerId !== actingId && !isTradeProposerAction) {
+        return;
+      }
+    }
+    dispatch(playerId, action);
+  };
+
+  const stepOneBotMove = (): boolean => {
+    const room = getActiveRoomPure(model);
+    if (roomUsesServerPure(model, room)) {
+      void (async () => {
+        const res = await fetch(
+          `/api/rooms/${encodeURIComponent(room.roomId)}/bot-step`,
+          { method: "POST" }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          model = resetSubModesPure(
+            upsertRoomFromSummaryPure(
+              model,
+              data.room,
+              data.state,
+              data.actingPlayerId
+            ).model
+          );
+          render();
+        }
+      })();
+      return true;
+    }
+
+    if (!room.session) return false;
+    const state = room.session.getState();
+    if (state.phase === "GAME_OVER") {
+      model = updateRoomInModelPure(model, room.roomId, (r) => ({
+        ...r,
+        status: "finished",
+      }));
+      stopAutoPlay();
+      return false;
+    }
+    const actorId = getActingPlayerIdPure(room.gameId, state);
+    if (!actorId) return false;
+    const engine = getEngineForGamePure(room.gameId);
+    const action = engine.chooseBotAction(state, actorId);
+    if (!action) return false;
+    const res = room.session.dispatch(actorId, action);
+    if (res.state.phase === "GAME_OVER") {
+      model = updateRoomInModelPure(model, room.roomId, (r) => ({
+        ...r,
+        status: "finished",
+      }));
+    }
+    model = resetSubModesPure(model);
+    render();
+    scheduleBotAutoResponseIfNeeded();
+    return true;
+  };
+
+  const finishSetupWithBots = (): void => {
+    const room = getActiveRoomPure(model);
+    if (roomUsesServerPure(model, room)) {
+      void (async () => {
+        const res = await fetch(
+          `/api/rooms/${encodeURIComponent(room.roomId)}/finish-setup`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requesterId: model.currentUserId }),
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          model = resetSubModesPure(
+            upsertRoomFromSummaryPure(
+              model,
+              data.room,
+              data.state,
+              data.actingPlayerId
+            ).model
+          );
+          render();
+        }
+      })();
+      return;
+    }
+
+    if (!room.session || room.gameId !== "catan") return;
+    stepSetupBotsRecursive(room.session, 40);
+    model = resetSubModesPure(model);
+    render();
+    scheduleBotAutoResponseIfNeeded();
+  };
+
+  const undoMatch = (): void => {
+    const room = getActiveRoomPure(model);
+    stopAutoPlay();
+    if (roomUsesServerPure(model, room)) {
+      void (async () => {
+        const res = await fetch(
+          `/api/rooms/${encodeURIComponent(room.roomId)}/undo`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requesterId: model.currentUserId }),
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          model = resetSubModesPure(
+            upsertRoomFromSummaryPure(
+              model,
+              data.room,
+              data.state,
+              data.actingPlayerId
+            ).model
+          );
+          render();
+        }
+      })();
+      return;
+    }
+    if (!room.session) return;
+    const rawState = room.session.getState();
+    const actingId = getActingPlayerIdPure(room.gameId, rawState);
+    if (
+      !actingId ||
+      !canControlPlayerOnDevicePure(model, room, actingId) ||
+      !room.session.canPlayerUndo(actingId)
+    ) {
+      return;
+    }
+    room.session.undoForPlayer(actingId);
+    model = resetSubModesPure(model);
+    render();
+  };
+
+  const redoMatch = (): void => {
+    const room = getActiveRoomPure(model);
+    stopAutoPlay();
+    if (roomUsesServerPure(model, room)) {
+      void (async () => {
+        const res = await fetch(
+          `/api/rooms/${encodeURIComponent(room.roomId)}/redo`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requesterId: model.currentUserId }),
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          model = resetSubModesPure(
+            upsertRoomFromSummaryPure(
+              model,
+              data.room,
+              data.state,
+              data.actingPlayerId
+            ).model
+          );
+          render();
+        }
+      })();
+      return;
+    }
+    if (!room.session) return;
+    const rawState = room.session.getState();
+    const actingId = getActingPlayerIdPure(room.gameId, rawState);
+    if (
+      !actingId ||
+      !canControlPlayerOnDevicePure(model, room, actingId) ||
+      !room.session.canPlayerRedo(actingId)
+    ) {
+      return;
+    }
+    room.session.redoForPlayer(actingId);
+    model = resetSubModesPure(model);
+    render();
+  };
+
+  const toggleAutoRespondBots = (): void => {
+    const room = getActiveRoomPure(model);
+    const next = !model.autoRespondBotsToHuman;
+    model = updateRoomInModelPure(
+      { ...model, autoRespondBotsToHuman: next },
+      room.roomId,
+      (r) => ({ ...r, autoStepBots: next })
+    );
+    if (roomUsesServerPure(model, room)) {
+      void fetch(`/api/rooms/${encodeURIComponent(room.roomId)}/auto-bots`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      }).catch(() => {});
+    }
+    render();
+    scheduleBotAutoResponseIfNeeded();
+  };
+
+  const toggleAutoPlay = (): void => {
+    if (model.autoPlayBots) {
+      stopAutoPlay();
+    } else {
+      model = { ...model, autoPlayBots: true };
+      autoPlayTimer = setInterval(() => {
+        const room = getActiveRoomPure(model);
+        const state = getRoomStatePure(model, room);
+        if (!state) {
+          stopAutoPlay();
+          return;
+        }
+        if (state.phase === "GAME_OVER") {
+          model = updateRoomInModelPure(model, room.roomId, (r) => ({
+            ...r,
+            status: "finished",
+          }));
+          stopAutoPlay();
+          render();
+          return;
+        }
+        stepOneBotMove();
+      }, model.autoPlaySpeedMs);
+    }
+    render();
+  };
+
+  const switchTradeMode = (
+    nextMode: "maritime_trade" | "domestic_trade" | null
+  ): void => {
+    model = switchTradeModePure(model, nextMode);
+    render();
+  };
+
+  const setSharedTradeWant = (resource: ResourceType, amount: number): void => {
+    model = setSharedTradeWantPure(model, resource, amount);
+  };
+
+  const bindCommonIdentityEvents = (): void => {
+    bindDropdownEventsOnRoot(root);
+    root
       .querySelector("#sel-user-identity")
       ?.addEventListener("change", (e) => {
         const selectedId = (e.target as HTMLSelectElement).value;
-        this.switchActiveGuest(selectedId);
+        switchActiveGuest(selectedId);
       });
 
-    this.root.querySelector("#btn-add-guest")?.addEventListener("click", () => {
-      this.openAddGuestView();
+    root.querySelector("#btn-add-guest")?.addEventListener("click", () => {
+      openAddGuestView();
     });
 
-    this.root.querySelector("#btn-sign-out")?.addEventListener("click", () => {
-      this.signOutGuest();
+    root.querySelector("#btn-sign-out")?.addEventListener("click", () => {
+      signOutGuest();
     });
-  }
+  };
 
-  private bindReadOnlyCatanSpotInspect(): void {
-    this.root
+  const bindLoginEvents = (): void => {
+    root.querySelector("#inp-guest-name")?.addEventListener("input", (e) => {
+      model = {
+        ...model,
+        loginDraftName: (e.target as HTMLInputElement).value,
+        loginErrorMsg: "",
+      };
+    });
+
+    root
+      .querySelector("#form-guest-login")
+      ?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        signInAsGuest(model.loginDraftName);
+      });
+
+    root
+      .querySelector("#btn-start-solo-game")
+      ?.addEventListener("click", () => {
+        startSoloGameFromLogin(model.loginDraftName);
+      });
+
+    root
+      .querySelector("#btn-start-offline-local")
+      ?.addEventListener("click", () => {
+        startOfflineLocalFromLogin(model.loginDraftName);
+      });
+
+    root
+      .querySelector("#btn-cancel-add-guest")
+      ?.addEventListener("click", () => {
+        model = {
+          ...model,
+          addingAdditionalGuest: false,
+          loginErrorMsg: "",
+          viewMode: model.returnViewAfterAddGuest,
+        };
+        render();
+      });
+
+    root.querySelectorAll("[data-select-saved-guest]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const guestId = btn.getAttribute("data-select-saved-guest")!;
+        const found = model.deviceGuests.find((g) => g.id === guestId);
+        if (found) {
+          signInAsGuest(found.name, found.id);
+        }
+      });
+    });
+  };
+
+  const bindLobbyEvents = (): void => {
+    bindCommonIdentityEvents();
+
+    root.querySelectorAll("[data-lobby-filter]").forEach((el) => {
+      el.addEventListener("click", () => {
+        const filter = el.getAttribute("data-lobby-filter") as
+          | "all"
+          | SupportedGameId;
+        model = {
+          ...model,
+          lobbyGameFilter: filter,
+          createRoomGameId:
+            filter !== "all" ? filter : model.createRoomGameId,
+        };
+        render();
+      });
+    });
+
+    root
+      .querySelector("#inp-create-room-name")
+      ?.addEventListener("input", (e) => {
+        model = {
+          ...model,
+          createRoomName: (e.target as HTMLInputElement).value,
+        };
+      });
+
+    root
+      .querySelector("#sel-create-room-game")
+      ?.addEventListener("change", (e) => {
+        model = {
+          ...model,
+          createRoomGameId: (e.target as HTMLSelectElement)
+            .value as SupportedGameId,
+        };
+        render();
+      });
+
+    root
+      .querySelector("#sel-create-room-mode")
+      ?.addEventListener("change", (e) => {
+        model = {
+          ...model,
+          createRoomMode: (e.target as HTMLSelectElement).value as
+            | "online"
+            | "offline",
+        };
+        render();
+      });
+
+    root.querySelector("#btn-create-room")?.addEventListener("click", () => {
+      createAndOpenRoom();
+    });
+
+    root.querySelectorAll("[data-join-room]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const rId = btn.getAttribute("data-join-room")!;
+        enterOrJoinRoom(rId);
+      });
+    });
+
+    root.querySelectorAll("[data-start-room-direct]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const rId = btn.getAttribute("data-start-room-direct")!;
+        startRoomMatch(rId);
+      });
+    });
+  };
+
+  const bindRoomSetupEvents = (
+    room: ClientRoom,
+    canEditSetup: boolean,
+    maxBots: number,
+    bounds: { minPlayers: number; maxPlayers: number }
+  ): void => {
+    bindCommonIdentityEvents();
+
+    root.querySelector("#btn-back-lobby")?.addEventListener("click", () => {
+      model = { ...model, viewMode: "lobby" };
+      if (model.useServerBackend) {
+        void fetchLobbyRooms().then(() => render());
+      } else {
+        render();
+      }
+    });
+
+    root.querySelector("#btn-leave-room")?.addEventListener("click", () => {
+      leaveActiveRoom();
+    });
+
+    root.querySelector("#tab-game-page")?.addEventListener("click", () => {
+      const latest = model.rooms[room.roomId] ?? room;
+      if (getRoomStatePure(model, latest)) {
+        model = { ...model, viewMode: "in_game" };
+        render();
+      }
+    });
+
+    root
+      .querySelector("#btn-return-active-game")
+      ?.addEventListener("click", () => {
+        const latest = model.rooms[room.roomId] ?? room;
+        if (getRoomStatePure(model, latest)) {
+          model = { ...model, viewMode: "in_game" };
+          render();
+        }
+      });
+
+    if (canEditSetup) {
+      root.querySelector("#setup-room-name")?.addEventListener("input", (e) => {
+        const nextName = (e.target as HTMLInputElement).value;
+        model = updateRoomInModelPure(model, room.roomId, (r) => ({
+          ...r,
+          name: nextName,
+        }));
+        const latest = model.rooms[room.roomId];
+        if (latest) pushServerRoomSetup(latest, 250);
+      });
+
+      root
+        .querySelector("#inp-local-friend-name")
+        ?.addEventListener("input", (e) => {
+          model = {
+            ...model,
+            localFriendDraftName: (e.target as HTMLInputElement).value,
+          };
+        });
+
+      root
+        .querySelector("#inp-local-friend-name")
+        ?.addEventListener("keydown", (e) => {
+          if ((e as KeyboardEvent).key === "Enter") {
+            e.preventDefault();
+            const latest = model.rooms[room.roomId] ?? room;
+            addLocalFriendToRoom(latest, model.localFriendDraftName);
+          }
+        });
+
+      root
+        .querySelector("#btn-add-local-friend")
+        ?.addEventListener("click", () => {
+          const latest = model.rooms[room.roomId] ?? room;
+          addLocalFriendToRoom(latest, model.localFriendDraftName);
+        });
+
+      root.querySelectorAll("[data-remove-player]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const targetId = btn.getAttribute("data-remove-player")!;
+          const latest = model.rooms[room.roomId] ?? room;
+          removePlayerFromRoom(latest, targetId);
+        });
+      });
+
+      root
+        .querySelector("#setup-sel-game")
+        ?.addEventListener("change", (e) => {
+          const nextGame = (e.target as HTMLSelectElement)
+            .value as SupportedGameId;
+          model = updateRoomInModelPure(model, room.roomId, (r) =>
+            rebuildRoomSeatsPure({ ...r, gameId: nextGame })
+          );
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-sel-scenario")
+        ?.addEventListener("change", (e) => {
+          const nextScenario = (e.target as HTMLSelectElement)
+            .value as ScenarioId;
+          model = updateRoomInModelPure(model, room.roomId, (r) =>
+            rebuildRoomSeatsPure({
+              ...r,
+              config: { ...r.config, scenarioId: nextScenario },
+            })
+          );
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-sel-bots")
+        ?.addEventListener("change", (e) => {
+          const nextBots = Number((e.target as HTMLSelectElement).value);
+          model = updateRoomInModelPure(model, room.roomId, (r) =>
+            rebuildRoomSeatsPure({ ...r, botCount: nextBots })
+          );
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#btn-seat-remove-bot")
+        ?.addEventListener("click", () => {
+          const current = model.rooms[room.roomId] ?? room;
+          if (current.botCount > 0) {
+            model = updateRoomInModelPure(model, room.roomId, (r) =>
+              rebuildRoomSeatsPure({ ...r, botCount: r.botCount - 1 })
+            );
+            const latest = model.rooms[room.roomId];
+            if (latest) pushServerRoomSetup(latest);
+            render();
+          }
+        });
+
+      root.querySelector("#btn-seat-add-bot")?.addEventListener("click", () => {
+        const current = model.rooms[room.roomId] ?? room;
+        if (current.botCount < maxBots) {
+          model = updateRoomInModelPure(model, room.roomId, (r) =>
+            rebuildRoomSeatsPure({ ...r, botCount: r.botCount + 1 })
+          );
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        }
+      });
+
+      root
+        .querySelector("#setup-sel-starting-player")
+        ?.addEventListener("change", (e) => {
+          const nextStart = (e.target as HTMLSelectElement).value;
+          model = updateRoomInModelPure(model, room.roomId, (r) => ({
+            ...r,
+            startingPlayerMode: nextStart,
+          }));
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-sel-bot-difficulty")
+        ?.addEventListener("change", (e) => {
+          const nextDiff = (e.target as HTMLSelectElement)
+            .value as BotDifficulty;
+          model = updateRoomInModelPure(model, room.roomId, (r) =>
+            rebuildRoomSeatsPure({ ...r, botDifficulty: nextDiff })
+          );
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-chk-allbots")
+        ?.addEventListener("change", (e) => {
+          const checked = (e.target as HTMLInputElement).checked;
+          model = updateRoomInModelPure(model, room.roomId, (r) =>
+            rebuildRoomSeatsPure({
+              ...r,
+              allBots: checked,
+              botCount:
+                checked && r.botCount < bounds.minPlayers
+                  ? Math.min(bounds.maxPlayers, 4)
+                  : r.botCount,
+            })
+          );
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-chk-harbormaster")
+        ?.addEventListener("change", (e) => {
+          const checked = (e.target as HTMLInputElement).checked;
+          model = updateRoomInModelPure(model, room.roomId, (r) => ({
+            ...r,
+            config: { ...r.config, enableHarbormaster: checked },
+          }));
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-chk-citywalls")
+        ?.addEventListener("change", (e) => {
+          const checked = (e.target as HTMLInputElement).checked;
+          model = updateRoomInModelPure(model, room.roomId, (r) => ({
+            ...r,
+            config: { ...r.config, enableCityWalls: checked },
+          }));
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-chk-friendlyrobber")
+        ?.addEventListener("change", (e) => {
+          const checked = (e.target as HTMLInputElement).checked;
+          model = updateRoomInModelPure(model, room.roomId, (r) => ({
+            ...r,
+            config: { ...r.config, enableFriendlyRobber: checked },
+          }));
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+    }
+
+    root.querySelector("#btn-launch-match")?.addEventListener("click", () => {
+      startRoomMatch(room.roomId);
+    });
+  };
+
+  const bindReadOnlyCatanSpotInspect = (): void => {
+    root
       .querySelector("#btn-close-spot-popover")
       ?.addEventListener("click", () => {
-        this.selectedBoardSpot = null;
-        this.render();
+        model = { ...model, selectedBoardSpot: null };
+        render();
       });
 
-    this.root.querySelectorAll("[data-spot-hex]").forEach((el) => {
+    root.querySelectorAll("[data-spot-hex]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         const hexId = el.getAttribute("data-spot-hex")!;
-        this.selectedBoardSpot =
-          this.selectedBoardSpot?.kind === "hex" &&
-          this.selectedBoardSpot.id === hexId
-            ? null
-            : { kind: "hex", id: hexId };
-        this.render();
+        model = {
+          ...model,
+          selectedBoardSpot:
+            model.selectedBoardSpot?.kind === "hex" &&
+            model.selectedBoardSpot.id === hexId
+              ? null
+              : { kind: "hex", id: hexId },
+        };
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-spot-vertex]").forEach((el) => {
+    root.querySelectorAll("[data-spot-vertex]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         const vertexId = el.getAttribute("data-spot-vertex")!;
-        this.selectedBoardSpot =
-          this.selectedBoardSpot?.kind === "vertex" &&
-          this.selectedBoardSpot.id === vertexId
-            ? null
-            : { kind: "vertex", id: vertexId };
-        this.render();
+        model = {
+          ...model,
+          selectedBoardSpot:
+            model.selectedBoardSpot?.kind === "vertex" &&
+            model.selectedBoardSpot.id === vertexId
+              ? null
+              : { kind: "vertex", id: vertexId },
+        };
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-spot-edge]").forEach((el) => {
+    root.querySelectorAll("[data-spot-edge]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         const edgeId = el.getAttribute("data-spot-edge")!;
-        this.selectedBoardSpot =
-          this.selectedBoardSpot?.kind === "edge" &&
-          this.selectedBoardSpot.id === edgeId
-            ? null
-            : { kind: "edge", id: edgeId };
-        this.render();
+        model = {
+          ...model,
+          selectedBoardSpot:
+            model.selectedBoardSpot?.kind === "edge" &&
+            model.selectedBoardSpot.id === edgeId
+              ? null
+              : { kind: "edge", id: edgeId },
+        };
+        render();
       });
     });
-  }
+  };
 
-  private bindInGameEvents(
-    room: ClientRoom,
-    state: any,
-    actingPlayerId: string | null,
-    canCancelMyTrade = false
-  ): void {
-    this.bindCommonIdentityEvents();
-    this.root
-      .querySelector("#btn-back-lobby")
-      ?.addEventListener("click", () => {
-        this.stopAutoPlay();
-        this.viewMode = "lobby";
-        if (this.useServerBackend) {
-          void this.fetchLobbyRooms().then(() => this.render());
-        } else {
-          this.render();
-        }
-      });
-
-    this.root
-      .querySelector("#tab-setup-page")
-      ?.addEventListener("click", () => {
-        this.stopAutoPlay();
-        this.viewMode = "room_setup";
-        this.render();
-      });
-
-    this.root
-      .querySelector("#btn-sidebar-edit-setup")
-      ?.addEventListener("click", () => {
-        this.stopAutoPlay();
-        this.viewMode = "room_setup";
-        this.render();
-      });
-
-    this.root
-      .querySelector("#btn-goto-setup-finished")
-      ?.addEventListener("click", () => {
-        this.stopAutoPlay();
-        this.viewMode = "room_setup";
-        this.render();
-      });
-
-    this.root.querySelector("#btn-undo")?.addEventListener("click", () => {
-      this.undoMatch();
-    });
-
-    this.root.querySelector("#btn-redo")?.addEventListener("click", () => {
-      this.redoMatch();
-    });
-
-    this.root
-      .querySelector("#btn-finish-setup")
-      ?.addEventListener("click", () => {
-        this.finishSetupWithBots();
-      });
-
-    this.root
-      .querySelector("#btn-toggle-bot-response")
-      ?.addEventListener("click", () => {
-        this.toggleAutoRespondBots();
-      });
-
-    this.root.querySelector("#btn-step-bot")?.addEventListener("click", () => {
-      this.stepOneBotMove();
-    });
-
-    this.root.querySelector("#btn-autoplay")?.addEventListener("click", () => {
-      this.toggleAutoPlay();
-    });
-
-    this.root
-      .querySelector("#btn-toggle-hand-privacy")
-      ?.addEventListener("click", () => {
-        this.hidePassAndPlayHand = !this.hidePassAndPlayHand;
-        this.render();
-      });
-
-    this.root
-      .querySelector("#btn-reveal-hand")
-      ?.addEventListener("click", () => {
-        this.hidePassAndPlayHand = false;
-        this.render();
-      });
-
-    this.root
-      .querySelector("#btn-switch-turn-guest")
-      ?.addEventListener("click", (e) => {
-        const gid = (e.currentTarget as HTMLElement).getAttribute(
-          "data-switch-guest"
-        );
-        if (gid) {
-          this.switchActiveGuest(gid);
-        }
-      });
-
-    if (!actingPlayerId) return;
-
-    // Multi-guest turn isolation: in online rooms, only seats controlled by this computer
-    // (the active guest or local friends added on this computer) can dispatch turn actions.
-    if (!this.canControlPlayerOnThisDevice(room, actingPlayerId)) {
-      if (canCancelMyTrade && state.activeTradeOffer) {
-        this.root
-          .querySelectorAll("[data-confirm-trade]")
-          .forEach((confirmBtn) => {
-            confirmBtn.addEventListener("click", () => {
-              const partnerId = confirmBtn.getAttribute("data-confirm-trade")!;
-              this.dispatchUiAction(state.activeTradeOffer.fromPlayerId, {
-                type: "CONFIRM_DOMESTIC_TRADE",
-                offerId: state.activeTradeOffer.id,
-                partnerId,
-              });
-            });
-          });
-        this.root
-          .querySelectorAll("#btn-cancel-domestic")
-          .forEach((cancelBtn) => {
-            cancelBtn.addEventListener("click", () => {
-              this.dispatchUiAction(state.activeTradeOffer.fromPlayerId, {
-                type: "CANCEL_DOMESTIC_TRADE",
-              });
-            });
-          });
-      }
-      if (room.gameId === "catan") {
-        this.bindReadOnlyCatanSpotInspect();
-      }
-      return;
-    }
-
-    if (room.gameId === "splendor") {
-      this.bindSplendorEvents(state as SplendorState, actingPlayerId);
-      return;
-    }
-
-    if (room.gameId === "azul") {
-      this.bindAzulEvents(state as AzulState, actingPlayerId);
-      return;
-    }
-
-    this.bindCatanEvents(state as CatanState, actingPlayerId);
-  }
-
-  private bindSplendorEvents(
+  const bindSplendorEvents = (
     state: SplendorState,
     actingPlayerId: string
-  ): void {
-    this.root.querySelectorAll("[data-sp-gem]").forEach((el) => {
+  ): void => {
+    root.querySelectorAll("[data-sp-gem]").forEach((el) => {
       el.addEventListener("click", () => {
         if (state.phase !== "MAIN_ACTION") return;
         const color = el.getAttribute("data-sp-gem") as GemColor;
         if (state.bank[color] <= 0) return;
 
-        const current = this.splendorDraftGems[color] ?? 0;
-        const distinctSelected = Object.keys(this.splendorDraftGems).filter(
-          (k) => (this.splendorDraftGems[k as GemColor] ?? 0) > 0
-        );
-
-        if (current === 0) {
-          if (distinctSelected.length < 3) {
-            for (const k of distinctSelected) {
-              if ((this.splendorDraftGems[k as GemColor] ?? 0) > 1) {
-                this.splendorDraftGems[k as GemColor] = 1;
-              }
-            }
-            this.splendorDraftGems[color] = 1;
-          }
-        } else if (
-          current === 1 &&
-          distinctSelected.length === 1 &&
-          state.bank[color] >= 4
-        ) {
-          this.splendorDraftGems[color] = 2;
-        } else {
-          delete this.splendorDraftGems[color];
-        }
-        this.render();
+        model = {
+          ...model,
+          splendorDraftGems: toggleSplendorDraftGemPure(
+            model.splendorDraftGems,
+            state,
+            color
+          ),
+        };
+        render();
       });
     });
 
-    this.root
-      .querySelector("#btn-sp-clear-gems")
-      ?.addEventListener("click", () => {
-        this.splendorDraftGems = {};
-        this.render();
-      });
+    root.querySelector("#btn-sp-clear-gems")?.addEventListener("click", () => {
+      model = { ...model, splendorDraftGems: {} };
+      render();
+    });
 
-    this.root
-      .querySelector("#btn-sp-take-gems")
-      ?.addEventListener("click", () => {
-        this.dispatch(actingPlayerId, {
-          type: "TAKE_GEMS",
-          gems: { ...this.splendorDraftGems },
-        });
+    root.querySelector("#btn-sp-take-gems")?.addEventListener("click", () => {
+      dispatch(actingPlayerId, {
+        type: "TAKE_GEMS",
+        gems: { ...model.splendorDraftGems },
       });
+    });
 
-    this.root.querySelectorAll("[data-sp-buy]").forEach((btn) => {
+    root.querySelectorAll("[data-sp-buy]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const cardId = btn.getAttribute("data-sp-buy")!;
-        this.dispatch(actingPlayerId, { type: "PURCHASE_CARD", cardId });
+        dispatch(actingPlayerId, { type: "PURCHASE_CARD", cardId });
       });
     });
 
-    this.root.querySelectorAll("[data-sp-reserve]").forEach((btn) => {
+    root.querySelectorAll("[data-sp-reserve]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const cardId = btn.getAttribute("data-sp-reserve")!;
-        this.dispatch(actingPlayerId, { type: "RESERVE_CARD", cardId });
+        dispatch(actingPlayerId, { type: "RESERVE_CARD", cardId });
       });
     });
 
-    this.root.querySelectorAll("[data-sp-reserve-deck]").forEach((btn) => {
+    root.querySelectorAll("[data-sp-reserve-deck]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const deckTier = Number(
           btn.getAttribute("data-sp-reserve-deck")
         ) as 1 | 2 | 3;
-        this.dispatch(actingPlayerId, { type: "RESERVE_CARD", deckTier });
+        dispatch(actingPlayerId, { type: "RESERVE_CARD", deckTier });
       });
     });
 
-    this.root.querySelectorAll("[data-sp-return-one]").forEach((btn) => {
+    root.querySelectorAll("[data-sp-return-one]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const c = btn.getAttribute("data-sp-return-one") as TokenColor;
         const activePlayer = state.players[state.activePlayerIndex]!;
         const excess =
           Object.values(activePlayer.tokens).reduce((a, b) => a + b, 0) - 10;
         if (excess === 1) {
-          this.dispatch(actingPlayerId, {
+          dispatch(actingPlayerId, {
             type: "RETURN_TOKENS",
             tokens: { [c]: 1 },
           });
         } else {
           const botAct = SplendorEngine.chooseBotAction(state, actingPlayerId);
-          if (botAct) this.dispatch(actingPlayerId, botAct);
+          if (botAct) dispatch(actingPlayerId, botAct);
         }
       });
     });
 
-    this.root.querySelectorAll("[data-sp-noble]").forEach((el) => {
+    root.querySelectorAll("[data-sp-noble]").forEach((el) => {
       el.addEventListener("click", () => {
         const nobleId = el.getAttribute("data-sp-noble")!;
-        this.dispatch(actingPlayerId, { type: "SELECT_NOBLE", nobleId });
+        dispatch(actingPlayerId, { type: "SELECT_NOBLE", nobleId });
       });
     });
-  }
+  };
 
-  private bindAzulEvents(_state: AzulState, actingPlayerId: string): void {
-    this.root.querySelectorAll("[data-azul-factory]").forEach((el) => {
+  const bindAzulEvents = (_state: AzulState, actingPlayerId: string): void => {
+    root.querySelectorAll("[data-azul-factory]").forEach((el) => {
       el.addEventListener("click", () => {
         const factoryIndex = Number(el.getAttribute("data-azul-factory"));
         const color = el.getAttribute("data-azul-color") as AzulTileColor;
-        this.azulSelectedDraft = {
-          source: { kind: "factory", factoryIndex },
-          color,
+        model = {
+          ...model,
+          azulSelectedDraft: {
+            source: { kind: "factory", factoryIndex },
+            color,
+          },
         };
-        this.render();
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-azul-center]").forEach((el) => {
+    root.querySelectorAll("[data-azul-center]").forEach((el) => {
       el.addEventListener("click", () => {
         const color = el.getAttribute("data-azul-color") as AzulTileColor;
-        this.azulSelectedDraft = {
-          source: { kind: "center" },
-          color,
+        model = {
+          ...model,
+          azulSelectedDraft: {
+            source: { kind: "center" },
+            color,
+          },
         };
-        this.render();
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-azul-target-line]").forEach((el) => {
+    root.querySelectorAll("[data-azul-target-line]").forEach((el) => {
       el.addEventListener("click", () => {
-        if (!this.azulSelectedDraft) return;
+        if (!model.azulSelectedDraft) return;
         const raw = el.getAttribute("data-azul-target-line")!;
         const targetLine: AzulTargetLine =
           raw === "floor" ? "floor" : (Number(raw) as 0 | 1 | 2 | 3 | 4);
-        this.dispatch(actingPlayerId, {
+        dispatch(actingPlayerId, {
           type: "DRAFT_TILES",
-          source: this.azulSelectedDraft.source,
-          color: this.azulSelectedDraft.color,
+          source: model.azulSelectedDraft.source,
+          color: model.azulSelectedDraft.color,
           targetLine,
         });
       });
     });
 
-    this.root
+    root
       .querySelector("#btn-azul-cancel-draft")
       ?.addEventListener("click", () => {
-        this.azulSelectedDraft = null;
-        this.render();
+        model = { ...model, azulSelectedDraft: null };
+        render();
       });
-  }
+  };
 
-  private bindCatanEvents(state: CatanState, actingPlayerId: string): void {
-    const room = this.getActiveRoom();
-    if (!this.canControlPlayerOnThisDevice(room, actingPlayerId)) {
-      this.bindReadOnlyCatanSpotInspect();
+  const bindCatanEvents = (state: CatanState, actingPlayerId: string): void => {
+    const room = getActiveRoomPure(model);
+    if (!canControlPlayerOnDevicePure(model, room, actingPlayerId)) {
+      bindReadOnlyCatanSpotInspect();
       return;
     }
 
-    this.root.querySelectorAll("[data-close-submodal]").forEach((btn) => {
+    root.querySelectorAll("[data-close-submodal]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        this.selectedBoardSpot = null;
-        this.buildMode = null;
-        this.render();
+        model = { ...model, selectedBoardSpot: null, buildMode: null };
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-hand-res-card]").forEach((cardEl) => {
+    root.querySelectorAll("[data-hand-res-card]").forEach((cardEl) => {
       cardEl.addEventListener("click", () => {
         const r = cardEl.getAttribute("data-hand-res-card") as ResourceType;
         const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
@@ -5776,161 +6610,207 @@ class MultiGamePlatformApp {
         if (state.phase === "DISCARD_ON_SEVEN") {
           const req = state.pendingDiscards[actingPlayerId] ?? 0;
           if (
-            this.discardSelection[r] < actingPlayer.resources[r] &&
-            totalResourceCount(this.discardSelection) < req
+            model.discardSelection[r] < actingPlayer.resources[r] &&
+            totalResourceCount(model.discardSelection) < req
           ) {
-            this.discardSelection[r]++;
-            this.render();
+            model = {
+              ...model,
+              discardSelection: {
+                ...model.discardSelection,
+                [r]: model.discardSelection[r] + 1,
+              },
+            };
+            render();
           }
-        } else if (this.buildMode === "domestic_trade") {
-          if (this.domesticGive[r] < actingPlayer.resources[r]) {
-            this.domesticGive[r]++;
-            this.setSharedTradeWant(r, 0);
-            this.render();
+        } else if (model.buildMode === "domestic_trade") {
+          if (model.domesticGive[r] < actingPlayer.resources[r]) {
+            model = setSharedTradeWantPure(
+              {
+                ...model,
+                domesticGive: {
+                  ...model.domesticGive,
+                  [r]: model.domesticGive[r] + 1,
+                },
+              },
+              r,
+              0
+            );
+            render();
           }
         } else if (state.phase === "MAIN_PHASE" && !state.activeTradeOffer) {
           const ratios = getPlayerTradeRatios(state, actingPlayerId);
           const ratio = ratios[r];
-          if (actingPlayer.resources[r] >= this.maritimeGive[r] + ratio) {
-            this.maritimeGive[r] += ratio;
-            this.setSharedTradeWant(r, 0);
-            this.switchTradeMode("maritime_trade");
+          if (actingPlayer.resources[r] >= model.maritimeGive[r] + ratio) {
+            model = switchTradeModePure(
+              setSharedTradeWantPure(
+                {
+                  ...model,
+                  maritimeGive: {
+                    ...model.maritimeGive,
+                    [r]: model.maritimeGive[r] + ratio,
+                  },
+                },
+                r,
+                0
+              ),
+              "maritime_trade"
+            );
+            render();
           } else {
-            if (this.domesticGive[r] < actingPlayer.resources[r]) {
-              this.domesticGive[r]++;
-              this.setSharedTradeWant(r, 0);
-            }
-            this.switchTradeMode("domestic_trade");
+            const withGive =
+              model.domesticGive[r] < actingPlayer.resources[r]
+                ? setSharedTradeWantPure(
+                    {
+                      ...model,
+                      domesticGive: {
+                        ...model.domesticGive,
+                        [r]: model.domesticGive[r] + 1,
+                      },
+                    },
+                    r,
+                    0
+                  )
+                : model;
+            model = switchTradeModePure(withGive, "domestic_trade");
+            render();
           }
         }
       });
     });
 
-    this.root
+    root
       .querySelector("#btn-hand-play-knight")
       ?.addEventListener("click", () => {
-        this.dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" });
+        dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" });
       });
-    this.root
+    root
       .querySelector("#btn-hand-play-roadbuild")
       ?.addEventListener("click", () => {
-        this.dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
+        dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
       });
-    this.root
-      .querySelector("#btn-hand-play-yop")
-      ?.addEventListener("click", () => {
-        this.buildMode = "year_of_plenty";
-        this.render();
-      });
-    this.root
-      .querySelector("#btn-hand-play-mono")
-      ?.addEventListener("click", () => {
-        this.buildMode = "monopoly";
-        this.render();
-      });
+    root.querySelector("#btn-hand-play-yop")?.addEventListener("click", () => {
+      model = { ...model, buildMode: "year_of_plenty" };
+      render();
+    });
+    root.querySelector("#btn-hand-play-mono")?.addEventListener("click", () => {
+      model = { ...model, buildMode: "monopoly" };
+      render();
+    });
 
-    this.root
+    root
       .querySelector("#btn-close-spot-popover")
       ?.addEventListener("click", () => {
-        this.selectedBoardSpot = null;
-        this.render();
+        model = { ...model, selectedBoardSpot: null };
+        render();
       });
 
-    this.root.querySelectorAll("[data-spot-action]").forEach((btn) => {
+    root.querySelectorAll("[data-spot-action]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const act = btn.getAttribute("data-spot-action")!;
         const spotId = btn.getAttribute("data-spot-id") ?? "";
         if (act === "build_road") {
-          this.dispatch(actingPlayerId, { type: "BUILD_ROAD", edgeId: spotId });
+          dispatch(actingPlayerId, { type: "BUILD_ROAD", edgeId: spotId });
         } else if (act === "build_ship") {
-          this.dispatch(actingPlayerId, { type: "BUILD_SHIP", edgeId: spotId });
+          dispatch(actingPlayerId, { type: "BUILD_SHIP", edgeId: spotId });
         } else if (act === "setup_road") {
-          this.dispatch(actingPlayerId, {
+          dispatch(actingPlayerId, {
             type: "PLACE_SETUP_EDGE",
             edgeId: spotId,
             edgeKind: "road",
           });
         } else if (act === "setup_ship") {
-          this.dispatch(actingPlayerId, {
+          dispatch(actingPlayerId, {
             type: "PLACE_SETUP_EDGE",
             edgeId: spotId,
             edgeKind: "ship",
           });
         } else if (act === "start_move_ship") {
-          this.buildMode = "move_ship";
-          this.selectedMoveFromEdgeId = spotId;
-          this.selectedBoardSpot = null;
-          this.render();
-        } else if (act === "complete_move_ship" && this.selectedMoveFromEdgeId) {
-          this.dispatch(actingPlayerId, {
+          model = {
+            ...model,
+            buildMode: "move_ship",
+            selectedMoveFromEdgeId: spotId,
+            selectedBoardSpot: null,
+          };
+          render();
+        } else if (
+          act === "complete_move_ship" &&
+          model.selectedMoveFromEdgeId
+        ) {
+          dispatch(actingPlayerId, {
             type: "MOVE_SHIP",
-            fromEdgeId: this.selectedMoveFromEdgeId,
+            fromEdgeId: model.selectedMoveFromEdgeId,
             toEdgeId: spotId,
           });
         } else if (act === "setup_settlement") {
-          this.dispatch(actingPlayerId, {
+          dispatch(actingPlayerId, {
             type: "PLACE_SETUP_SETTLEMENT",
             vertexId: spotId,
           });
         } else if (act === "build_settlement") {
-          this.dispatch(actingPlayerId, {
+          dispatch(actingPlayerId, {
             type: "BUILD_SETTLEMENT",
             vertexId: spotId,
           });
         } else if (act === "build_city") {
-          this.dispatch(actingPlayerId, {
+          dispatch(actingPlayerId, {
             type: "BUILD_CITY",
             vertexId: spotId,
           });
         } else if (act === "build_wall") {
-          this.dispatch(actingPlayerId, {
+          dispatch(actingPlayerId, {
             type: "BUILD_CITY_WALL",
             vertexId: spotId,
           });
         } else if (act === "move_robber") {
-          this.dispatch(actingPlayerId, { type: "MOVE_ROBBER", hexId: spotId });
+          dispatch(actingPlayerId, { type: "MOVE_ROBBER", hexId: spotId });
         } else if (act === "move_pirate") {
-          this.dispatch(actingPlayerId, { type: "MOVE_PIRATE", hexId: spotId });
+          dispatch(actingPlayerId, { type: "MOVE_PIRATE", hexId: spotId });
         } else if (act === "play_knight") {
-          this.dispatch(actingPlayerId, { type: "PLAY_KNIGHT" });
+          dispatch(actingPlayerId, { type: "PLAY_KNIGHT" });
         } else if (act === "open_trade") {
-          this.selectedBoardSpot = null;
-          this.buildMode = "domestic_trade";
-          this.render();
+          model = {
+            ...model,
+            selectedBoardSpot: null,
+            buildMode: "domestic_trade",
+          };
+          render();
         }
       });
     });
 
-    this.root.querySelectorAll("[data-spot-hex]").forEach((el) => {
+    root.querySelectorAll("[data-spot-hex]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         const hexId = el.getAttribute("data-spot-hex")!;
         if (state.phase === "MOVE_ROBBER_OR_PIRATE") {
           if (
-            this.robberOrPirateMode === "pirate" &&
+            model.robberOrPirateMode === "pirate" &&
             state.config.enableSeafarers
           ) {
             if (getLegalPirateHexes(state).includes(hexId)) {
-              this.dispatch(actingPlayerId, { type: "MOVE_PIRATE", hexId });
+              dispatch(actingPlayerId, { type: "MOVE_PIRATE", hexId });
               return;
             }
           } else {
             if (getLegalRobberHexes(state, actingPlayerId).includes(hexId)) {
-              this.dispatch(actingPlayerId, { type: "MOVE_ROBBER", hexId });
+              dispatch(actingPlayerId, { type: "MOVE_ROBBER", hexId });
               return;
             }
           }
         }
-        this.selectedBoardSpot =
-          this.selectedBoardSpot?.kind === "hex" &&
-          this.selectedBoardSpot.id === hexId
-            ? null
-            : { kind: "hex", id: hexId };
-        this.render();
+        model = {
+          ...model,
+          selectedBoardSpot:
+            model.selectedBoardSpot?.kind === "hex" &&
+            model.selectedBoardSpot.id === hexId
+              ? null
+              : { kind: "hex", id: hexId },
+        };
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-spot-vertex]").forEach((el) => {
+    root.querySelectorAll("[data-spot-vertex]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         const vertexId = el.getAttribute("data-spot-vertex")!;
@@ -5941,62 +6821,65 @@ class MultiGamePlatformApp {
             vertexId
           )
         ) {
-          this.dispatch(actingPlayerId, {
+          dispatch(actingPlayerId, {
             type: "PLACE_SETUP_SETTLEMENT",
             vertexId,
           });
           return;
         }
         if (
-          this.buildMode === "settlement" &&
+          model.buildMode === "settlement" &&
           getLegalSettlementVertices(state, actingPlayerId, false).includes(
             vertexId
           )
         ) {
-          this.dispatch(actingPlayerId, { type: "BUILD_SETTLEMENT", vertexId });
+          dispatch(actingPlayerId, { type: "BUILD_SETTLEMENT", vertexId });
           return;
         }
         if (
-          this.buildMode === "city" &&
+          model.buildMode === "city" &&
           state.buildings[vertexId]?.ownerId === actingPlayerId &&
           state.buildings[vertexId]?.type === "settlement"
         ) {
-          this.dispatch(actingPlayerId, { type: "BUILD_CITY", vertexId });
+          dispatch(actingPlayerId, { type: "BUILD_CITY", vertexId });
           return;
         }
         if (
-          this.buildMode === "wall" &&
+          model.buildMode === "wall" &&
           state.buildings[vertexId]?.ownerId === actingPlayerId &&
           state.buildings[vertexId]?.type === "city" &&
           !state.buildings[vertexId]?.hasWall
         ) {
-          this.dispatch(actingPlayerId, { type: "BUILD_CITY_WALL", vertexId });
+          dispatch(actingPlayerId, { type: "BUILD_CITY_WALL", vertexId });
           return;
         }
-        this.selectedBoardSpot =
-          this.selectedBoardSpot?.kind === "vertex" &&
-          this.selectedBoardSpot.id === vertexId
-            ? null
-            : { kind: "vertex", id: vertexId };
-        this.render();
+        model = {
+          ...model,
+          selectedBoardSpot:
+            model.selectedBoardSpot?.kind === "vertex" &&
+            model.selectedBoardSpot.id === vertexId
+              ? null
+              : { kind: "vertex", id: vertexId },
+        };
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-spot-edge]").forEach((el) => {
+    root.querySelectorAll("[data-spot-edge]").forEach((el) => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         const edgeId = el.getAttribute("data-spot-edge")!;
         if (state.phase === "SETUP_ROAD_1" || state.phase === "SETUP_ROAD_2") {
           const anchor = state.lastSetupSettlementVertexId;
           const legals =
-            this.setupEdgeKind === "ship" && state.config.enableSeafarers
+            model.setupEdgeKind === "ship" && state.config.enableSeafarers
               ? getLegalShipEdges(state, actingPlayerId, anchor)
               : getLegalRoadEdges(state, actingPlayerId, anchor);
           if (legals.includes(edgeId)) {
-            this.dispatch(actingPlayerId, {
+            dispatch(actingPlayerId, {
               type: "PLACE_SETUP_EDGE",
               edgeId,
-              edgeKind: this.setupEdgeKind,
+              edgeKind: model.setupEdgeKind,
             });
             return;
           }
@@ -6012,289 +6895,334 @@ class MultiGamePlatformApp {
             null
           ).includes(edgeId);
           if (isRoad) {
-            this.dispatch(actingPlayerId, { type: "BUILD_ROAD", edgeId });
+            dispatch(actingPlayerId, { type: "BUILD_ROAD", edgeId });
             return;
           }
           if (isShip) {
-            this.dispatch(actingPlayerId, { type: "BUILD_SHIP", edgeId });
+            dispatch(actingPlayerId, { type: "BUILD_SHIP", edgeId });
             return;
           }
         } else if (
-          this.buildMode === "road" &&
+          model.buildMode === "road" &&
           getLegalRoadEdges(state, actingPlayerId, null).includes(edgeId)
         ) {
-          this.dispatch(actingPlayerId, { type: "BUILD_ROAD", edgeId });
+          dispatch(actingPlayerId, { type: "BUILD_ROAD", edgeId });
           return;
         } else if (
-          this.buildMode === "ship" &&
+          model.buildMode === "ship" &&
           getLegalShipEdges(state, actingPlayerId, null).includes(edgeId)
         ) {
-          this.dispatch(actingPlayerId, { type: "BUILD_SHIP", edgeId });
+          dispatch(actingPlayerId, { type: "BUILD_SHIP", edgeId });
           return;
-        } else if (this.buildMode === "move_ship") {
+        } else if (model.buildMode === "move_ship") {
           const moves = getLegalMoveShipActions(state, actingPlayerId);
           if (
-            !this.selectedMoveFromEdgeId &&
+            !model.selectedMoveFromEdgeId &&
             moves.some((m) => m.fromEdgeId === edgeId)
           ) {
-            this.selectedMoveFromEdgeId = edgeId;
-            this.selectedBoardSpot = null;
-            this.render();
+            model = {
+              ...model,
+              selectedMoveFromEdgeId: edgeId,
+              selectedBoardSpot: null,
+            };
+            render();
             return;
           }
           if (
-            this.selectedMoveFromEdgeId &&
+            model.selectedMoveFromEdgeId &&
             moves.some(
               (m) =>
-                m.fromEdgeId === this.selectedMoveFromEdgeId &&
+                m.fromEdgeId === model.selectedMoveFromEdgeId &&
                 m.toEdgeId === edgeId
             )
           ) {
-            this.dispatch(actingPlayerId, {
+            dispatch(actingPlayerId, {
               type: "MOVE_SHIP",
-              fromEdgeId: this.selectedMoveFromEdgeId,
+              fromEdgeId: model.selectedMoveFromEdgeId,
               toEdgeId: edgeId,
             });
             return;
           }
         }
 
-        this.selectedBoardSpot =
-          this.selectedBoardSpot?.kind === "edge" &&
-          this.selectedBoardSpot.id === edgeId
-            ? null
-            : { kind: "edge", id: edgeId };
-        this.render();
+        model = {
+          ...model,
+          selectedBoardSpot:
+            model.selectedBoardSpot?.kind === "edge" &&
+            model.selectedBoardSpot.id === edgeId
+              ? null
+              : { kind: "edge", id: edgeId },
+        };
+        render();
       });
     });
 
-    this.root
+    root
       .querySelector("#btn-toggle-setup-edge")
       ?.addEventListener("click", () => {
-        this.setupEdgeKind = this.setupEdgeKind === "road" ? "ship" : "road";
-        this.render();
+        model = {
+          ...model,
+          setupEdgeKind: model.setupEdgeKind === "road" ? "ship" : "road",
+        };
+        render();
       });
 
-    this.root
+    root
       .querySelector("#btn-toggle-robber-pirate")
       ?.addEventListener("click", () => {
-        this.robberOrPirateMode =
-          this.robberOrPirateMode === "robber" ? "pirate" : "robber";
-        this.render();
+        model = {
+          ...model,
+          robberOrPirateMode:
+            model.robberOrPirateMode === "robber" ? "pirate" : "robber",
+        };
+        render();
       });
 
-    this.root.querySelectorAll("[data-discard-add]").forEach((btn) => {
+    root.querySelectorAll("[data-discard-add]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-discard-add") as ResourceType;
-        this.discardSelection[r]++;
-        this.render();
+        model = {
+          ...model,
+          discardSelection: {
+            ...model.discardSelection,
+            [r]: model.discardSelection[r] + 1,
+          },
+        };
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-discard-sub]").forEach((btn) => {
+    root.querySelectorAll("[data-discard-sub]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-discard-sub") as ResourceType;
-        if (this.discardSelection[r] > 0) {
-          this.discardSelection[r]--;
-          this.render();
+        if (model.discardSelection[r] > 0) {
+          model = {
+            ...model,
+            discardSelection: {
+              ...model.discardSelection,
+              [r]: model.discardSelection[r] - 1,
+            },
+          };
+          render();
         }
       });
     });
 
-    this.root
-      .querySelector("#btn-discard-reset")
-      ?.addEventListener("click", () => {
-        this.discardSelection = emptyResources();
-        this.render();
-      });
+    root.querySelector("#btn-discard-reset")?.addEventListener("click", () => {
+      model = { ...model, discardSelection: emptyResources() };
+      render();
+    });
 
-    this.root
-      .querySelector("#btn-discard-submit")
-      ?.addEventListener("click", () => {
-        this.dispatch(actingPlayerId, {
-          type: "DISCARD_CARDS",
-          resources: { ...this.discardSelection },
-        });
+    root.querySelector("#btn-discard-submit")?.addEventListener("click", () => {
+      dispatch(actingPlayerId, {
+        type: "DISCARD_CARDS",
+        resources: { ...model.discardSelection },
       });
+    });
 
-    this.root
-      .querySelector("#btn-discard-auto")
-      ?.addEventListener("click", () => {
-        const botAct = CatanEngine.chooseBotAction(state, actingPlayerId);
-        if (botAct) this.dispatch(actingPlayerId, botAct);
-      });
+    root.querySelector("#btn-discard-auto")?.addEventListener("click", () => {
+      const botAct = CatanEngine.chooseBotAction(state, actingPlayerId);
+      if (botAct) dispatch(actingPlayerId, botAct);
+    });
 
-    this.root.querySelectorAll("[data-gold-pick]").forEach((btn) => {
+    root.querySelectorAll("[data-gold-pick]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const resource = btn.getAttribute("data-gold-pick") as ResourceType;
-        this.dispatch(actingPlayerId, {
+        dispatch(actingPlayerId, {
           type: "SELECT_GOLD_RESOURCE",
           resource,
         });
       });
     });
 
-    this.root.querySelectorAll("[data-steal-victim]").forEach((btn) => {
+    root.querySelectorAll("[data-steal-victim]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const victimId = btn.getAttribute("data-steal-victim")!;
-        this.dispatch(actingPlayerId, {
+        dispatch(actingPlayerId, {
           type: "STEAL_FROM_PLAYER",
           victimId,
         });
       });
     });
 
-    this.root.querySelector("#btn-roll-dice")?.addEventListener("click", () => {
-      this.dispatchUiAction(actingPlayerId, { type: "ROLL_DICE" });
+    root.querySelector("#btn-roll-dice")?.addEventListener("click", () => {
+      dispatchUiAction(actingPlayerId, { type: "ROLL_DICE" });
     });
 
-    this.root.querySelector("#btn-mode-road")?.addEventListener("click", () => {
-      this.selectedBoardSpot = null;
-      this.buildMode = this.buildMode === "road" ? null : "road";
-      this.render();
+    root.querySelector("#btn-mode-road")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        selectedBoardSpot: null,
+        buildMode: model.buildMode === "road" ? null : "road",
+      };
+      render();
     });
 
-    this.root.querySelector("#btn-mode-ship")?.addEventListener("click", () => {
-      this.selectedBoardSpot = null;
-      this.buildMode = this.buildMode === "ship" ? null : "ship";
-      this.render();
+    root.querySelector("#btn-mode-ship")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        selectedBoardSpot: null,
+        buildMode: model.buildMode === "ship" ? null : "ship",
+      };
+      render();
     });
 
-    this.root
-      .querySelector("#btn-mode-moveship")
-      ?.addEventListener("click", () => {
-        this.selectedBoardSpot = null;
-        this.buildMode = this.buildMode === "move_ship" ? null : "move_ship";
-        this.selectedMoveFromEdgeId = null;
-        this.render();
-      });
+    root.querySelector("#btn-mode-moveship")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        selectedBoardSpot: null,
+        buildMode: model.buildMode === "move_ship" ? null : "move_ship",
+        selectedMoveFromEdgeId: null,
+      };
+      render();
+    });
 
-    this.root
+    root
       .querySelector("#btn-mode-settlement")
       ?.addEventListener("click", () => {
-        this.selectedBoardSpot = null;
-        this.buildMode = this.buildMode === "settlement" ? null : "settlement";
-        this.render();
+        model = {
+          ...model,
+          selectedBoardSpot: null,
+          buildMode: model.buildMode === "settlement" ? null : "settlement",
+        };
+        render();
       });
 
-    this.root.querySelector("#btn-mode-city")?.addEventListener("click", () => {
-      this.selectedBoardSpot = null;
-      this.buildMode = this.buildMode === "city" ? null : "city";
-      this.render();
+    root.querySelector("#btn-mode-city")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        selectedBoardSpot: null,
+        buildMode: model.buildMode === "city" ? null : "city",
+      };
+      render();
     });
 
-    this.root.querySelector("#btn-mode-wall")?.addEventListener("click", () => {
-      this.selectedBoardSpot = null;
-      this.buildMode = this.buildMode === "wall" ? null : "wall";
-      this.render();
+    root.querySelector("#btn-mode-wall")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        selectedBoardSpot: null,
+        buildMode: model.buildMode === "wall" ? null : "wall",
+      };
+      render();
     });
 
-    this.root.querySelector("#btn-buy-dev")?.addEventListener("click", () => {
-      this.dispatch(actingPlayerId, { type: "BUY_DEV_CARD" });
+    root.querySelector("#btn-buy-dev")?.addEventListener("click", () => {
+      dispatch(actingPlayerId, { type: "BUY_DEV_CARD" });
     });
 
-    this.root.querySelectorAll("[data-trade-tab]").forEach((btn) => {
+    root.querySelectorAll("[data-trade-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const nextTab = btn.getAttribute("data-trade-tab") as
           | "maritime_trade"
           | "domestic_trade";
-        if (nextTab === this.buildMode) return;
-        this.switchTradeMode(nextTab);
+        if (nextTab === model.buildMode) return;
+        switchTradeMode(nextTab);
       });
     });
 
-    this.root
-      .querySelector("#btn-mode-maritime")
-      ?.addEventListener("click", () => {
-        if (this.buildMode === "maritime_trade") {
-          this.selectedBoardSpot = null;
-          this.buildMode = null;
-          this.render();
-        } else {
-          this.switchTradeMode("maritime_trade");
-        }
-      });
+    root.querySelector("#btn-mode-maritime")?.addEventListener("click", () => {
+      if (model.buildMode === "maritime_trade") {
+        model = { ...model, selectedBoardSpot: null, buildMode: null };
+        render();
+      } else {
+        switchTradeMode("maritime_trade");
+      }
+    });
 
-    this.root
-      .querySelector("#btn-mode-domestic")
-      ?.addEventListener("click", () => {
-        if (this.buildMode === "domestic_trade") {
-          this.selectedBoardSpot = null;
-          this.buildMode = null;
-          this.render();
-        } else {
-          this.switchTradeMode("domestic_trade");
-        }
-      });
+    root.querySelector("#btn-mode-domestic")?.addEventListener("click", () => {
+      if (model.buildMode === "domestic_trade") {
+        model = { ...model, selectedBoardSpot: null, buildMode: null };
+        render();
+      } else {
+        switchTradeMode("domestic_trade");
+      }
+    });
 
-    this.root
-      .querySelector("#sel-dom-target")
-      ?.addEventListener("change", (e) => {
-        this.domesticTargetPlayerId = (e.target as HTMLSelectElement).value;
-        this.render();
-      });
+    root.querySelector("#sel-dom-target")?.addEventListener("change", (e) => {
+      model = {
+        ...model,
+        domesticTargetPlayerId: (e.target as HTMLSelectElement).value,
+      };
+      render();
+    });
 
-    this.root.querySelectorAll("[data-dom-give]").forEach((btn) => {
+    root.querySelectorAll("[data-dom-give]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-dom-give") as ResourceType;
-        this.domesticGive[r]++;
-        this.setSharedTradeWant(r, 0);
-        this.render();
+        model = setSharedTradeWantPure(
+          {
+            ...model,
+            domesticGive: {
+              ...model.domesticGive,
+              [r]: model.domesticGive[r] + 1,
+            },
+          },
+          r,
+          0
+        );
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-dom-give-dec]").forEach((btn) => {
+    root.querySelectorAll("[data-dom-give-dec]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-dom-give-dec") as ResourceType;
-        if (this.domesticGive[r] > 0) {
-          this.domesticGive[r]--;
-          this.render();
+        if (model.domesticGive[r] > 0) {
+          model = {
+            ...model,
+            domesticGive: {
+              ...model.domesticGive,
+              [r]: model.domesticGive[r] - 1,
+            },
+          };
+          render();
         }
       });
     });
 
-    this.root.querySelectorAll("[data-dom-want]").forEach((btn) => {
+    root.querySelectorAll("[data-dom-want]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-dom-want") as ResourceType;
-        this.setSharedTradeWant(r, this.domesticWant[r] + 1);
-        this.render();
+        model = setSharedTradeWantPure(model, r, model.domesticWant[r] + 1);
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-dom-want-dec]").forEach((btn) => {
+    root.querySelectorAll("[data-dom-want-dec]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-dom-want-dec") as ResourceType;
-        if (this.domesticWant[r] > 0) {
-          this.setSharedTradeWant(r, this.domesticWant[r] - 1);
-          this.render();
+        if (model.domesticWant[r] > 0) {
+          model = setSharedTradeWantPure(model, r, model.domesticWant[r] - 1);
+          render();
         }
       });
     });
 
-    this.root.querySelector("#btn-dom-reset")?.addEventListener("click", () => {
-      this.maritimeGive = emptyResources();
-      this.maritimeWant = emptyResources();
-      this.domesticGive = emptyResources();
-      this.domesticWant = emptyResources();
-      this.render();
+    root.querySelector("#btn-dom-reset")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        maritimeGive: emptyResources(),
+        maritimeWant: emptyResources(),
+        domesticGive: emptyResources(),
+        domesticWant: emptyResources(),
+      };
+      render();
     });
 
-    this.root
-      .querySelector("#btn-dom-propose")
-      ?.addEventListener("click", () => {
-        this.dispatch(actingPlayerId, {
-          type: "OFFER_DOMESTIC_TRADE",
-          toPlayerId: null,
-          give: { ...this.domesticGive },
-          want: { ...this.domesticWant },
-        });
+    root.querySelector("#btn-dom-propose")?.addEventListener("click", () => {
+      dispatch(actingPlayerId, {
+        type: "OFFER_DOMESTIC_TRADE",
+        toPlayerId: null,
+        give: { ...model.domesticGive },
+        want: { ...model.domesticWant },
       });
+    });
 
-    this.root.querySelectorAll("[data-confirm-trade]").forEach((btn) => {
+    root.querySelectorAll("[data-confirm-trade]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const partnerId = btn.getAttribute("data-confirm-trade")!;
         if (state.activeTradeOffer) {
-          this.dispatch(state.activeTradeOffer.fromPlayerId, {
+          dispatch(state.activeTradeOffer.fromPlayerId, {
             type: "CONFIRM_DOMESTIC_TRADE",
             offerId: state.activeTradeOffer.id,
             partnerId,
@@ -6303,11 +7231,11 @@ class MultiGamePlatformApp {
       });
     });
 
-    this.root.querySelectorAll("[data-accept-trade]").forEach((btn) => {
+    root.querySelectorAll("[data-accept-trade]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const acceptorId = btn.getAttribute("data-accept-trade")!;
         if (state.activeTradeOffer) {
-          this.dispatch(acceptorId, {
+          dispatch(acceptorId, {
             type: "ACCEPT_DOMESTIC_TRADE",
             offerId: state.activeTradeOffer.id,
           });
@@ -6315,11 +7243,11 @@ class MultiGamePlatformApp {
       });
     });
 
-    this.root.querySelectorAll("[data-decline-trade]").forEach((btn) => {
+    root.querySelectorAll("[data-decline-trade]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const declinerId = btn.getAttribute("data-decline-trade")!;
         if (state.activeTradeOffer) {
-          this.dispatch(declinerId, {
+          dispatch(declinerId, {
             type: "DECLINE_DOMESTIC_TRADE",
             offerId: state.activeTradeOffer.id,
           });
@@ -6327,183 +7255,712 @@ class MultiGamePlatformApp {
       });
     });
 
-    this.root
+    root
       .querySelector("#btn-cancel-domestic")
       ?.addEventListener("click", () => {
         if (state.activeTradeOffer) {
-          this.dispatch(state.activeTradeOffer.fromPlayerId, {
+          dispatch(state.activeTradeOffer.fromPlayerId, {
             type: "CANCEL_DOMESTIC_TRADE",
           });
         }
       });
 
-    this.root.querySelectorAll("[data-maritime-give]").forEach((btn) => {
+    root.querySelectorAll("[data-maritime-give]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-maritime-give") as ResourceType;
         const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
         if (!actingPlayer) return;
         const ratios = getPlayerTradeRatios(state, actingPlayerId);
         const step = ratios[r];
-        if (actingPlayer.resources[r] >= this.maritimeGive[r] + step) {
-          this.maritimeGive[r] += step;
-          this.setSharedTradeWant(r, 0);
-          this.tradeGiveRes = r;
-          this.render();
+        if (actingPlayer.resources[r] >= model.maritimeGive[r] + step) {
+          model = setSharedTradeWantPure(
+            {
+              ...model,
+              tradeGiveRes: r,
+              maritimeGive: {
+                ...model.maritimeGive,
+                [r]: model.maritimeGive[r] + step,
+              },
+            },
+            r,
+            0
+          );
+          render();
         }
       });
     });
 
-    this.root.querySelectorAll("[data-maritime-give-dec]").forEach((btn) => {
+    root.querySelectorAll("[data-maritime-give-dec]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-maritime-give-dec") as ResourceType;
         const ratios = getPlayerTradeRatios(state, actingPlayerId);
         const step = ratios[r];
-        if (this.maritimeGive[r] >= step) {
-          this.maritimeGive[r] -= step;
-        } else {
-          this.maritimeGive[r] = 0;
-        }
-        this.render();
+        const nextVal =
+          model.maritimeGive[r] >= step ? model.maritimeGive[r] - step : 0;
+        model = {
+          ...model,
+          maritimeGive: {
+            ...model.maritimeGive,
+            [r]: nextVal,
+          },
+        };
+        render();
       });
     });
 
-    this.root.querySelectorAll("[data-maritime-receive]").forEach((btn) => {
+    root.querySelectorAll("[data-maritime-receive]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-maritime-receive") as ResourceType;
-        if (this.maritimeWant[r] < state.bank[r]) {
-          this.setSharedTradeWant(r, this.maritimeWant[r] + 1);
-          this.tradeReceiveRes = r;
-          this.render();
+        if (model.maritimeWant[r] < state.bank[r]) {
+          model = {
+            ...setSharedTradeWantPure(model, r, model.maritimeWant[r] + 1),
+            tradeReceiveRes: r,
+          };
+          render();
         }
       });
     });
 
-    this.root.querySelectorAll("[data-maritime-receive-dec]").forEach((btn) => {
+    root.querySelectorAll("[data-maritime-receive-dec]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-maritime-receive-dec") as ResourceType;
-        if (this.maritimeWant[r] > 0) {
-          this.setSharedTradeWant(r, this.maritimeWant[r] - 1);
-          this.render();
+        if (model.maritimeWant[r] > 0) {
+          model = setSharedTradeWantPure(model, r, model.maritimeWant[r] - 1);
+          render();
         }
       });
     });
 
-    this.root
-      .querySelector("#btn-maritime-reset")
-      ?.addEventListener("click", () => {
-        this.maritimeGive = emptyResources();
-        this.maritimeWant = emptyResources();
-        this.domesticGive = emptyResources();
-        this.domesticWant = emptyResources();
-        this.render();
-      });
-
-    this.root
-      .querySelector("#btn-exec-maritime")
-      ?.addEventListener("click", () => {
-        const activeGive = RESOURCES.filter((r) => this.maritimeGive[r] > 0);
-        const activeWant = RESOURCES.filter((r) => this.maritimeWant[r] > 0);
-        if (activeGive.length === 0 || activeWant.length === 0) return;
-
-        const firstGive = activeGive[0]!;
-        const firstWant = activeWant[0]!;
-        if (activeGive.length === 1 && activeWant.length === 1) {
-          this.dispatch(actingPlayerId, {
-            type: "MARITIME_TRADE",
-            give: firstGive,
-            giveAmount: this.maritimeGive[firstGive],
-            receive: firstWant,
-            receiveAmount: this.maritimeWant[firstWant],
-          });
-        } else {
-          this.dispatch(actingPlayerId, {
-            type: "MARITIME_TRADE",
-            give: firstGive,
-            giveAmount: this.maritimeGive[firstGive],
-            receive: firstWant,
-            receiveAmount: this.maritimeWant[firstWant],
-            giveMap: { ...this.maritimeGive },
-            receiveMap: { ...this.maritimeWant },
-          });
-        }
-      });
-
-    this.root
-      .querySelector("#btn-play-knight")
-      ?.addEventListener("click", () => {
-        this.dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" });
-      });
-
-    this.root
-      .querySelector("#btn-play-roadbuild")
-      ?.addEventListener("click", () => {
-        this.dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
-      });
-
-    this.root.querySelector("#btn-mode-yop")?.addEventListener("click", () => {
-      this.selectedBoardSpot = null;
-      this.buildMode =
-        this.buildMode === "year_of_plenty" ? null : "year_of_plenty";
-      this.render();
+    root.querySelector("#btn-maritime-reset")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        maritimeGive: emptyResources(),
+        maritimeWant: emptyResources(),
+        domesticGive: emptyResources(),
+        domesticWant: emptyResources(),
+      };
+      render();
     });
 
-    this.root.querySelectorAll("[data-yop-pick1]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        this.yopRes1 = btn.getAttribute("data-yop-pick1") as ResourceType;
-        this.render();
-      });
-    });
+    root.querySelector("#btn-exec-maritime")?.addEventListener("click", () => {
+      const activeGive = RESOURCES.filter((r) => model.maritimeGive[r] > 0);
+      const activeWant = RESOURCES.filter((r) => model.maritimeWant[r] > 0);
+      if (activeGive.length === 0 || activeWant.length === 0) return;
 
-    this.root.querySelectorAll("[data-yop-pick2]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        this.yopRes2 = btn.getAttribute("data-yop-pick2") as ResourceType;
-        this.render();
-      });
-    });
-
-    this.root.querySelector("#btn-exec-yop")?.addEventListener("click", () => {
-      this.dispatchUiAction(actingPlayerId, {
-        type: "PLAY_YEAR_OF_PLENTY",
-        resource1: this.yopRes1,
-        resource2: this.yopRes2,
-      });
-    });
-
-    this.root.querySelector("#btn-mode-mono")?.addEventListener("click", () => {
-      this.selectedBoardSpot = null;
-      this.buildMode = this.buildMode === "monopoly" ? null : "monopoly";
-      this.render();
-    });
-
-    this.root.querySelectorAll("[data-mono-pick]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        this.monoRes = btn.getAttribute("data-mono-pick") as ResourceType;
-        this.render();
-      });
-    });
-
-    this.root.querySelector("#btn-exec-mono")?.addEventListener("click", () => {
-      this.dispatchUiAction(actingPlayerId, {
-        type: "PLAY_MONOPOLY",
-        resource: this.monoRes,
-      });
-    });
-
-    this.root.querySelector("#btn-end-turn")?.addEventListener("click", () => {
-      if (state.phase === "SPECIAL_BUILDING") {
-        this.dispatch(actingPlayerId, { type: "END_SPECIAL_BUILD" });
+      const firstGive = activeGive[0]!;
+      const firstWant = activeWant[0]!;
+      if (activeGive.length === 1 && activeWant.length === 1) {
+        dispatch(actingPlayerId, {
+          type: "MARITIME_TRADE",
+          give: firstGive,
+          giveAmount: model.maritimeGive[firstGive],
+          receive: firstWant,
+          receiveAmount: model.maritimeWant[firstWant],
+        });
       } else {
-        this.dispatch(actingPlayerId, { type: "END_TURN" });
+        dispatch(actingPlayerId, {
+          type: "MARITIME_TRADE",
+          give: firstGive,
+          giveAmount: model.maritimeGive[firstGive],
+          receive: firstWant,
+          receiveAmount: model.maritimeWant[firstWant],
+          giveMap: { ...model.maritimeGive },
+          receiveMap: { ...model.maritimeWant },
+        });
       }
     });
+
+    root.querySelector("#btn-play-knight")?.addEventListener("click", () => {
+      dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" });
+    });
+
+    root.querySelector("#btn-play-roadbuild")?.addEventListener("click", () => {
+      dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
+    });
+
+    root.querySelector("#btn-mode-yop")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        selectedBoardSpot: null,
+        buildMode:
+          model.buildMode === "year_of_plenty" ? null : "year_of_plenty",
+      };
+      render();
+    });
+
+    root.querySelectorAll("[data-yop-pick1]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        model = {
+          ...model,
+          yopRes1: btn.getAttribute("data-yop-pick1") as ResourceType,
+        };
+        render();
+      });
+    });
+
+    root.querySelectorAll("[data-yop-pick2]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        model = {
+          ...model,
+          yopRes2: btn.getAttribute("data-yop-pick2") as ResourceType,
+        };
+        render();
+      });
+    });
+
+    root.querySelector("#btn-exec-yop")?.addEventListener("click", () => {
+      dispatchUiAction(actingPlayerId, {
+        type: "PLAY_YEAR_OF_PLENTY",
+        resource1: model.yopRes1,
+        resource2: model.yopRes2,
+      });
+    });
+
+    root.querySelector("#btn-mode-mono")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        selectedBoardSpot: null,
+        buildMode: model.buildMode === "monopoly" ? null : "monopoly",
+      };
+      render();
+    });
+
+    root.querySelectorAll("[data-mono-pick]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        model = {
+          ...model,
+          monoRes: btn.getAttribute("data-mono-pick") as ResourceType,
+        };
+        render();
+      });
+    });
+
+    root.querySelector("#btn-exec-mono")?.addEventListener("click", () => {
+      dispatchUiAction(actingPlayerId, {
+        type: "PLAY_MONOPOLY",
+        resource: model.monoRes,
+      });
+    });
+
+    root.querySelector("#btn-end-turn")?.addEventListener("click", () => {
+      if (state.phase === "SPECIAL_BUILDING") {
+        dispatch(actingPlayerId, { type: "END_SPECIAL_BUILD" });
+      } else {
+        dispatch(actingPlayerId, { type: "END_TURN" });
+      }
+    });
+  };
+
+  const bindInGameEvents = (
+    room: ClientRoom,
+    state: any,
+    actingPlayerId: string | null,
+    canCancelMyTrade = false
+  ): void => {
+    bindCommonIdentityEvents();
+    root.querySelector("#btn-back-lobby")?.addEventListener("click", () => {
+      stopAutoPlay();
+      model = { ...model, viewMode: "lobby" };
+      if (model.useServerBackend) {
+        void fetchLobbyRooms().then(() => render());
+      } else {
+        render();
+      }
+    });
+
+    root.querySelector("#tab-setup-page")?.addEventListener("click", () => {
+      stopAutoPlay();
+      model = { ...model, viewMode: "room_setup" };
+      render();
+    });
+
+    root
+      .querySelector("#btn-sidebar-edit-setup")
+      ?.addEventListener("click", () => {
+        stopAutoPlay();
+        model = { ...model, viewMode: "room_setup" };
+        render();
+      });
+
+    root
+      .querySelector("#btn-goto-setup-finished")
+      ?.addEventListener("click", () => {
+        stopAutoPlay();
+        model = { ...model, viewMode: "room_setup" };
+        render();
+      });
+
+    root.querySelector("#btn-undo")?.addEventListener("click", () => {
+      undoMatch();
+    });
+
+    root.querySelector("#btn-redo")?.addEventListener("click", () => {
+      redoMatch();
+    });
+
+    root.querySelector("#btn-finish-setup")?.addEventListener("click", () => {
+      finishSetupWithBots();
+    });
+
+    root
+      .querySelector("#btn-toggle-bot-response")
+      ?.addEventListener("click", () => {
+        toggleAutoRespondBots();
+      });
+
+    root.querySelector("#btn-step-bot")?.addEventListener("click", () => {
+      stepOneBotMove();
+    });
+
+    root.querySelector("#btn-autoplay")?.addEventListener("click", () => {
+      toggleAutoPlay();
+    });
+
+    root
+      .querySelector("#btn-toggle-hand-privacy")
+      ?.addEventListener("click", () => {
+        model = { ...model, hidePassAndPlayHand: !model.hidePassAndPlayHand };
+        render();
+      });
+
+    root.querySelector("#btn-reveal-hand")?.addEventListener("click", () => {
+      model = { ...model, hidePassAndPlayHand: false };
+      render();
+    });
+
+    root
+      .querySelector("#btn-switch-turn-guest")
+      ?.addEventListener("click", (e) => {
+        const gid = (e.currentTarget as HTMLElement).getAttribute(
+          "data-switch-guest"
+        );
+        if (gid) {
+          switchActiveGuest(gid);
+        }
+      });
+
+    if (!actingPlayerId) return;
+
+    if (!canControlPlayerOnDevicePure(model, room, actingPlayerId)) {
+      if (canCancelMyTrade && state.activeTradeOffer) {
+        root.querySelectorAll("[data-confirm-trade]").forEach((confirmBtn) => {
+          confirmBtn.addEventListener("click", () => {
+            const partnerId = confirmBtn.getAttribute("data-confirm-trade")!;
+            dispatchUiAction(state.activeTradeOffer.fromPlayerId, {
+              type: "CONFIRM_DOMESTIC_TRADE",
+              offerId: state.activeTradeOffer.id,
+              partnerId,
+            });
+          });
+        });
+        root.querySelectorAll("#btn-cancel-domestic").forEach((cancelBtn) => {
+          cancelBtn.addEventListener("click", () => {
+            dispatchUiAction(state.activeTradeOffer.fromPlayerId, {
+              type: "CANCEL_DOMESTIC_TRADE",
+            });
+          });
+        });
+      }
+      if (room.gameId === "catan") {
+        bindReadOnlyCatanSpotInspect();
+      }
+      return;
+    }
+
+    if (room.gameId === "splendor") {
+      bindSplendorEvents(state as SplendorState, actingPlayerId);
+      return;
+    }
+
+    if (room.gameId === "azul") {
+      bindAzulEvents(state as AzulState, actingPlayerId);
+      return;
+    }
+
+    bindCatanEvents(state as CatanState, actingPlayerId);
+  };
+
+  const render = (): void => {
+    const activeRoom = getActiveRoomPure(model);
+    const inActiveGame =
+      model.isAuthenticated &&
+      model.viewMode === "in_game" &&
+      Boolean(activeRoom && getRoomStatePure(model, activeRoom));
+    if (typeof document !== "undefined" && document.body?.classList) {
+      document.body.classList.toggle("ga-body--in-game", inActiveGame);
+    }
+
+    if (!model.isAuthenticated || model.viewMode === "login") {
+      root.innerHTML = renderLoginViewPure(model);
+      bindLoginEvents();
+      model = { ...model, loginHeroEnteredOnce: true };
+      return;
+    }
+    if (model.viewMode === "lobby") {
+      root.innerHTML = renderLobbyViewPure(model);
+      bindLobbyEvents();
+      model = { ...model, lobbyHeroEnteredOnce: true };
+      return;
+    }
+    if (model.viewMode === "room_setup") {
+      const room = getActiveRoomPure(model);
+      const setupRendered = renderRoomSetupViewPure(model, room);
+      root.innerHTML = setupRendered.html;
+      bindRoomSetupEvents(
+        room,
+        setupRendered.canEditSetup,
+        setupRendered.maxBots,
+        setupRendered.bounds
+      );
+      return;
+    }
+
+    const room = getActiveRoomPure(model);
+    const rawState = getRoomStatePure(model, room);
+    const usesServer = roomUsesServerPure(model, room);
+    if (!rawState) {
+      if (usesServer) {
+        model = { ...model, viewMode: "room_setup" };
+        const setupRendered = renderRoomSetupViewPure(model, room);
+        root.innerHTML = setupRendered.html;
+        bindRoomSetupEvents(
+          room,
+          setupRendered.canEditSetup,
+          setupRendered.maxBots,
+          setupRendered.bounds
+        );
+      } else {
+        startRoomMatch(room.roomId);
+      }
+      return;
+    }
+
+    const inGameRendered = renderInGameViewPure(model, room, rawState);
+    model = inGameRendered.model;
+    root.innerHTML = inGameRendered.html;
+    bindInGameEvents(
+      room,
+      inGameRendered.state,
+      inGameRendered.actingPlayerId,
+      inGameRendered.canCancelMyTrade
+    );
+  };
+
+  registerGlobalDropdownDismiss(root);
+  render();
+
+  if (model.useServerBackend && model.isAuthenticated) {
+    void fetchLobbyRooms();
   }
+
+  return {
+    get root() {
+      return root;
+    },
+    get viewMode() {
+      return model.viewMode;
+    },
+    set viewMode(v: AppViewMode) {
+      model = { ...model, viewMode: v };
+    },
+    get lobbyGameFilter() {
+      return model.lobbyGameFilter;
+    },
+    set lobbyGameFilter(v: "all" | SupportedGameId) {
+      model = { ...model, lobbyGameFilter: v };
+    },
+    get lobbyHeroEnteredOnce() {
+      return model.lobbyHeroEnteredOnce;
+    },
+    set lobbyHeroEnteredOnce(v: boolean) {
+      model = { ...model, lobbyHeroEnteredOnce: v };
+    },
+    get loginHeroEnteredOnce() {
+      return model.loginHeroEnteredOnce;
+    },
+    set loginHeroEnteredOnce(v: boolean) {
+      model = { ...model, loginHeroEnteredOnce: v };
+    },
+    get useServerBackend() {
+      return model.useServerBackend;
+    },
+    set useServerBackend(v: boolean) {
+      model = { ...model, useServerBackend: v };
+    },
+    get staticHostOnly() {
+      return model.staticHostOnly;
+    },
+    set staticHostOnly(v: boolean) {
+      model = { ...model, staticHostOnly: v };
+    },
+    get serverReachable() {
+      return model.serverReachable;
+    },
+    set serverReachable(v: boolean) {
+      model = { ...model, serverReachable: v };
+    },
+    get isAuthenticated() {
+      return model.isAuthenticated;
+    },
+    set isAuthenticated(v: boolean) {
+      model = { ...model, isAuthenticated: v };
+    },
+    get addingAdditionalGuest() {
+      return model.addingAdditionalGuest;
+    },
+    set addingAdditionalGuest(v: boolean) {
+      model = { ...model, addingAdditionalGuest: v };
+    },
+    get returnViewAfterAddGuest() {
+      return model.returnViewAfterAddGuest;
+    },
+    set returnViewAfterAddGuest(v: AppViewMode) {
+      model = { ...model, returnViewAfterAddGuest: v };
+    },
+    get loginDraftName() {
+      return model.loginDraftName;
+    },
+    set loginDraftName(v: string) {
+      model = { ...model, loginDraftName: v };
+    },
+    get loginErrorMsg() {
+      return model.loginErrorMsg;
+    },
+    set loginErrorMsg(v: string) {
+      model = { ...model, loginErrorMsg: v };
+    },
+    get currentUserId() {
+      return model.currentUserId;
+    },
+    set currentUserId(v: string) {
+      model = { ...model, currentUserId: v };
+    },
+    get currentUserName() {
+      return model.currentUserName;
+    },
+    set currentUserName(v: string) {
+      model = { ...model, currentUserName: v };
+    },
+    get deviceGuests() {
+      return model.deviceGuests;
+    },
+    set deviceGuests(v: GuestSession[]) {
+      model = { ...model, deviceGuests: [...v] };
+    },
+    get localFriendDraftName() {
+      return model.localFriendDraftName;
+    },
+    set localFriendDraftName(v: string) {
+      model = { ...model, localFriendDraftName: v };
+    },
+    get hidePassAndPlayHand() {
+      return model.hidePassAndPlayHand;
+    },
+    set hidePassAndPlayHand(v: boolean) {
+      model = { ...model, hidePassAndPlayHand: v };
+    },
+    get createRoomName() {
+      return model.createRoomName;
+    },
+    set createRoomName(v: string) {
+      model = { ...model, createRoomName: v };
+    },
+    get createRoomGameId() {
+      return model.createRoomGameId;
+    },
+    set createRoomGameId(v: SupportedGameId) {
+      model = { ...model, createRoomGameId: v };
+    },
+    get createRoomMode() {
+      return model.createRoomMode;
+    },
+    set createRoomMode(v: "online" | "offline") {
+      model = { ...model, createRoomMode: v };
+    },
+    get rooms() {
+      return roomsFacade;
+    },
+    get nextRoomNum() {
+      return model.nextRoomNum;
+    },
+    set nextRoomNum(v: number) {
+      model = { ...model, nextRoomNum: v };
+    },
+    get activeRoomId() {
+      return model.activeRoomId;
+    },
+    set activeRoomId(v: string) {
+      model = { ...model, activeRoomId: v };
+    },
+    get buildMode() {
+      return model.buildMode;
+    },
+    set buildMode(v: BuildMode) {
+      model = { ...model, buildMode: v };
+    },
+    get selectedBoardSpot() {
+      return model.selectedBoardSpot;
+    },
+    set selectedBoardSpot(v: BoardSpotSelection | null) {
+      model = { ...model, selectedBoardSpot: v };
+    },
+    get setupEdgeKind() {
+      return model.setupEdgeKind;
+    },
+    set setupEdgeKind(v: "road" | "ship") {
+      model = { ...model, setupEdgeKind: v };
+    },
+    get robberOrPirateMode() {
+      return model.robberOrPirateMode;
+    },
+    set robberOrPirateMode(v: "robber" | "pirate") {
+      model = { ...model, robberOrPirateMode: v };
+    },
+    get selectedMoveFromEdgeId() {
+      return model.selectedMoveFromEdgeId;
+    },
+    set selectedMoveFromEdgeId(v: string | null) {
+      model = { ...model, selectedMoveFromEdgeId: v };
+    },
+    get discardSelection() {
+      return model.discardSelection;
+    },
+    set discardSelection(v: ResourceMap) {
+      model = { ...model, discardSelection: { ...v } };
+    },
+    get tradeGiveRes() {
+      return model.tradeGiveRes;
+    },
+    set tradeGiveRes(v: ResourceType) {
+      model = { ...model, tradeGiveRes: v };
+    },
+    get tradeReceiveRes() {
+      return model.tradeReceiveRes;
+    },
+    set tradeReceiveRes(v: ResourceType) {
+      model = { ...model, tradeReceiveRes: v };
+    },
+    get maritimeGive() {
+      return model.maritimeGive;
+    },
+    set maritimeGive(v: ResourceMap) {
+      model = { ...model, maritimeGive: { ...v } };
+    },
+    get maritimeWant() {
+      return model.maritimeWant;
+    },
+    set maritimeWant(v: ResourceMap) {
+      model = { ...model, maritimeWant: { ...v } };
+    },
+    get domesticGive() {
+      return model.domesticGive;
+    },
+    set domesticGive(v: ResourceMap) {
+      model = { ...model, domesticGive: { ...v } };
+    },
+    get domesticWant() {
+      return model.domesticWant;
+    },
+    set domesticWant(v: ResourceMap) {
+      model = { ...model, domesticWant: { ...v } };
+    },
+    get domesticTargetPlayerId() {
+      return model.domesticTargetPlayerId;
+    },
+    set domesticTargetPlayerId(v: string) {
+      model = { ...model, domesticTargetPlayerId: v };
+    },
+    get yopRes1() {
+      return model.yopRes1;
+    },
+    set yopRes1(v: ResourceType) {
+      model = { ...model, yopRes1: v };
+    },
+    get yopRes2() {
+      return model.yopRes2;
+    },
+    set yopRes2(v: ResourceType) {
+      model = { ...model, yopRes2: v };
+    },
+    get monoRes() {
+      return model.monoRes;
+    },
+    set monoRes(v: ResourceType) {
+      model = { ...model, monoRes: v };
+    },
+    get splendorDraftGems() {
+      return model.splendorDraftGems;
+    },
+    set splendorDraftGems(v: Partial<Record<GemColor, number>>) {
+      model = { ...model, splendorDraftGems: { ...v } };
+    },
+    get azulSelectedDraft() {
+      return model.azulSelectedDraft;
+    },
+    set azulSelectedDraft(
+      v: { source: AzulDraftSource; color: AzulTileColor } | null
+    ) {
+      model = { ...model, azulSelectedDraft: v };
+    },
+    get autoPlayBots() {
+      return model.autoPlayBots;
+    },
+    set autoPlayBots(v: boolean) {
+      model = { ...model, autoPlayBots: v };
+    },
+    get autoRespondBotsToHuman() {
+      return model.autoRespondBotsToHuman;
+    },
+    set autoRespondBotsToHuman(v: boolean) {
+      model = { ...model, autoRespondBotsToHuman: v };
+    },
+    get autoPlaySpeedMs() {
+      return model.autoPlaySpeedMs;
+    },
+    set autoPlaySpeedMs(v: number) {
+      model = { ...model, autoPlaySpeedMs: v };
+    },
+    render,
+    signInAsGuest,
+    startSoloGameFromLogin,
+    startOfflineLocalFromLogin,
+    openAddGuestView,
+    switchActiveGuest,
+    signOutGuest,
+    getRoomBounds: getRoomBoundsPure,
+    createLocalRoom,
+    getActiveRoom,
+    getRoomState: (room: ClientRoom) => getRoomStatePure(model, room),
+    canControlPlayerOnThisDevice: (room: ClientRoom, playerId: string | null) =>
+      canControlPlayerOnDevicePure(model, room, playerId),
+    rebuildRoomSeats,
+    addLocalFriendToRoom,
+    removePlayerFromRoom,
+    createAndOpenRoom,
+    enterOrJoinRoom,
+    leaveActiveRoom,
+    startRoomMatch,
+    resetSubModes,
+    dispatchUiAction,
+    dispatch,
+    stepOneBotMove,
+    finishSetupWithBots,
+    undoMatch,
+    redoMatch,
+    toggleAutoRespondBots,
+    toggleAutoPlay,
+    stopAutoPlay,
+    switchTradeMode,
+    setSharedTradeWant,
+  };
 }
 
-export { MultiGamePlatformApp };
+export const MultiGamePlatformApp: MultiGamePlatformAppConstructor =
+  createMultiGamePlatformApp as unknown as MultiGamePlatformAppConstructor;
 
 if (typeof document !== "undefined") {
   const root = document.getElementById("app");
   if (root) {
-    new MultiGamePlatformApp(root);
+    createMultiGamePlatformApp(root);
   }
 }
