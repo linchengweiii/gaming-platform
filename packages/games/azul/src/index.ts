@@ -69,4 +69,16 @@ export const AzulEngine: GameEngine<
   checkInvariants(state: AzulState) {
     return checkAzulInvariants(state);
   },
+
+  isActionUndoable(
+    prevState: AzulState,
+    _action: AzulAction,
+    nextState: AzulState
+  ): boolean {
+    if (nextState.phase === "GAME_OVER") return false;
+    return (
+      prevState.rngState === nextState.rngState &&
+      prevState.bag.length === nextState.bag.length
+    );
+  },
 };

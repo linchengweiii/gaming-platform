@@ -98,7 +98,7 @@ export function runCatanMixedTournament(
         const action = CatanEngine.chooseBotAction(state, actorId);
         if (!action) break;
         if (action.type === "OFFER_DOMESTIC_TRADE") domesticTradesOffered++;
-        if (action.type === "ACCEPT_DOMESTIC_TRADE") domesticTradesCompleted++;
+        if (action.type === "CONFIRM_DOMESTIC_TRADE") domesticTradesCompleted++;
         state = CatanEngine.applyAction(state, actorId, action).state;
         steps++;
       }

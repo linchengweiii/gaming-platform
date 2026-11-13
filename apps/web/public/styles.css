@@ -1948,6 +1948,656 @@ html {
   background: var(--surface);
 }
 
+/* ---------------------------------------------------------------- Trade Mode Switcher & Unified Matrix */
+.ga-trade-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 34px;
+}
+
+.ga-trade-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+}
+
+.ga-trade-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: var(--t-label);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+.ga-trade-tab:hover {
+  color: var(--ink);
+}
+
+.ga-trade-tab.is-active {
+  background: color-mix(in oklab, var(--action) 18%, var(--surface));
+  border-color: var(--action);
+  color: var(--ink);
+}
+
+.ga-res-col-head__card-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ga-res-col-head__rate {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+  background: rgba(24, 25, 27, 0.9);
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.ga-res-col-head__rate.is-port {
+  color: #fde047;
+  border-color: rgba(250, 204, 21, 0.55);
+  background: rgba(24, 25, 27, 0.95);
+}
+
+.ga-trade-bundle {
+  min-height: 28px;
+}
+
+.ga-trade-submit-btn {
+  min-width: 158px;
+  justify-content: center;
+}
+
+.ga-res-cell--stack {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 4px;
+}
+
+.ga-res-cell__stepper {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+}
+
+.ga-res-cell__meta {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  line-height: 1.1;
+  color: var(--muted);
+}
+
+.res-pill--hidden {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- Full-Viewport Zero-Scroll Game Canvas */
+.player-card__name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-card__hud-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.player-card__stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.player-card__stats strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ga-inline-summary__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ga-standings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.res-pills--bank {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.res-pills--bank .res-pill {
+  justify-content: center;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.ga-stat-list--compact {
+  gap: 2px;
+  font-size: 12px;
+}
+
+@media (min-width: 1024px) {
+  html:has(.ga-game-canvas),
+  body.ga-body--in-game,
+  body:has(.ga-game-canvas) {
+    height: 100svh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
+  #app:has(.ga-game-canvas),
+  .ga-game-canvas {
+    height: 100svh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ga-game-canvas .ga-nav--room {
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+    flex: 0 0 48px;
+  }
+
+  .ga-game-canvas .ga-nav--room .ga-nav__inner {
+    height: 100%;
+    min-height: 0;
+    padding-block: 0;
+    flex-wrap: nowrap;
+  }
+
+  .ga-game-canvas .ga-room-shell--game {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+    width: min(100% - 20px, 1760px);
+    padding-block: 8px;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) 352px;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .ga-game-canvas .board-container {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Strictly fixed top banner height so map size never shifts across phases */
+  .ga-game-canvas .board-banner {
+    height: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    flex: 0 0 40px;
+    padding: 0 12px;
+    gap: 8px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .ga-game-canvas .board-banner > div {
+    flex-wrap: nowrap !important;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .ga-game-canvas .board-svg-wrap {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 6px 10px;
+  }
+
+  .ga-game-canvas .board-container--neutral .board-svg-wrap {
+    overflow-y: auto;
+  }
+
+  .ga-game-canvas .board-svg {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    max-width: 100%;
+    display: block;
+  }
+
+  /* Keep corner HUDs compact and out of the island hexes */
+  .ga-game-canvas .map-dice-hud {
+    top: 10px;
+    left: 10px;
+    padding: 6px 10px;
+    gap: 4px;
+    max-width: 260px;
+  }
+
+  .ga-game-canvas .map-decision-popup--compact {
+    left: auto;
+    right: 12px;
+    bottom: 12px;
+    transform: none;
+    padding: 7px 10px;
+    gap: 8px;
+  }
+
+  .ga-game-canvas .btn-roll-graphic {
+    height: 40px;
+    padding: 0 14px 0 10px;
+    font-size: 14px;
+  }
+
+  /* Strictly fixed action bar height + downward bottom-tray drawer so trading NEVER covers or resizes the map */
+  .ga-game-canvas .action-dock {
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    flex: 0 0 44px;
+    padding: 0 12px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    position: relative;
+    z-index: 24;
+  }
+
+  .ga-game-canvas .action-dock > .action-buttons {
+    width: 100%;
+    height: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    white-space: nowrap;
+    gap: 6px;
+  }
+
+  .ga-game-canvas .action-dock > .action-buttons .action-prompt {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal {
+    position: absolute;
+    top: 100%;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    height: 176px;
+    max-height: 176px;
+    max-width: none;
+    margin: 0;
+    padding: 6px 12px;
+    gap: 4px;
+    justify-content: space-between;
+    overflow-y: auto;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    z-index: 30;
+    background: rgba(24, 26, 30, 0.98);
+    backdrop-filter: blur(12px);
+    border-top: 1.5px solid color-mix(in oklab, var(--action) 48%, var(--line-strong));
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.42);
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-trade-head {
+    gap: 6px;
+    min-height: 24px;
+    flex-wrap: nowrap;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-trade-tab {
+    padding: 3px 9px;
+    font-size: 12px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-matrix {
+    gap: 4px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-col-head {
+    padding: 3px 5px;
+    gap: 2px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-col-head__top {
+    font-size: 12px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-col-head__have {
+    font-size: 12px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-col-head__card-wrap svg {
+    max-height: 20px;
+    width: auto;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-col-head__rate {
+    font-size: 10.5px;
+    padding: 0 5px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-cell {
+    min-height: 28px;
+    padding: 2px 5px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-step-btn {
+    width: 22px;
+    height: 22px;
+    font-size: 13px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-step-val {
+    font-size: 13px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-res-port-btn {
+    min-height: 28px;
+    padding: 2px 4px;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .ga-trade-preview {
+    padding-top: 3px;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  .ga-game-canvas .action-dock > .sub-modal .btn--sm {
+    height: 26px;
+    min-height: 26px;
+    padding-inline: 8px;
+  }
+
+  /* Strictly fixed bottom hand dock height (identical whether holding 0 dev cards, playable dev cards, or privacy card) */
+  .ga-game-canvas .visual-hand-tray,
+  .ga-game-canvas .ga-hand-privacy-card {
+    height: 176px;
+    min-height: 176px;
+    max-height: 176px;
+    flex: 0 0 176px;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .ga-game-canvas .visual-hand-tray {
+    padding: 6px 12px 8px;
+    gap: 4px;
+  }
+
+  .ga-game-canvas .hand-tray-header {
+    height: 22px;
+    flex: 0 0 22px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .ga-game-canvas .hand-cards-scroll {
+    flex: 1 1 0;
+    min-height: 0;
+    padding: 2px 2px 1px;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .ga-game-canvas .hand-section-cards {
+    gap: 6px;
+    height: 100%;
+  }
+
+  .ga-game-canvas .playing-card {
+    width: 90px;
+    min-width: 90px;
+    height: 100%;
+    padding: 5px 7px;
+    gap: 3px;
+    box-sizing: border-box;
+  }
+
+  .ga-game-canvas .playing-card-art {
+    padding: 2px;
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .ga-game-canvas .playing-card-art svg {
+    max-height: 36px;
+    width: auto;
+    margin-inline: auto;
+  }
+
+  .ga-game-canvas .playing-card-sub {
+    display: none;
+  }
+
+  .ga-game-canvas .playing-card-title,
+  .ga-game-canvas .dev-card-title {
+    font-size: 12px;
+  }
+
+  .ga-game-canvas .dev-playing-card {
+    width: 148px;
+    min-width: 148px;
+    height: 100%;
+    box-sizing: border-box;
+  }
+
+  .ga-game-canvas .dev-playing-card .playing-card-art svg {
+    max-height: 26px;
+  }
+
+  .ga-game-canvas .dev-playing-card .dev-card-action .btn--sm,
+  .ga-game-canvas .dev-playing-card .dev-card-action .ga-chip {
+    height: 24px;
+    min-height: 24px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .ga-game-canvas .dev-card-rule {
+    display: none;
+  }
+
+  .ga-game-canvas .empty-dev-placeholder {
+    min-width: 148px;
+    height: 100%;
+    padding: 6px 10px;
+    box-sizing: border-box;
+  }
+
+  /* Compact right sidebar HUD — all game sections visible with zero page scroll */
+  .ga-game-canvas .ga-sidebar {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .ga-game-canvas .ga-sidebar__head {
+    padding-bottom: 3px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .ga-game-canvas .ga-inline-summary {
+    padding: 6px 9px;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .ga-game-canvas .ga-inline-summary .ga-chip {
+    height: 20px;
+    padding-inline: 6px;
+    font-size: 11px;
+  }
+
+  .ga-game-canvas .ga-standings-list {
+    flex-shrink: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .ga-game-canvas .player-card {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .ga-game-canvas .player-card .ga-chip {
+    height: 20px;
+    padding-inline: 6px;
+    font-size: 11px;
+  }
+
+  .ga-game-canvas .player-card .res-pill {
+    padding: 1px 6px;
+    font-size: 11.5px;
+    gap: 3px;
+  }
+
+  .ga-game-canvas .event-log {
+    flex: 1 1 72px;
+    min-height: 60px;
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  .ga-game-canvas .event-item {
+    padding: 4px 7px;
+    font-size: 11.5px;
+    line-height: 1.32;
+  }
+
+  /* Compact Splendor & Azul stages inside canvas so they fit without scrolling */
+  .ga-game-canvas .sp-board,
+  .ga-game-canvas .az-board {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .ga-game-canvas .sp-noble-card {
+    padding: 5px 9px;
+    min-width: 136px;
+    gap: 4px;
+  }
+
+  .ga-game-canvas .sp-deck-card {
+    width: 92px;
+    min-height: 124px;
+    padding: 7px 6px;
+  }
+
+  .ga-game-canvas .sp-dev-card {
+    width: 128px;
+    min-height: 124px;
+    padding: 7px 8px;
+  }
+
+  .ga-game-canvas .sp-bank-bar {
+    padding: 7px 12px;
+    gap: 10px;
+  }
+
+  .ga-game-canvas .az-factory {
+    width: 92px;
+    height: 92px;
+    gap: 4px;
+  }
+
+  .ga-game-canvas .az-center-pool {
+    min-height: 58px;
+    padding: 6px 12px;
+  }
+
+  .ga-game-canvas .az-palace-card {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1180px) {
+  .ga-game-canvas .ga-room-shell--game {
+    grid-template-columns: minmax(0, 1fr) 316px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .ga-game-canvas .board-container {
+    min-height: 0;
+  }
+
+  .ga-game-canvas .board-container:not(.board-container--neutral) .board-svg-wrap {
+    height: clamp(360px, 52svh, 480px);
+    min-height: clamp(360px, 52svh, 480px);
+    max-height: clamp(360px, 52svh, 480px);
+    flex: 0 0 auto;
+    overflow: hidden;
+  }
+
+  .ga-game-canvas .map-decision-popup--compact {
+    left: auto;
+    right: 10px;
+    bottom: 10px;
+    transform: none;
+  }
+}
+
 @media (max-width: 900px) {
   .ga-login-shell {
     grid-template-columns: 1fr;

@@ -32,6 +32,7 @@ export interface RoomSummary {
   players: PlayerDescriptor[];
   config: Record<string, unknown>;
   canUndo: boolean;
+  undoableSteps: number;
   canRedo: boolean;
   step: number;
   createdAt: number;
@@ -99,7 +100,38 @@ export class PlatformRoomManager {
     };
   }
 
-  public toRoomSummary(r: RoomInstance): RoomSummary {
+  public canViewerControlActor(
+    room: RoomInstance,
+    viewerId: string | null | undefined,
+    actorId: string | null
+  ): boolean {
+    if (!viewerId || !actorId) return false;
+    const actor = room.players.find((p) => p.id === actorId);
+    if (!actor || actor.isBot) return false;
+    return actor.id === viewerId || actor.controllerId === viewerId;
+  }
+
+  public toRoomSummary(
+    r: RoomInstance,
+    viewerId?: string | null
+  ): RoomSummary {
+    const state = r.session?.getState() ?? null;
+    const actingId = state ? getRoomActingPlayerId(r.gameId, state) : null;
+    const rawUndoableSteps =
+      r.session && actingId ? r.session.getUndoableStepCount(actingId) : 0;
+    const viewerAllowed =
+      viewerId === undefined
+        ? Boolean(
+            actingId &&
+              !r.players.find((p) => p.id === actingId)?.isBot
+          )
+        : this.canViewerControlActor(r, viewerId, actingId);
+    const undoableSteps = viewerAllowed ? rawUndoableSteps : 0;
+    const canRedo =
+      viewerAllowed && r.session && actingId
+        ? r.session.canPlayerRedo(actingId)
+        : false;
+
     return {
       roomId: r.roomId,
       name: r.name,
@@ -114,8 +146,9 @@ export class PlatformRoomManager {
       autoStepBots: r.autoStepBots,
       players: r.players,
       config: r.config,
-      canUndo: r.session?.canUndo() ?? false,
-      canRedo: r.session?.canRedo() ?? false,
+      canUndo: undoableSteps > 0,
+      undoableSteps,
+      canRedo,
       step: r.session?.getStep() ?? 0,
       createdAt: r.createdAt,
     };
@@ -594,22 +627,48 @@ export class PlatformRoomManager {
     return result.state;
   }
 
-  public undoAction(roomId: string): any {
+  public undoAction(roomId: string, requesterId?: string | null): any {
     const room = this.getRoom(roomId);
     if (!room.session) {
       throw new Error("Game has not started in this room");
     }
-    const state = room.session.undo();
+    const currentState = room.session.getState();
+    const actingId = getRoomActingPlayerId(room.gameId, currentState);
+    if (!actingId) {
+      throw new Error("Cannot undo after the game has finished");
+    }
+    const actingPlayer = room.players.find((p) => p.id === actingId);
+    if (!actingPlayer || actingPlayer.isBot) {
+      throw new Error("Undo is only available during a human player's turn");
+    }
+    if (
+      requesterId !== undefined &&
+      !this.canViewerControlActor(room, requesterId, actingId)
+    ) {
+      throw new Error("You can only undo during your own turn");
+    }
+    const state = room.session.undoForPlayer(actingId);
     room.status = state.phase === "GAME_OVER" ? "finished" : "in_progress";
     return state;
   }
 
-  public redoAction(roomId: string): any {
+  public redoAction(roomId: string, requesterId?: string | null): any {
     const room = this.getRoom(roomId);
     if (!room.session) {
       throw new Error("Game has not started in this room");
     }
-    const state = room.session.redo();
+    const currentState = room.session.getState();
+    const actingId = getRoomActingPlayerId(room.gameId, currentState);
+    if (!actingId) {
+      throw new Error("Cannot redo after the game has finished");
+    }
+    if (
+      requesterId !== undefined &&
+      !this.canViewerControlActor(room, requesterId, actingId)
+    ) {
+      throw new Error("You can only redo during your own turn");
+    }
+    const state = room.session.redoForPlayer(actingId);
     room.status = state.phase === "GAME_OVER" ? "finished" : "in_progress";
     return state;
   }

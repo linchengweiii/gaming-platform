@@ -111,6 +111,7 @@ export interface TradeOffer {
   toPlayerId: string | null; // null = open to any opponent
   give: Partial<ResourceMap>;
   want: Partial<ResourceMap>;
+  acceptedBy: string[];
   declinedBy: string[];
 }
 
@@ -136,6 +137,10 @@ export interface CatanPlayerState {
   isBot: boolean;
   botDifficulty: BotDifficulty;
   resources: ResourceMap;
+  /** Total resource cards in hand when exact resource counts are redacted from another viewer. */
+  hiddenResourceCount?: number;
+  /** True when this player's exact resources and unplayed dev cards are redacted from the viewer. */
+  handRedacted?: boolean;
   devCards: DevCardInstance[];
   knightsPlayed: number;
   roadsRemaining: number;
@@ -230,6 +235,9 @@ export type CatanAction =
       give: ResourceType;
       giveAmount: number;
       receive: ResourceType;
+      receiveAmount?: number;
+      giveMap?: Partial<ResourceMap>;
+      receiveMap?: Partial<ResourceMap>;
     }
   | {
       type: "OFFER_DOMESTIC_TRADE";
@@ -239,6 +247,11 @@ export type CatanAction =
     }
   | { type: "ACCEPT_DOMESTIC_TRADE"; offerId: string }
   | { type: "DECLINE_DOMESTIC_TRADE"; offerId: string }
+  | {
+      type: "CONFIRM_DOMESTIC_TRADE";
+      offerId: string;
+      partnerId: string;
+    }
   | { type: "CANCEL_DOMESTIC_TRADE" }
   | { type: "END_TURN" }
   | { type: "END_SPECIAL_BUILD" };

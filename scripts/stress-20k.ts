@@ -273,21 +273,42 @@ function chooseHumanMimicCatanAction(
   actorId: string,
   rng: SeededRNG
 ): { playerId: string; action: CatanAction; isDomesticTrade?: boolean } | null {
-  // If there is an active domestic trade offer, mimic another human accepting or the proposer canceling
+  // If there is an active domestic trade offer, mimic responders accepting/declining and proposer selecting who to trade with
   if (state.activeTradeOffer) {
     const offer = state.activeTradeOffer;
-    for (const p of state.players) {
-      if (
-        p.id !== offer.fromPlayerId &&
-        hasResources(p.resources, offer.want) &&
-        rng.nextFloat() < 0.65
-      ) {
+    const accepted = offer.acceptedBy ?? [];
+    if (accepted.length > 0 && (actorId === offer.fromPlayerId || rng.nextFloat() < 0.35)) {
+      if (rng.nextFloat() < 0.9) {
         return {
-          playerId: p.id,
+          playerId: offer.fromPlayerId,
+          action: {
+            type: "CONFIRM_DOMESTIC_TRADE",
+            offerId: offer.id,
+            partnerId: rng.pick(accepted),
+          },
+          isDomesticTrade: true,
+        };
+      }
+      return {
+        playerId: offer.fromPlayerId,
+        action: { type: "CANCEL_DOMESTIC_TRADE" },
+        isDomesticTrade: true,
+      };
+    }
+    if (actorId !== offer.fromPlayerId) {
+      const responder = state.players.find((p) => p.id === actorId);
+      if (responder && hasResources(responder.resources, offer.want) && rng.nextFloat() < 0.65) {
+        return {
+          playerId: responder.id,
           action: { type: "ACCEPT_DOMESTIC_TRADE", offerId: offer.id },
           isDomesticTrade: true,
         };
       }
+      return {
+        playerId: actorId,
+        action: { type: "DECLINE_DOMESTIC_TRADE", offerId: offer.id },
+        isDomesticTrade: true,
+      };
     }
     return {
       playerId: offer.fromPlayerId,

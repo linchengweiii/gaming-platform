@@ -24,6 +24,7 @@ import {
   getLegalSettlementVertices,
   getLegalShipEdges,
   getNextActingPlayerId,
+  getPlayerResourceCount,
   getPlayerSafeHandLimit,
   getPlayerTradeRatios,
   hasResources,
@@ -124,6 +125,7 @@ interface ClientRoom {
   remoteState: any | null;
   remoteActingPlayerId: string | null;
   canUndo: boolean;
+  undoableSteps: number;
   canRedo: boolean;
   step: number;
 }
@@ -325,6 +327,8 @@ class MultiGamePlatformApp {
   private discardSelection: ResourceMap = emptyResources();
   private tradeGiveRes: ResourceType = "brick";
   private tradeReceiveRes: ResourceType = "ore";
+  private maritimeGive: ResourceMap = emptyResources();
+  private maritimeWant: ResourceMap = emptyResources();
   private domesticGive: ResourceMap = emptyResources();
   private domesticWant: ResourceMap = emptyResources();
   private domesticTargetPlayerId: string = "all";
@@ -854,6 +858,10 @@ class MultiGamePlatformApp {
         summary.canUndo !== undefined
           ? Boolean(summary.canUndo)
           : (existing?.canUndo ?? false),
+      undoableSteps:
+        typeof summary.undoableSteps === "number"
+          ? summary.undoableSteps
+          : (existing?.undoableSteps ?? 0),
       canRedo:
         summary.canRedo !== undefined
           ? Boolean(summary.canRedo)
@@ -1048,6 +1056,7 @@ class MultiGamePlatformApp {
       remoteState: null,
       remoteActingPlayerId: null,
       canUndo: false,
+      undoableSteps: 0,
       canRedo: false,
       step: 0,
     };
@@ -1085,14 +1094,18 @@ class MultiGamePlatformApp {
     playerId: string | null
   ): boolean {
     if (!playerId) return false;
-    if (!this.roomUsesServer(room) || room.allBots) {
-      return true;
-    }
-    if (playerId === this.currentUserId) {
-      return true;
-    }
     const seat = room.players.find((p) => p.id === playerId);
-    return Boolean(seat && seat.controllerId === this.currentUserId);
+    if (!seat) return false;
+    if (seat.isBot) {
+      return Boolean(room.allBots);
+    }
+    if (!this.roomUsesServer(room) && room.isOfflineLocal) {
+      return true;
+    }
+    return (
+      playerId === this.currentUserId ||
+      seat.controllerId === this.currentUserId
+    );
   }
 
   private getActingPlayerId(gameId: SupportedGameId, state: any): string | null {
@@ -1635,11 +1648,36 @@ class MultiGamePlatformApp {
     this.selectedBoardSpot = null;
     this.selectedMoveFromEdgeId = null;
     this.discardSelection = emptyResources();
+    this.maritimeGive = emptyResources();
+    this.maritimeWant = emptyResources();
     this.domesticGive = emptyResources();
     this.domesticWant = emptyResources();
     this.domesticTargetPlayerId = "all";
     this.splendorDraftGems = {};
     this.azulSelectedDraft = null;
+  }
+
+  private dispatchUiAction(playerId: string, action: any): void {
+    const room = this.getActiveRoom();
+    if (!this.canControlPlayerOnThisDevice(room, playerId)) {
+      return;
+    }
+    const rawState = this.getRoomState(room);
+    if (rawState) {
+      const actingId = this.roomUsesServer(room)
+        ? room.remoteActingPlayerId ??
+          this.getActingPlayerId(room.gameId, rawState)
+        : this.getActingPlayerId(room.gameId, rawState);
+      const isTradeProposerAction =
+        room.gameId === "catan" &&
+        rawState.activeTradeOffer?.fromPlayerId === playerId &&
+        (action?.type === "CONFIRM_DOMESTIC_TRADE" ||
+          action?.type === "CANCEL_DOMESTIC_TRADE");
+      if (playerId !== actingId && !isTradeProposerAction) {
+        return;
+      }
+    }
+    this.dispatch(playerId, action);
   }
 
   private dispatch(playerId: string, action: any): void {
@@ -1652,7 +1690,11 @@ class MultiGamePlatformApp {
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ playerId, action }),
+              body: JSON.stringify({
+                playerId,
+                requesterId: this.currentUserId,
+                action,
+              }),
             }
           );
           const data = await res.json();
@@ -1711,13 +1753,30 @@ class MultiGamePlatformApp {
       clearTimeout(this.botResponseTimeout);
       this.botResponseTimeout = null;
     }
-    if (!this.autoRespondBotsToHuman || this.autoPlayBots) return;
     if (!room.session || this.viewMode !== "in_game") return;
     const state = room.session.getState();
     if (state.phase === "GAME_OVER") return;
 
     const actorId = this.getActingPlayerId(room.gameId, state);
     const actor = state.players.find((p: any) => p.id === actorId);
+
+    // Auto-decline domestic trade immediately if a responder lacks the requested resources
+    if (
+      room.gameId === "catan" &&
+      state.phase === "MAIN_PHASE" &&
+      state.activeTradeOffer &&
+      actor &&
+      actor.id !== state.activeTradeOffer.fromPlayerId &&
+      !hasResources(actor.resources, state.activeTradeOffer.want)
+    ) {
+      this.dispatch(actor.id, {
+        type: "DECLINE_DOMESTIC_TRADE",
+        offerId: state.activeTradeOffer.id,
+      });
+      return;
+    }
+
+    if (!this.autoRespondBotsToHuman || this.autoPlayBots) return;
     if (actor && actor.isBot) {
       this.botResponseTimeout = setTimeout(() => {
         this.stepOneBotMove();
@@ -1840,7 +1899,17 @@ class MultiGamePlatformApp {
       })();
       return;
     }
-    room.session?.undo();
+    if (!room.session) return;
+    const rawState = room.session.getState();
+    const actingId = this.getActingPlayerId(room.gameId, rawState);
+    if (
+      !actingId ||
+      !this.canControlPlayerOnThisDevice(room, actingId) ||
+      !room.session.canPlayerUndo(actingId)
+    ) {
+      return;
+    }
+    room.session.undoForPlayer(actingId);
     this.resetSubModes();
     this.render();
   }
@@ -1871,7 +1940,17 @@ class MultiGamePlatformApp {
       })();
       return;
     }
-    room.session?.redo();
+    if (!room.session) return;
+    const rawState = room.session.getState();
+    const actingId = this.getActingPlayerId(room.gameId, rawState);
+    if (
+      !actingId ||
+      !this.canControlPlayerOnThisDevice(room, actingId) ||
+      !room.session.canPlayerRedo(actingId)
+    ) {
+      return;
+    }
+    room.session.redoForPlayer(actingId);
     this.resetSubModes();
     this.render();
   }
@@ -1929,6 +2008,14 @@ class MultiGamePlatformApp {
   }
 
   public render(): void {
+    const inActiveGame =
+      this.isAuthenticated &&
+      this.viewMode === "in_game" &&
+      Boolean(this.getRoomState(this.getActiveRoom()));
+    if (typeof document !== "undefined" && document.body?.classList) {
+      document.body.classList.toggle("ga-body--in-game", inActiveGame);
+    }
+
     if (!this.isAuthenticated || this.viewMode === "login") {
       this.renderLoginView();
       this.loginHeroEnteredOnce = true;
@@ -3304,9 +3391,9 @@ class MultiGamePlatformApp {
    */
   private renderInGameView(): void {
     const room = this.getActiveRoom();
-    const state = this.getRoomState(room);
+    const rawState = this.getRoomState(room);
     const usesServer = this.roomUsesServer(room);
-    if (!state) {
+    if (!rawState) {
       if (usesServer) {
         this.viewMode = "room_setup";
         this.renderRoomSetupView();
@@ -3318,35 +3405,74 @@ class MultiGamePlatformApp {
 
     const engine = this.getEngineForGame(room.gameId);
     const actingPlayerId = usesServer
-      ? room.remoteActingPlayerId ?? this.getActingPlayerId(room.gameId, state)
-      : this.getActingPlayerId(room.gameId, state);
+      ? room.remoteActingPlayerId ?? this.getActingPlayerId(room.gameId, rawState)
+      : this.getActingPlayerId(room.gameId, rawState);
+    const isMyTurn = this.canControlPlayerOnThisDevice(room, actingPlayerId);
+    if (!isMyTurn) {
+      this.buildMode = null;
+      this.selectedMoveFromEdgeId = null;
+    }
+    const controllableHumans = rawState.players.filter(
+      (p: any) => !p.isBot && this.canControlPlayerOnThisDevice(room, p.id)
+    );
+    const controllableHumansCount = controllableHumans.length;
+    const rawActingPlayer =
+      rawState.players.find((p: any) => p.id === actingPlayerId) ?? null;
+
+    let effectiveViewerId: string | null = null;
+    if (rawState.phase !== "GAME_OVER") {
+      if (controllableHumansCount >= 2 && this.hidePassAndPlayHand) {
+        effectiveViewerId = null;
+      } else if (isMyTurn && rawActingPlayer && !rawActingPlayer.isBot) {
+        effectiveViewerId = rawActingPlayer.id;
+      } else if (controllableHumansCount === 1) {
+        effectiveViewerId = controllableHumans[0]!.id;
+      }
+    }
+
+    const state =
+      room.gameId === "catan"
+        ? CatanEngine.getPlayerView(rawState as CatanState, effectiveViewerId)
+        : rawState;
+
     const actingPlayer =
       state.players.find((p: any) => p.id === actingPlayerId) ?? null;
     const invariantCheck = engine.checkInvariants(state);
 
     const mySeatedPlayer =
       state.players.find((p: any) => p.id === this.currentUserId) ?? null;
-    const isMyTurn = this.canControlPlayerOnThisDevice(room, actingPlayerId);
-    const controllableHumansCount = state.players.filter(
-      (p: any) => !p.isBot && this.canControlPlayerOnThisDevice(room, p.id)
-    ).length;
     const handPlayer =
-      isMyTurn && actingPlayer && !actingPlayer.isBot
-        ? actingPlayer
-        : mySeatedPlayer ??
-          state.players.find((p: any) => !p.isBot) ??
-          actingPlayer ??
-          state.players[0];
+      state.phase === "GAME_OVER"
+        ? mySeatedPlayer ??
+          state.players.find((p: any) => p.id === state.winnerId) ??
+          state.players[0]
+        : controllableHumansCount >= 2 && this.hidePassAndPlayHand
+          ? (isMyTurn && actingPlayer && !actingPlayer.isBot
+              ? actingPlayer
+              : mySeatedPlayer ?? controllableHumans[0])
+          : effectiveViewerId
+            ? state.players.find((p: any) => p.id === effectiveViewerId) ?? null
+            : null;
 
     const localDeviceGuestForTurn =
       !isMyTurn && actingPlayerId
         ? this.deviceGuests.find((g) => g.id === actingPlayerId)
         : undefined;
 
+    const offerProposer =
+      room.gameId === "catan" && state.activeTradeOffer
+        ? state.players.find(
+            (p: any) => p.id === state.activeTradeOffer!.fromPlayerId
+          )
+        : null;
     const canCancelMyTrade =
       room.gameId === "catan" &&
       Boolean(
         state.activeTradeOffer &&
+          offerProposer &&
+          (!offerProposer.isBot || room.allBots) &&
+          effectiveViewerId &&
+          state.activeTradeOffer.fromPlayerId === effectiveViewerId &&
           this.canControlPlayerOnThisDevice(
             room,
             state.activeTradeOffer.fromPlayerId
@@ -3357,350 +3483,387 @@ class MultiGamePlatformApp {
     const isOwner = Boolean(
       room.ownerId && room.ownerId === this.currentUserId
     );
-    const canUndo = usesServer
-      ? room.canUndo
-      : Boolean(room.session?.canUndo());
+    const undoableSteps = usesServer
+      ? isMyTurn
+        ? room.undoableSteps
+        : 0
+      : isMyTurn && actingPlayerId && room.session
+        ? room.session.getUndoableStepCount(actingPlayerId)
+        : 0;
+    const canUndo = isMyTurn && undoableSteps > 0;
     const canRedo = usesServer
-      ? room.canRedo
-      : Boolean(room.session?.canRedo());
-    const stepNum = usesServer ? room.step : room.session?.getStep() ?? 0;
+      ? isMyTurn && room.canRedo
+      : Boolean(
+          isMyTurn &&
+            actingPlayerId &&
+            room.session?.canPlayerRedo(actingPlayerId)
+        );
 
     const catanLegalActions =
-      room.gameId === "catan" && actingPlayerId && isMyTurn
+      room.gameId === "catan" &&
+      actingPlayerId &&
+      isMyTurn &&
+      !(controllableHumansCount >= 2 && this.hidePassAndPlayHand)
         ? CatanEngine.getLegalActions(state, actingPlayerId)
         : [];
     const boardActingPlayerId = isMyTurn ? actingPlayerId : null;
 
     this.root.innerHTML = `
-      ${this.renderRoomHeader(room, "game")}
+      <div class="ga-game-canvas">
+        ${this.renderRoomHeader(room, "game")}
 
-      <div class="ga-room-shell ga-room-shell--game">
-        <div class="board-container ${
-          room.gameId !== "catan" ? "board-container--neutral" : ""
-        }">
-          <div class="board-banner">
-            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-              ${
-                actingPlayer
-                  ? `<span class="player-dot" style="background: ${actingPlayer.color}"></span>
-                     <strong style="font-weight: 500;">Active turn: ${escapeAttr(actingPlayer.name)}${
-                       mySeatedPlayer && actingPlayer.id === mySeatedPlayer.id
-                         ? " (You)"
-                         : isMyTurn && !actingPlayer.isBot
-                           ? " (Local)"
-                           : ""
-                     }</strong>`
-                  : `<strong style="font-weight: 500;">Match complete</strong>`
-              }
-              <span class="ga-chip">${formatPhaseLabel(state.phase)}</span>
+        <div class="ga-room-shell ga-room-shell--game">
+          <div class="board-container ${
+            room.gameId !== "catan" ? "board-container--neutral" : ""
+          }">
+            <div class="board-banner">
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+                ${
+                  actingPlayer
+                    ? `<span class="player-dot" style="background: ${actingPlayer.color}"></span>
+                       <strong style="font-weight: 500;">Active turn: ${escapeAttr(actingPlayer.name)}${
+                         mySeatedPlayer && actingPlayer.id === mySeatedPlayer.id
+                           ? " (You)"
+                           : isMyTurn && !actingPlayer.isBot
+                             ? " (Local)"
+                             : ""
+                       }</strong>`
+                    : `<strong style="font-weight: 500;">Match complete</strong>`
+                }
+                <span class="ga-chip">${formatPhaseLabel(state.phase)}</span>
+                ${
+                  room.gameId === "catan"
+                    ? state.lastRoll
+                      ? `<span style="display: inline-flex; align-items: center; gap: 5px;">
+                          ${renderDieSvg(state.lastRoll.die1, 22)}
+                          ${renderDieSvg(state.lastRoll.die2, 22)}
+                          <span class="ga-chip ga-chip--warn ga-num">Roll ${
+                            state.lastRoll.total
+                          }</span>
+                        </span>`
+                      : `<span class="ga-chip">Awaiting dice roll</span>`
+                    : room.gameId === "splendor"
+                      ? `<span class="ga-chip ga-num">Round ${state.round} · Target ${state.config.targetPoints}</span>`
+                      : `<span class="ga-chip ga-num">Round ${state.round} · Bag ${state.bag.length} · Lid ${state.discardLid.length}</span>`
+                }
+                <span class="ga-chip ${invariantCheck.valid ? "ga-chip--ok" : "ga-chip--danger"}">
+                  ${
+                    invariantCheck.valid
+                      ? "Rules verified"
+                      : `${invariantCheck.violations.length} rule errors`
+                  }
+                </span>
+                ${
+                  state.winnerId
+                    ? `<span class="ga-chip ga-chip--warn">Winner: ${escapeAttr(
+                        state.players.find((p: any) => p.id === state.winnerId)?.name ?? "Player"
+                      )}</span>`
+                    : ""
+                }
+              </div>
+
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 5px;">
+                ${
+                  room.gameId === "catan" && controllableHumansCount >= 2
+                    ? `<button type="button" id="btn-toggle-hand-privacy" class="btn btn--secondary btn--sm">
+                        ${this.hidePassAndPlayHand ? "Show hand" : "Hide hand"}
+                      </button>`
+                    : ""
+                }
+                <button type="button" id="btn-undo" class="btn btn--secondary btn--sm ga-num" title="${
+                  canUndo
+                    ? "Undo your last reversible step in this turn"
+                    : "Undo is only available during your turn for steps after a dice roll or card reveal"
+                }" ${!canUndo ? "disabled" : ""}>Undo${
+                  undoableSteps > 0 ? ` (${undoableSteps})` : ""
+                }</button>
+                <button type="button" id="btn-redo" class="btn btn--secondary btn--sm" ${
+                  !canRedo ? "disabled" : ""
+                }>Redo</button>
+                ${
+                  room.gameId === "catan" &&
+                  state.phase.startsWith("SETUP_") &&
+                  (!usesServer || isOwner)
+                    ? `<button type="button" id="btn-finish-setup" class="btn btn--secondary btn--sm">Auto-place setup</button>`
+                    : ""
+                }
+                <button type="button" id="btn-toggle-bot-response" class="btn btn--secondary btn--sm ${
+                  this.autoRespondBotsToHuman ? "is-selected" : ""
+                }">
+                  Auto-bots: ${this.autoRespondBotsToHuman ? "on" : "off"}
+                </button>
+                <button type="button" id="btn-step-bot" class="btn btn--secondary btn--sm" ${
+                  state.phase === "GAME_OVER" ? "disabled" : ""
+                }>Step bot</button>
+                <button type="button" id="btn-autoplay" class="btn ${
+                  this.autoPlayBots ? "btn--primary" : "btn--secondary"
+                } btn--sm">
+                  ${this.autoPlayBots ? "Pause sim" : "Auto-sim"}
+                </button>
+              </div>
+            </div>
+
+            <div class="board-svg-wrap">
               ${
                 room.gameId === "catan"
-                  ? state.lastRoll
-                    ? `<span style="display: inline-flex; align-items: center; gap: 6px;">
-                        ${renderDieSvg(state.lastRoll.die1, 24)}
-                        ${renderDieSvg(state.lastRoll.die2, 24)}
-                        <span class="ga-chip ga-chip--warn ga-num">Roll ${
-                          state.lastRoll.total
-                        }</span>
-                      </span>`
-                    : `<span class="ga-chip">Awaiting dice roll</span>`
+                  ? `
+                    ${this.renderCatanMapDiceHud(state as CatanState)}
+                    ${renderCatanBoardSvg(
+                      state as CatanState,
+                      boardActingPlayerId,
+                      {
+                        buildMode: isMyTurn ? this.buildMode : null,
+                        setupEdgeKind: this.setupEdgeKind,
+                        robberOrPirateMode: this.robberOrPirateMode,
+                        selectedMoveFromEdgeId: isMyTurn
+                          ? this.selectedMoveFromEdgeId
+                          : null,
+                        selectedSpot: this.selectedBoardSpot,
+                      }
+                    )}
+                    ${this.renderCatanSpotPopover(
+                      state as CatanState,
+                      isMyTurn ? actingPlayer : mySeatedPlayer ?? actingPlayer,
+                      catanLegalActions
+                    )}
+                    ${
+                      isMyTurn
+                        ? this.renderCatanMapDecisionPopup(
+                            state as CatanState,
+                            actingPlayer,
+                            catanLegalActions
+                          )
+                        : ""
+                    }
+                  `
                   : room.gameId === "splendor"
-                    ? `<span class="ga-chip ga-num">Round ${state.round} · Target ${state.config.targetPoints}</span>`
-                    : `<span class="ga-chip ga-num">Round ${state.round} · Bag ${state.bag.length} · Lid ${state.discardLid.length}</span>`
-              }
-              <span class="ga-chip ${invariantCheck.valid ? "ga-chip--ok" : "ga-chip--danger"}">
-                ${
-                  invariantCheck.valid
-                    ? "Rules verified"
-                    : `${invariantCheck.violations.length} rule errors`
-                }
-              </span>
-              ${
-                state.winnerId
-                  ? `<span class="ga-chip ga-chip--warn">Winner: ${escapeAttr(
-                      state.players.find((p: any) => p.id === state.winnerId)?.name ?? "Player"
-                    )}</span>`
-                  : ""
+                    ? renderSplendorBoardView(
+                        state as SplendorState,
+                        isMyTurn ? this.splendorDraftGems : {}
+                      )
+                    : renderAzulBoardView(
+                        state as AzulState,
+                        isMyTurn ? this.azulSelectedDraft : null
+                      )
               }
             </div>
 
-            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+            <div class="action-dock">
               ${
-                room.gameId === "catan" && controllableHumansCount >= 2
-                  ? `<button type="button" id="btn-toggle-hand-privacy" class="btn btn--secondary btn--sm">
-                      ${this.hidePassAndPlayHand ? "Show hand" : "Hide hand"}
-                    </button>`
-                  : ""
+                state.phase !== "GAME_OVER" && !isMyTurn
+                  ? `${
+                      room.gameId === "catan" &&
+                      canCancelMyTrade &&
+                      state.phase === "MAIN_PHASE" &&
+                      Boolean((state as CatanState).activeTradeOffer) &&
+                      actingPlayer
+                        ? `<div class="sub-modal sub-modal--trade sub-modal--trade-offer">${this.renderActiveTradeOfferCard(
+                            state as CatanState,
+                            actingPlayer,
+                            canCancelMyTrade
+                          )}</div>`
+                        : ""
+                    }<div class="action-buttons" style="justify-content: space-between;">
+                      <span class="action-prompt">
+                        ${
+                          mySeatedPlayer
+                            ? `Waiting for <strong>${escapeAttr(actingPlayer?.name ?? "active player")}</strong> (${formatPhaseLabel(state.phase)}).`
+                            : `Spectating room — active turn: <strong>${escapeAttr(actingPlayer?.name ?? "player")}</strong> (${formatPhaseLabel(state.phase)}).`
+                        }
+                      </span>
+                      <div style="display: inline-flex; gap: 6px;">
+                        ${
+                          localDeviceGuestForTurn
+                            ? `<button type="button" id="btn-switch-turn-guest" data-switch-guest="${escapeAttr(localDeviceGuestForTurn.id)}" class="btn btn--primary btn--sm">Switch to ${escapeAttr(localDeviceGuestForTurn.name)}</button>`
+                            : ""
+                        }
+                      </div>
+                    </div>`
+                  : room.gameId === "catan"
+                    ? this.renderCatanActionDock(
+                        state as CatanState,
+                        actingPlayer,
+                        catanLegalActions,
+                        canCancelMyTrade
+                      )
+                    : room.gameId === "splendor"
+                      ? renderSplendorActionDock(
+                          state as SplendorState,
+                          actingPlayer
+                        )
+                      : renderAzulActionDock(
+                          state as AzulState,
+                          actingPlayer,
+                          this.azulSelectedDraft
+                        )
               }
-              <button type="button" id="btn-undo" class="btn btn--secondary btn--sm ga-num" ${
-                !canUndo ? "disabled" : ""
-              }>Undo (${stepNum})</button>
-              <button type="button" id="btn-redo" class="btn btn--secondary btn--sm" ${
-                !canRedo ? "disabled" : ""
-              }>Redo</button>
-              ${
-                room.gameId === "catan" &&
-                state.phase.startsWith("SETUP_") &&
-                (!usesServer || isOwner)
-                  ? `<button type="button" id="btn-finish-setup" class="btn btn--secondary btn--sm">Auto-place setup</button>`
-                  : ""
-              }
-              <button type="button" id="btn-toggle-bot-response" class="btn btn--secondary btn--sm ${
-                this.autoRespondBotsToHuman ? "is-selected" : ""
-              }">
-                Auto-bots: ${this.autoRespondBotsToHuman ? "on" : "off"}
-              </button>
-              <button type="button" id="btn-step-bot" class="btn btn--secondary btn--sm" ${
-                state.phase === "GAME_OVER" ? "disabled" : ""
-              }>Step bot</button>
-              <button type="button" id="btn-autoplay" class="btn ${
-                this.autoPlayBots ? "btn--primary" : "btn--secondary"
-              } btn--sm">
-                ${this.autoPlayBots ? "Pause sim" : "Auto-sim"}
-              </button>
             </div>
-          </div>
 
-          <div class="board-svg-wrap" style="overflow-y: auto;">
             ${
               room.gameId === "catan"
-                ? `
-                  ${this.renderCatanMapDiceHud(state as CatanState)}
-                  ${renderCatanBoardSvg(
-                    state as CatanState,
-                    boardActingPlayerId,
-                    {
-                      buildMode: isMyTurn ? this.buildMode : null,
-                      setupEdgeKind: this.setupEdgeKind,
-                      robberOrPirateMode: this.robberOrPirateMode,
-                      selectedMoveFromEdgeId: isMyTurn
-                        ? this.selectedMoveFromEdgeId
-                        : null,
-                      selectedSpot: this.selectedBoardSpot,
-                    }
-                  )}
-                  ${this.renderCatanSpotPopover(
-                    state as CatanState,
-                    isMyTurn ? actingPlayer : mySeatedPlayer ?? actingPlayer,
-                    catanLegalActions
-                  )}
-                  ${
-                    isMyTurn || canCancelMyTrade
-                      ? this.renderCatanMapDecisionPopup(
-                          state as CatanState,
-                          actingPlayer,
-                          catanLegalActions
-                        )
-                      : ""
-                  }
-                `
-                : room.gameId === "splendor"
-                  ? renderSplendorBoardView(
-                      state as SplendorState,
-                      isMyTurn ? this.splendorDraftGems : {}
-                    )
-                  : renderAzulBoardView(
-                      state as AzulState,
-                      isMyTurn ? this.azulSelectedDraft : null
-                    )
-            }
-          </div>
-
-          <div class="action-dock">
-            ${
-              state.phase !== "GAME_OVER" && !isMyTurn
-                ? `<div class="action-buttons" style="justify-content: space-between;">
-                    <span class="action-prompt">
-                      ${
-                        mySeatedPlayer
-                          ? `Waiting for <strong>${escapeAttr(actingPlayer?.name ?? "active player")}</strong> (${formatPhaseLabel(state.phase)}).`
-                          : `Spectating room — active turn: <strong>${escapeAttr(actingPlayer?.name ?? "player")}</strong> (${formatPhaseLabel(state.phase)}).`
-                      }
-                    </span>
-                    <div style="display: inline-flex; gap: 6px;">
-                      ${
-                        localDeviceGuestForTurn
-                          ? `<button type="button" id="btn-switch-turn-guest" data-switch-guest="${escapeAttr(localDeviceGuestForTurn.id)}" class="btn btn--primary btn--sm">Switch to ${escapeAttr(localDeviceGuestForTurn.name)}</button>`
-                          : ""
-                      }
-                      ${
-                        canCancelMyTrade
-                          ? `<button type="button" id="btn-cancel-domestic" class="btn btn--secondary btn--sm">Cancel offer</button>`
-                          : ""
-                      }
-                    </div>
-                  </div>`
-                : room.gameId === "catan"
-                  ? this.renderCatanActionDock(
-                      state as CatanState,
-                      actingPlayer,
-                      catanLegalActions
-                    )
-                  : room.gameId === "splendor"
-                    ? renderSplendorActionDock(
-                        state as SplendorState,
-                        actingPlayer
+                ? handPlayer
+                  ? controllableHumansCount >= 2 && this.hidePassAndPlayHand
+                    ? `
+                      <div class="ga-hand-privacy-card">
+                        <span class="t-small muted"><strong>${escapeAttr(handPlayer.name)}'s</strong> hand is hidden while passing the screen.</span>
+                        <button type="button" id="btn-reveal-hand" class="btn btn--secondary btn--sm">Show ${escapeAttr(handPlayer.name)}'s hand</button>
+                      </div>
+                    `
+                    : renderCatanVisualHandTray(
+                        state as CatanState,
+                        handPlayer,
+                        isMyTurn && actingPlayerId === handPlayer.id
+                          ? CatanEngine.getLegalActions(state, handPlayer.id)
+                          : []
                       )
-                    : renderAzulActionDock(
-                        state as AzulState,
+                  : room.allBots && actingPlayer && !actingPlayer.handRedacted
+                    ? renderCatanVisualHandTray(
+                        state as CatanState,
                         actingPlayer,
-                        this.azulSelectedDraft
+                        isMyTurn
+                          ? CatanEngine.getLegalActions(state, actingPlayer.id)
+                          : []
                       )
-            }
-          </div>
-
-          ${
-            room.gameId === "catan" && handPlayer
-              ? controllableHumansCount >= 2 && this.hidePassAndPlayHand
-                ? `
-                  <div class="ga-hand-privacy-card">
-                    <span class="t-small muted"><strong>${escapeAttr(handPlayer.name)}'s</strong> hand is hidden while passing the screen.</span>
-                    <button type="button" id="btn-reveal-hand" class="btn btn--secondary btn--sm">Show ${escapeAttr(handPlayer.name)}'s hand</button>
-                  </div>
-                `
-                : renderCatanVisualHandTray(
-                    state as CatanState,
-                    handPlayer,
-                    isMyTurn && actingPlayerId === handPlayer.id
-                      ? CatanEngine.getLegalActions(state, handPlayer.id)
-                      : []
-                  )
-              : ""
-          }
-        </div>
-
-        <aside class="ga-sidebar">
-          <div class="ga-sidebar__head">
-            <span>Setup summary</span>
-            <span class="ga-num">${summaryInfo.seatsLabel} · Turn ${state.turn}</span>
-          </div>
-          <div class="ga-inline-summary">
-            <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
-              <strong style="font-size: var(--t-small); font-weight: 500;">${summaryInfo.formatTitle}</strong>
-              <span class="t-label muted ga-num">${summaryInfo.targetLabel}</span>
-            </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
-              ${summaryInfo.ruleChips
-                .map((chip) => `<span class="ga-chip">${escapeAttr(chip)}</span>`)
-                .join("")}
-            </div>
-            ${
-              room.status === "finished" && isOwner
-                ? `<button type="button" id="btn-sidebar-edit-setup" class="btn btn--secondary btn--sm" style="width: 100%;">Edit setup for next game</button>`
+                    : `
+                      <div class="ga-hand-privacy-card">
+                        <span class="t-small muted">Spectating table — player hands remain hidden until match completion.</span>
+                      </div>
+                    `
                 : ""
             }
           </div>
 
-          <div class="ga-sidebar__head" style="margin-top: 2px;">
-            <span>Standings (${state.players.length})</span>
-            <span class="ga-num">${
-              room.gameId === "catan"
-                ? `Target ${state.config.targetVictoryPoints} VP`
-                : room.gameId === "splendor"
-                  ? `Target ${state.config.targetPoints} VP`
-                  : `5×5 wall`
-            }</span>
-          </div>
-          ${state.players
-            .map((p: any) =>
-              room.gameId === "catan"
-                ? this.renderCatanPlayerCard(
-                    state as CatanState,
-                    p,
-                    p.id === actingPlayerId
-                  )
-                : room.gameId === "splendor"
-                  ? renderSplendorPlayerCard(
-                      state as SplendorState,
-                      p,
-                      p.id === actingPlayerId
-                    )
-                  : renderAzulPlayerCard(
-                      state as AzulState,
-                      p,
-                      p.id === actingPlayerId
-                    )
-            )
-            .join("")}
-
-          ${
-            room.gameId === "catan"
-              ? `
-            <div class="ga-sidebar__head" style="margin-top: 4px;">
-              <span>Bank supply and awards</span>
-              <span class="ga-num">Dev deck: ${state.devCardDeck.length}</span>
-            </div>
-            <div class="res-pills">
-              ${RESOURCES.map(
-                (r) =>
-                  `<span class="res-pill res-${r}">${renderResourceGlyphSvg(r)} ${RESOURCE_META[r].label} ${state.bank[r]}</span>`
-              ).join("")}
-            </div>
-            <div class="ga-stat-list">
-              <div class="ga-stat-row">
-                <span>Longest route (+2 VP)</span>
-                <strong class="ga-num">${
-                  state.longestRoadOwnerId
-                    ? `${
-                        state.players.find(
-                          (p: any) => p.id === state.longestRoadOwnerId
-                        )?.name
-                      } (${state.longestRoadLength})`
-                    : "Unclaimed (5+)"
-                }</strong>
+          <aside class="ga-sidebar">
+            <div class="ga-inline-summary" title="${escapeAttr(summaryInfo.ruleChips.join(" · "))}">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+                <strong style="font-size: var(--t-label); font-weight: 500;">${summaryInfo.formatTitle}</strong>
+                <span class="t-label muted ga-num">${summaryInfo.seatsLabel} · T${state.turn} · ${summaryInfo.targetLabel}</span>
               </div>
-              <div class="ga-stat-row">
-                <span>Largest army (+2 VP)</span>
-                <strong class="ga-num">${
-                  state.largestArmyOwnerId
-                    ? `${
-                        state.players.find(
-                          (p: any) => p.id === state.largestArmyOwnerId
-                        )?.name
-                      } (${state.largestArmySize})`
-                    : "Unclaimed (3+)"
-                }</strong>
+              <div class="ga-inline-summary__chips">
+                ${summaryInfo.ruleChips
+                  .map((chip) => `<span class="ga-chip">${escapeAttr(chip)}</span>`)
+                  .join("")}
               </div>
               ${
-                state.config.enableHarbormaster
-                  ? `<div class="ga-stat-row">
-                      <span>Harbormaster (+2 VP)</span>
-                      <strong class="ga-num">${
-                        state.harbormasterOwnerId
-                          ? `${
-                              state.players.find(
-                                (p: any) => p.id === state.harbormasterOwnerId
-                              )?.name
-                            } (${state.harbormasterPoints})`
-                          : "Unclaimed (3+)"
-                      }</strong>
-                    </div>`
+                room.status === "finished" && isOwner
+                  ? `<button type="button" id="btn-sidebar-edit-setup" class="btn btn--secondary btn--sm" style="width: 100%;">Edit setup for next game</button>`
                   : ""
               }
             </div>
-          `
-              : ""
-          }
 
-          <div class="ga-sidebar__head" style="margin-top: 4px;">
-            <span>Match log</span>
-            <span class="ga-num">${state.eventLog.length}</span>
-          </div>
-          <div class="event-log">
-            ${[...state.eventLog]
-              .reverse()
-              .slice(0, 35)
-              .map(
-                (evt: any) =>
-                  `<div class="event-item"><strong>T${evt.turn}</strong> ${escapeAttr(evt.message)}</div>`
-              )
-              .join("")}
-          </div>
-        </aside>
+            <div class="ga-sidebar__head">
+              <span>Standings (${state.players.length})</span>
+              <span class="ga-num">${
+                room.gameId === "catan"
+                  ? `Target ${state.config.targetVictoryPoints} VP`
+                  : room.gameId === "splendor"
+                    ? `Target ${state.config.targetPoints} VP`
+                    : `5×5 wall`
+              }</span>
+            </div>
+            <div class="ga-standings-list">
+              ${state.players
+                .map((p: any) =>
+                  room.gameId === "catan"
+                    ? this.renderCatanPlayerCard(
+                        state as CatanState,
+                        p,
+                        p.id === actingPlayerId
+                      )
+                    : room.gameId === "splendor"
+                      ? renderSplendorPlayerCard(
+                          state as SplendorState,
+                          p,
+                          p.id === actingPlayerId
+                        )
+                      : renderAzulPlayerCard(
+                          state as AzulState,
+                          p,
+                          p.id === actingPlayerId
+                        )
+                )
+                .join("")}
+            </div>
+
+            ${
+              room.gameId === "catan"
+                ? `
+              <div class="ga-sidebar__head">
+                <span>Bank supply and awards</span>
+                <span class="ga-num">Dev deck: ${state.devCardDeck.length}</span>
+              </div>
+              <div class="res-pills res-pills--bank">
+                ${RESOURCES.map(
+                  (r) =>
+                    `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}: ${state.bank[r]} in bank">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
+                ).join("")}
+              </div>
+              <div class="ga-stat-list ga-stat-list--compact">
+                <div class="ga-stat-row">
+                  <span>Longest route (+2 VP)</span>
+                  <strong class="ga-num">${
+                    state.longestRoadOwnerId
+                      ? `${
+                          state.players.find(
+                            (p: any) => p.id === state.longestRoadOwnerId
+                          )?.name
+                        } (${state.longestRoadLength})`
+                      : "Unclaimed (5+)"
+                  }</strong>
+                </div>
+                <div class="ga-stat-row">
+                  <span>Largest army (+2 VP)</span>
+                  <strong class="ga-num">${
+                    state.largestArmyOwnerId
+                      ? `${
+                          state.players.find(
+                            (p: any) => p.id === state.largestArmyOwnerId
+                          )?.name
+                        } (${state.largestArmySize})`
+                      : "Unclaimed (3+)"
+                  }</strong>
+                </div>
+                ${
+                  state.config.enableHarbormaster
+                    ? `<div class="ga-stat-row">
+                        <span>Harbormaster (+2 VP)</span>
+                        <strong class="ga-num">${
+                          state.harbormasterOwnerId
+                            ? `${
+                                state.players.find(
+                                  (p: any) => p.id === state.harbormasterOwnerId
+                                )?.name
+                              } (${state.harbormasterPoints})`
+                            : "Unclaimed (3+)"
+                        }</strong>
+                      </div>`
+                    : ""
+                }
+              </div>
+            `
+                : ""
+            }
+
+            <div class="ga-sidebar__head">
+              <span>Match log</span>
+              <span class="ga-num">${state.eventLog.length}</span>
+            </div>
+            <div class="event-log">
+              ${[...state.eventLog]
+                .reverse()
+                .slice(0, 35)
+                .map(
+                  (evt: any) =>
+                    `<div class="event-item"><strong>T${evt.turn}</strong> ${escapeAttr(evt.message)}</div>`
+                )
+                .join("")}
+            </div>
+          </aside>
+        </div>
       </div>
     `;
 
-    this.bindInGameEvents(room, state, actingPlayerId);
+    this.bindInGameEvents(room, state, actingPlayerId, canCancelMyTrade);
   }
 
   private renderCostPipStrip(cost: Partial<ResourceMap>): string {
@@ -3718,12 +3881,14 @@ class MultiGamePlatformApp {
 
   private renderResourceColumnHeaders(
     playerResources?: ResourceMap,
-    showBank?: ResourceMap
+    showBank?: ResourceMap,
+    tradeRatios?: Record<ResourceType, number>
   ): string {
     return `
       <div class="ga-res-matrix__row-label">Resource</div>
-      ${RESOURCES.map(
-        (r) => `
+      ${RESOURCES.map((r) => {
+        const ratio = tradeRatios?.[r];
+        return `
         <div class="ga-res-col-head">
           <div class="ga-res-col-head__top">
             <span>${RESOURCE_META[r].label}</span>
@@ -3735,10 +3900,19 @@ class MultiGamePlatformApp {
                   : ""
             }
           </div>
-          ${renderMiniResourceCardSvg(r, 52, 34)}
+          <div class="ga-res-col-head__card-wrap">
+            ${renderMiniResourceCardSvg(r, 48, 30)}
+            ${
+              ratio !== undefined
+                ? `<span class="ga-res-col-head__rate ${
+                    ratio < 4 ? "is-port" : ""
+                  }" title="${ratio}:1 harbor rate">${ratio}:1</span>`
+                : ""
+            }
+          </div>
         </div>
-      `
-      ).join("")}
+      `;
+      }).join("")}
     `;
   }
 
@@ -3960,7 +4134,7 @@ class MultiGamePlatformApp {
                 ${this.renderMissingCostBadge(actingPlayer.resources, BUILDING_COSTS.road)}
               </div>
               ${
-                state.phase === "MAIN_PHASE"
+                state.phase === "MAIN_PHASE" && legalActions.length > 0
                   ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
                   : ""
               }
@@ -3972,7 +4146,7 @@ class MultiGamePlatformApp {
                 ${this.renderMissingCostBadge(actingPlayer.resources, BUILDING_COSTS.ship)}
               </div>
               ${
-                state.phase === "MAIN_PHASE"
+                state.phase === "MAIN_PHASE" && legalActions.length > 0
                   ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
                   : ""
               }
@@ -4057,7 +4231,7 @@ class MultiGamePlatformApp {
               ${this.renderMissingCostBadge(actingPlayer.resources, BUILDING_COSTS.city)}
             </div>
             ${
-              state.phase === "MAIN_PHASE"
+              state.phase === "MAIN_PHASE" && legalActions.length > 0
                 ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
                 : ""
             }
@@ -4075,7 +4249,7 @@ class MultiGamePlatformApp {
               ${this.renderMissingCostBadge(actingPlayer.resources, BUILDING_COSTS.settlement)}
             </div>
             ${
-              state.phase === "MAIN_PHASE"
+              state.phase === "MAIN_PHASE" && legalActions.length > 0
                 ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
                 : ""
             }
@@ -4169,37 +4343,82 @@ class MultiGamePlatformApp {
 
   private renderActiveTradeOfferCard(
     state: CatanState,
-    actingPlayer: CatanState["players"][number]
+    actingPlayer: CatanState["players"][number],
+    canManageMyTrade = false
   ): string {
     const offer = state.activeTradeOffer!;
     const fromP = state.players.find((p) => p.id === offer.fromPlayerId)!;
     const isResponder = actingPlayer.id !== offer.fromPlayerId;
-    const otherPlayers = state.players.filter(
-      (p) => p.id !== offer.fromPlayerId
-    );
     const room = this.getActiveRoom();
     const canRespond =
-      isResponder && this.canControlPlayerOnThisDevice(room, actingPlayer.id);
-    const canCancel = this.canControlPlayerOnThisDevice(
-      room,
-      offer.fromPlayerId
+      isResponder &&
+      (!actingPlayer.isBot || room.allBots) &&
+      this.canControlPlayerOnThisDevice(room, actingPlayer.id);
+    const canManage = !canRespond && canManageMyTrade;
+    const acceptedIds = offer.acceptedBy ?? [];
+    const acceptedPartners = acceptedIds
+      .map((pid) => state.players.find((p) => p.id === pid))
+      .filter((p): p is CatanState["players"][number] => Boolean(p));
+    const targetedOpponents = state.players.filter(
+      (p) =>
+        p.id !== offer.fromPlayerId &&
+        (offer.toPlayerId === null || offer.toPlayerId === p.id)
+    );
+    const pendingResponders = targetedOpponents.filter(
+      (p) => !acceptedIds.includes(p.id) && !offer.declinedBy.includes(p.id)
     );
 
+    const statusLabel = canRespond
+      ? `${escapeAttr(actingPlayer.name)} responding`
+      : acceptedPartners.length > 0
+        ? pendingResponders.length > 0
+          ? "Select partner now or wait for others"
+          : "Select partner to complete trade"
+        : "Awaiting player response";
+
+    const responderChipsHtml = canManage
+      ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px;">
+          ${targetedOpponents
+            .map((op) => {
+              const didAccept = acceptedIds.includes(op.id);
+              const didDecline = offer.declinedBy.includes(op.id);
+              const chipCls = didAccept
+                ? "ga-chip ga-chip--ok"
+                : didDecline
+                  ? "ga-chip"
+                  : "ga-chip ga-chip--warn";
+              const stateText = didAccept
+                ? "Accepted"
+                : didDecline
+                  ? "Declined"
+                  : "Responding...";
+              return `<span class="${chipCls}" style="display: inline-flex; align-items: center; gap: 5px;">
+                <span class="player-dot" style="background: ${op.color}; width: 7px; height: 7px;"></span>
+                ${escapeAttr(op.name)} · ${stateText}
+              </span>`;
+            })
+            .join("")}
+        </div>`
+      : "";
+
     return `
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-        <div style="display: inline-flex; align-items: center; gap: 8px;">
+      <div class="ga-trade-head">
+        <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">
           <span class="player-dot" style="background: ${fromP.color}"></span>
           <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(fromP.name)} trade offer</strong>
+          ${responderChipsHtml}
         </div>
-        <span class="t-label muted">${
-          isResponder
-            ? `${escapeAttr(actingPlayer.name)} responding`
-            : "Awaiting player response"
-        }</span>
+        <span class="t-label muted">${statusLabel}</span>
       </div>
 
       <div class="ga-res-matrix">
-        ${this.renderResourceColumnHeaders(actingPlayer.resources)}
+        ${this.renderResourceColumnHeaders(
+          canRespond
+            ? actingPlayer.resources
+            : canManage
+              ? fromP.resources
+              : undefined
+        )}
 
         <div class="ga-res-matrix__row-label">
           <span class="ga-res-row-dot ga-res-row-dot--give"></span>Gives
@@ -4227,31 +4446,35 @@ class MultiGamePlatformApp {
       </div>
 
       <div class="ga-trade-preview">
-        <div class="action-buttons" style="width: 100%; justify-content: flex-end;">
+        <span class="t-label muted">Inspect the map above while deciding on this trade</span>
+        <div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto;">
           ${
             canRespond
-              ? isResponder
-                ? `
-                  <button type="button" data-decline-trade="${actingPlayer.id}" class="btn btn--secondary btn--sm">Decline</button>
-                  <button type="button" data-accept-trade="${actingPlayer.id}" class="btn btn--primary btn--sm action-btn-graphic" ${
-                    !hasResources(actingPlayer.resources, offer.want)
-                      ? "disabled"
-                      : ""
-                  }>${renderActionPieceIconSvg("domestic_trade", actingPlayer.color, 16)} <span>${escapeAttr(actingPlayer.name)} accepts</span></button>
-                `
-                : otherPlayers
-                    .map((op) => {
-                      const canAccept = hasResources(op.resources, offer.want);
-                      return `<button type="button" data-accept-trade="${op.id}" class="btn btn--primary btn--sm" ${
-                        !canAccept ? "disabled" : ""
-                      }>${escapeAttr(op.name)} accepts</button>`;
-                    })
-                    .join("")
+              ? `
+                <button type="button" data-decline-trade="${actingPlayer.id}" class="btn btn--secondary btn--sm">Decline</button>
+                <button type="button" data-accept-trade="${actingPlayer.id}" class="btn btn--primary btn--sm action-btn-graphic" ${
+                  !hasResources(actingPlayer.resources, offer.want)
+                    ? "disabled"
+                    : ""
+                }>${renderActionPieceIconSvg("domestic_trade", actingPlayer.color, 16)} <span>Accept</span></button>
+              `
               : ""
           }
           ${
-            canCancel
-              ? `<button type="button" id="btn-cancel-domestic" class="btn btn--secondary btn--sm">Cancel offer</button>`
+            canManage
+              ? `
+                ${acceptedPartners
+                  .map(
+                    (partner) => `
+                      <button type="button" data-confirm-trade="${escapeAttr(partner.id)}" class="btn btn--primary btn--sm action-btn-graphic">
+                        <span class="player-dot" style="background: ${partner.color}"></span>
+                        <span>Trade with ${escapeAttr(partner.name)}</span>
+                      </button>
+                    `
+                  )
+                  .join("")}
+                <button type="button" id="btn-cancel-domestic" class="btn btn--secondary btn--sm">Cancel offer</button>
+              `
               : ""
           }
         </div>
@@ -4273,7 +4496,7 @@ class MultiGamePlatformApp {
       return `
         <div class="map-decision-popup map-decision-popup--compact">
           <button type="button" id="btn-roll-dice" class="btn btn--primary btn-roll-graphic">
-            <span class="roll-dice-btn-graphic" style="display: inline-flex; align-items: center;">${renderRollDiceButtonGraphicSvg(36)}</span>
+            <span class="roll-dice-btn-graphic" style="display: inline-flex; align-items: center;">${renderRollDiceButtonGraphicSvg(32)}</span>
             <span>Roll dice</span>
           </button>
           ${
@@ -4288,69 +4511,6 @@ class MultiGamePlatformApp {
       `;
     }
 
-    if (state.phase === "DISCARD_ON_SEVEN") {
-      const req = state.pendingDiscards[actingPlayer.id] ?? 0;
-      const currentSelected = totalResourceCount(this.discardSelection);
-      return `
-        <div class="map-decision-popup">
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <span class="action-prompt"><strong>Roll of 7 · ${actingPlayer.name}:</strong> Discard ${req} cards</span>
-            <span class="ga-chip ${currentSelected === req ? "ga-chip--ok" : "ga-chip--warn"} ga-num">${currentSelected}/${req} selected</span>
-          </div>
-          <div class="ga-res-matrix">
-            ${this.renderResourceColumnHeaders(actingPlayer.resources)}
-            <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--give"></span>Discard
-            </div>
-            ${RESOURCES.map((r) => {
-              const sel = this.discardSelection[r];
-              const have = actingPlayer.resources[r];
-              return `
-                <div class="ga-res-cell ${sel > 0 ? "ga-res-cell--active-give" : ""}">
-                  <button type="button" data-discard-sub="${r}" class="ga-res-step-btn" ${sel <= 0 ? "disabled" : ""}>−</button>
-                  <span class="ga-res-step-val">${sel}</span>
-                  <button type="button" data-discard-add="${r}" class="ga-res-step-btn" ${sel >= have || currentSelected >= req ? "disabled" : ""}>+</button>
-                </div>
-              `;
-            }).join("")}
-          </div>
-          <div class="ga-trade-preview">
-            <button type="button" id="btn-discard-reset" class="btn btn--secondary btn--sm">Reset</button>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" id="btn-discard-auto" class="btn btn--secondary btn--sm">Auto-pick ${req}</button>
-              <button type="button" id="btn-discard-submit" class="btn btn--primary btn--sm" ${currentSelected !== req ? "disabled" : ""}>Confirm discard</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    if (state.phase === "GOLD_RESOURCE_SELECTION") {
-      const rem = state.pendingGoldPicks[actingPlayer.id] ?? 0;
-      return `
-        <div class="map-decision-popup">
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-            <span class="action-prompt"><strong>Gold river · ${actingPlayer.name}:</strong> Pick ${rem} free resource${rem === 1 ? "" : "s"}</span>
-            <span class="ga-chip ga-chip--warn ga-num">${rem} left</span>
-          </div>
-          <div class="ga-res-matrix">
-            ${this.renderResourceColumnHeaders(actingPlayer.resources)}
-            <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--want"></span>Take 1
-            </div>
-            ${RESOURCES.map(
-              (r) => `
-                <button type="button" data-gold-pick="${r}" class="ga-res-port-btn is-selected-want" ${state.bank[r] <= 0 ? "disabled" : ""}>
-                  <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
-                  <span class="t-label muted ga-num">bank ${state.bank[r]}</span>
-                </button>
-              `
-            ).join("")}
-          </div>
-        </div>
-      `;
-    }
-
     if (state.phase === "STEAL_RESOURCE") {
       return `
         <div class="map-decision-popup map-decision-popup--compact">
@@ -4360,18 +4520,10 @@ class MultiGamePlatformApp {
               const victim = state.players.find((p) => p.id === vId)!;
               return `<button type="button" data-steal-victim="${vId}" class="btn btn--primary btn--sm action-btn-graphic">
                 <span class="player-dot" style="background: ${victim.color}"></span>
-                <span>${victim.name} (${totalResourceCount(victim.resources)})</span>
+                <span>${victim.name} (${getPlayerResourceCount(victim)})</span>
               </button>`;
             })
             .join("")}
-        </div>
-      `;
-    }
-
-    if (state.phase === "MAIN_PHASE" && state.activeTradeOffer) {
-      return `
-        <div class="map-decision-popup">
-          ${this.renderActiveTradeOfferCard(state, actingPlayer)}
         </div>
       `;
     }
@@ -4382,7 +4534,8 @@ class MultiGamePlatformApp {
   private renderCatanActionDock(
     state: CatanState,
     actingPlayer: CatanState["players"][number] | null,
-    legalActions: CatanAction[]
+    legalActions: CatanAction[],
+    canCancelMyTrade = false
   ): string {
     if (state.phase === "GAME_OVER" || !actingPlayer) {
       const winner = state.players.find((p) => p.id === state.winnerId);
@@ -4429,20 +4582,74 @@ class MultiGamePlatformApp {
       if (this.autoPlayBots) {
         return `<div class="action-buttons"><span class="action-prompt"><strong>Roll of 7:</strong> Resolving discards...</span></div>`;
       }
-      return `<div class="action-buttons">
-        ${renderActionPieceIconSvg("robber", pColor, 20)}
-        <span class="action-prompt"><strong>Roll of 7:</strong> Choose cards to discard in the popup directly on the map (or click cards in your hand below).</span>
-      </div>`;
+      const req = state.pendingDiscards[actingPlayer.id] ?? 0;
+      const currentSelected = totalResourceCount(this.discardSelection);
+      return `
+        <div class="sub-modal sub-modal--trade sub-modal--discard">
+          <div class="ga-trade-head">
+            <span class="action-prompt"><strong>Roll of 7 · ${escapeAttr(actingPlayer.name)}:</strong> Discard ${req} cards</span>
+            <span class="ga-chip ${currentSelected === req ? "ga-chip--ok" : "ga-chip--warn"} ga-num">${currentSelected}/${req} selected</span>
+          </div>
+          <div class="ga-res-matrix">
+            ${this.renderResourceColumnHeaders(actingPlayer.resources)}
+            <div class="ga-res-matrix__row-label">
+              <span class="ga-res-row-dot ga-res-row-dot--give"></span>Discard
+            </div>
+            ${RESOURCES.map((r) => {
+              const sel = this.discardSelection[r];
+              const have = actingPlayer.resources[r];
+              return `
+                <div class="ga-res-cell ${sel > 0 ? "ga-res-cell--active-give" : ""}">
+                  <button type="button" data-discard-sub="${r}" class="ga-res-step-btn" ${sel <= 0 ? "disabled" : ""}>−</button>
+                  <span class="ga-res-step-val">${sel}</span>
+                  <button type="button" data-discard-add="${r}" class="ga-res-step-btn" ${sel >= have || currentSelected >= req ? "disabled" : ""}>+</button>
+                </div>
+              `;
+            }).join("")}
+          </div>
+          <div class="ga-trade-preview">
+            <button type="button" id="btn-discard-reset" class="btn btn--secondary btn--sm">Reset</button>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btn-discard-auto" class="btn btn--secondary btn--sm">Auto-pick ${req}</button>
+              <button type="button" id="btn-discard-submit" class="btn btn--primary btn--sm" ${currentSelected !== req ? "disabled" : ""}>Confirm discard</button>
+            </div>
+          </div>
+        </div>
+        <div class="action-buttons">
+          ${renderActionPieceIconSvg("robber", pColor, 20)}
+          <span class="action-prompt"><strong>Roll of 7:</strong> Select ${req} resource cards below while keeping the map in view.</span>
+        </div>`;
     }
 
     if (state.phase === "GOLD_RESOURCE_SELECTION") {
       if (this.autoPlayBots) {
         return `<div class="action-buttons"><span class="action-prompt"><strong>Gold river:</strong> Selecting resources...</span></div>`;
       }
-      return `<div class="action-buttons">
-        ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
-        <span class="action-prompt"><strong>Gold river:</strong> Select your free resource card on the map popup above.</span>
-      </div>`;
+      const rem = state.pendingGoldPicks[actingPlayer.id] ?? 0;
+      return `
+        <div class="sub-modal sub-modal--trade sub-modal--gold">
+          <div class="ga-trade-head">
+            <span class="action-prompt"><strong>Gold river · ${escapeAttr(actingPlayer.name)}:</strong> Pick ${rem} free resource${rem === 1 ? "" : "s"}</span>
+            <span class="ga-chip ga-chip--warn ga-num">${rem} left</span>
+          </div>
+          <div class="ga-res-matrix">
+            ${this.renderResourceColumnHeaders(actingPlayer.resources)}
+            <div class="ga-res-matrix__row-label">
+              <span class="ga-res-row-dot ga-res-row-dot--want"></span>Take 1
+            </div>
+            ${RESOURCES.map(
+              (r) => `
+                <button type="button" data-gold-pick="${r}" class="ga-res-port-btn is-selected-want" ${state.bank[r] <= 0 ? "disabled" : ""}>
+                  <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
+                </button>
+              `
+            ).join("")}
+          </div>
+        </div>
+        <div class="action-buttons">
+          ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
+          <span class="action-prompt"><strong>Gold river:</strong> Select your free resource card in the tray below.</span>
+        </div>`;
     }
 
     if (state.phase === "MOVE_ROBBER_OR_PIRATE") {
@@ -4493,12 +4700,22 @@ class MultiGamePlatformApp {
 
     if (state.phase === "MAIN_PHASE" && state.activeTradeOffer) {
       if (this.autoPlayBots) {
-        return `<div class="sub-modal">${this.renderActiveTradeOfferCard(state, actingPlayer)}</div>`;
+        return `<div class="sub-modal sub-modal--trade sub-modal--trade-offer">${this.renderActiveTradeOfferCard(
+          state,
+          actingPlayer,
+          canCancelMyTrade
+        )}</div>`;
       }
-      return `<div class="action-buttons">
-        ${renderActionPieceIconSvg("domestic_trade", pColor, 20)}
-        <span class="action-prompt"><strong>Active player trade:</strong> Respond to the aligned resource offer on the map popup above.</span>
-      </div>`;
+      return `
+        <div class="sub-modal sub-modal--trade sub-modal--trade-offer">${this.renderActiveTradeOfferCard(
+          state,
+          actingPlayer,
+          canCancelMyTrade
+        )}</div>
+        <div class="action-buttons">
+          ${renderActionPieceIconSvg("domestic_trade", pColor, 20)}
+          <span class="action-prompt"><strong>Active player trade:</strong> Inspect the map above and respond to the resource offer below.</span>
+        </div>`;
     }
 
     const canRoad = legalActions.some((a) => a.type === "BUILD_ROAD");
@@ -4518,81 +4735,161 @@ class MultiGamePlatformApp {
     const canMonopoly = legalActions.some((a) => a.type === "PLAY_MONOPOLY");
     const canMaritime = legalActions.some((a) => a.type === "MARITIME_TRADE");
 
+    const renderTradeModeTabs = (): string => `
+      <div class="ga-trade-tabs" role="tablist" aria-label="Trade mode">
+        <button type="button" role="tab" aria-selected="${
+          this.buildMode === "maritime_trade"
+        }" data-trade-tab="maritime_trade" class="ga-trade-tab ${
+          this.buildMode === "maritime_trade" ? "is-active" : ""
+        }">
+          ${renderActionPieceIconSvg("maritime_trade", pColor, 15)}
+          <span>Bank and harbors</span>
+        </button>
+        <button type="button" role="tab" aria-selected="${
+          this.buildMode === "domestic_trade"
+        }" data-trade-tab="domestic_trade" class="ga-trade-tab ${
+          this.buildMode === "domestic_trade" ? "is-active" : ""
+        }">
+          ${renderActionPieceIconSvg("domestic_trade", pColor, 15)}
+          <span>Player trade</span>
+        </button>
+      </div>
+    `;
+
     let subModalHtml = "";
     if (this.buildMode === "maritime_trade") {
       const ratios = getPlayerTradeRatios(state, actingPlayer.id);
-      const reqAmt = ratios[this.tradeGiveRes];
+      let giveCredits = 0;
+      for (const r of RESOURCES) {
+        giveCredits += Math.floor(this.maritimeGive[r] / ratios[r]);
+      }
+      const receiveCount = totalResourceCount(this.maritimeWant);
       const canExec =
-        this.tradeGiveRes !== this.tradeReceiveRes &&
-        actingPlayer.resources[this.tradeGiveRes] >= reqAmt &&
-        state.bank[this.tradeReceiveRes] > 0;
+        giveCredits > 0 &&
+        giveCredits === receiveCount &&
+        RESOURCES.every(
+          (r) =>
+            !(this.maritimeGive[r] > 0 && this.maritimeWant[r] > 0) &&
+            this.maritimeGive[r] % ratios[r] === 0 &&
+            actingPlayer.resources[r] >= this.maritimeGive[r] &&
+            state.bank[r] >= this.maritimeWant[r]
+        );
 
-      subModalHtml = `<div class="sub-modal">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <div style="display: inline-flex; align-items: center; gap: 7px;">
-            ${renderActionPieceIconSvg("maritime_trade", pColor, 20)}
-            <strong style="font-size: var(--t-small); font-weight: 500;">Harbor and bank trade</strong>
+      const giveCardsPreview = RESOURCES.filter((r) => this.maritimeGive[r] > 0)
+        .map(
+          (r) =>
+            `<span class="map-yield-chip">−${this.maritimeGive[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
+        )
+        .join("");
+      const wantCardsPreview = RESOURCES.filter((r) => this.maritimeWant[r] > 0)
+        .map(
+          (r) =>
+            `<span class="map-yield-chip">+${this.maritimeWant[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
+        )
+        .join("");
+
+      const statusHint =
+        giveCredits === 0 && receiveCount === 0
+          ? "Offer harbor bundles (+4, +3, or +2) for your request"
+          : giveCredits > receiveCount
+            ? `Add ${giveCredits - receiveCount} more requested card${
+                giveCredits - receiveCount === 1 ? "" : "s"
+              }`
+            : receiveCount > giveCredits
+              ? `Add ${receiveCount - giveCredits} more harbor bundle${
+                  receiveCount - giveCredits === 1 ? "" : "s"
+                } for request`
+              : `${giveCredits} bank trade${
+                  giveCredits === 1 ? "" : "s"
+                } ready`;
+
+      subModalHtml = `<div class="sub-modal sub-modal--trade">
+        <div class="ga-trade-head">
+          ${renderTradeModeTabs()}
+          <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
+            <span class="ga-chip ${
+              canExec
+                ? "ga-chip--ok"
+                : giveCredits > 0 || receiveCount > 0
+                  ? "ga-chip--warn"
+                  : ""
+            } ga-num">${escapeAttr(statusHint)}</span>
+            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
           </div>
-          <span class="t-label muted">Each resource column is aligned vertically</span>
         </div>
 
         <div class="ga-res-matrix">
-          ${this.renderResourceColumnHeaders(actingPlayer.resources)}
+          ${this.renderResourceColumnHeaders(
+            actingPlayer.resources,
+            undefined,
+            ratios
+          )}
 
           <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Give port
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
           </div>
           ${RESOURCES.map((r) => {
             const ratio = ratios[r];
-            const enough = actingPlayer.resources[r] >= ratio;
-            const isSel = this.tradeGiveRes === r;
+            const val = this.maritimeGive[r];
+            const canAddBundle = actingPlayer.resources[r] >= val + ratio;
             return `
-              <button type="button" data-maritime-give="${r}" class="ga-res-port-btn ${
-                isSel ? "is-selected-give" : ""
+              <div class="ga-res-cell ${
+                val > 0 ? "ga-res-cell--active-give" : ""
               }">
-                <span class="ga-num" style="font-size: 13px; font-weight: 600; color: ${
-                  ratio < 4 ? "#fde047" : "var(--ink)"
-                };">${ratio}:1</span>
-                <span class="t-label ${enough ? "muted" : ""}" style="font-size: 13px; color: ${
-                  enough ? "var(--muted)" : "#fca5a5"
-                };">have ${actingPlayer.resources[r]}</span>
-              </button>
+                <button type="button" data-maritime-give-dec="${r}" class="ga-res-step-btn" ${
+                  val <= 0 ? "disabled" : ""
+                }>−</button>
+                <span class="ga-res-step-val">${val}</span>
+                <button type="button" data-maritime-give="${r}" class="ga-res-step-btn" title="Offer ${ratio} ${
+                  RESOURCE_META[r].label
+                } (${ratio}:1 rate)" ${!canAddBundle ? "disabled" : ""}>+</button>
+              </div>
             `;
           }).join("")}
 
           <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Receive 1
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
           </div>
           ${RESOURCES.map((r) => {
-            const isSel = this.tradeReceiveRes === r;
+            const val = this.maritimeWant[r];
+            const bankAvail = state.bank[r];
             return `
-              <button type="button" data-maritime-receive="${r}" class="ga-res-port-btn ${
-                isSel ? "is-selected-want" : ""
-              }" ${state.bank[r] <= 0 ? "disabled" : ""}>
-                <span class="ga-num" style="font-size: 13px; font-weight: 600;">+1</span>
-                <span class="t-label muted ga-num" style="font-size: 13px;">bank ${state.bank[r]}</span>
-              </button>
+              <div class="ga-res-cell ${
+                val > 0 ? "ga-res-cell--active-want" : ""
+              }">
+                <button type="button" data-maritime-receive-dec="${r}" class="ga-res-step-btn" ${
+                  val <= 0 ? "disabled" : ""
+                }>−</button>
+                <span class="ga-res-step-val">${val}</span>
+                <button type="button" data-maritime-receive="${r}" class="ga-res-step-btn" ${
+                  val >= bankAvail ? "disabled" : ""
+                }>+</button>
+              </div>
             `;
           }).join("")}
         </div>
 
         <div class="ga-trade-preview">
           <div class="ga-trade-bundle">
-            <span class="ga-chip ga-num">−${reqAmt}</span>
-            ${renderMiniResourceCardSvg(this.tradeGiveRes, 44, 28)}
-            ${DRAWN_ARROW_SVG}
-            <span class="ga-chip ga-chip--ok ga-num">+1</span>
-            ${renderMiniResourceCardSvg(this.tradeReceiveRes, 44, 28)}
+            ${
+              giveCardsPreview || wantCardsPreview
+                ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
+                : `<span class="t-label muted">Use + and − in each column to set your offer and request</span>`
+            }
           </div>
-          <button type="button" id="btn-exec-maritime" class="btn btn--primary btn--sm action-btn-graphic" ${
-            !canExec ? "disabled" : ""
-          }>
-            ${renderActionPieceIconSvg("maritime_trade", pColor, 16)}
-            <span>Trade ${reqAmt} ${RESOURCE_META[this.tradeGiveRes].label.toLowerCase()} for 1 ${RESOURCE_META[this.tradeReceiveRes].label.toLowerCase()}</span>
-          </button>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" id="btn-maritime-reset" class="btn btn--secondary btn--sm">Reset</button>
+            <button type="button" id="btn-exec-maritime" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
+              !canExec ? "disabled" : ""
+            }>
+              ${renderActionPieceIconSvg("maritime_trade", pColor, 16)}
+              <span>Trade with bank</span>
+            </button>
+          </div>
         </div>
       </div>`;
     } else if (this.buildMode === "domestic_trade") {
+      const ratios = getPlayerTradeRatios(state, actingPlayer.id);
       const canPropose =
         totalResourceCount(this.domesticGive) > 0 &&
         totalResourceCount(this.domesticWant) > 0 &&
@@ -4601,7 +4898,6 @@ class MultiGamePlatformApp {
         ) &&
         hasResources(actingPlayer.resources, this.domesticGive);
 
-      const opponents = state.players.filter((p) => p.id !== actingPlayer.id);
       const giveCardsPreview = RESOURCES.filter((r) => this.domesticGive[r] > 0)
         .map(
           (r) =>
@@ -4615,34 +4911,21 @@ class MultiGamePlatformApp {
         )
         .join("");
 
-      subModalHtml = `<div class="sub-modal">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <div style="display: inline-flex; align-items: center; gap: 7px;">
-            ${renderActionPieceIconSvg("domestic_trade", pColor, 20)}
-            <strong style="font-size: var(--t-small); font-weight: 500;">Player trade offer</strong>
-          </div>
-          <div style="display: inline-flex; align-items: center; gap: 6px;">
-            <label class="ga-inline-label" for="sel-dom-target-btn">Partner</label>
-            ${renderDropdown({
-              id: "sel-dom-target",
-              value: this.domesticTargetPlayerId,
-              size: "sm",
-              inline: true,
-              direction: "up",
-              options: [
-                { value: "all", label: "All players", meta: "Broadcast" },
-                ...opponents.map((op) => ({
-                  value: op.id,
-                  label: op.name,
-                  meta: `${totalResourceCount(op.resources)} cards`,
-                })),
-              ],
-            })}
+      subModalHtml = `<div class="sub-modal sub-modal--trade">
+        <div class="ga-trade-head">
+          ${renderTradeModeTabs()}
+          <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
+            <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">Open to all players · pick partner after accept</span>
+            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
           </div>
         </div>
 
         <div class="ga-res-matrix">
-          ${this.renderResourceColumnHeaders(actingPlayer.resources)}
+          ${this.renderResourceColumnHeaders(
+            actingPlayer.resources,
+            undefined,
+            ratios
+          )}
 
           <div class="ga-res-matrix__row-label">
             <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
@@ -4677,14 +4960,14 @@ class MultiGamePlatformApp {
         <div class="ga-trade-preview">
           <div class="ga-trade-bundle">
             ${
-              giveCardsPreview && wantCardsPreview
-                ? `${giveCardsPreview} ${DRAWN_ARROW_SVG} ${wantCardsPreview}`
-                : `<span class="t-label muted">Use + and − in each resource column to align your offer and request</span>`
+              giveCardsPreview || wantCardsPreview
+                ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
+                : `<span class="t-label muted">Use + and − in each column to set your offer and request</span>`
             }
           </div>
           <div style="display: flex; gap: 6px;">
             <button type="button" id="btn-dom-reset" class="btn btn--secondary btn--sm">Reset</button>
-            <button type="button" id="btn-dom-propose" class="btn btn--primary btn--sm action-btn-graphic" ${
+            <button type="button" id="btn-dom-propose" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
               !canPropose ? "disabled" : ""
             }>
               ${renderActionPieceIconSvg("domestic_trade", pColor, 16)}
@@ -4695,9 +4978,12 @@ class MultiGamePlatformApp {
       </div>`;
     } else if (this.buildMode === "year_of_plenty") {
       subModalHtml = `<div class="sub-modal">
-        <div style="display: inline-flex; align-items: center; gap: 7px;">
-          ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
-          <strong style="font-size: var(--t-small); font-weight: 500;">Year of plenty — choose 2 free bank cards</strong>
+        <div class="ga-trade-head">
+          <div style="display: inline-flex; align-items: center; gap: 7px;">
+            ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
+            <strong style="font-size: var(--t-small); font-weight: 500;">Year of plenty — choose 2 free bank cards</strong>
+          </div>
+          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
         </div>
         <div class="ga-res-matrix">
           ${this.renderResourceColumnHeaders(undefined, state.bank)}
@@ -4740,9 +5026,12 @@ class MultiGamePlatformApp {
       </div>`;
     } else if (this.buildMode === "monopoly") {
       subModalHtml = `<div class="sub-modal">
-        <div style="display: inline-flex; align-items: center; gap: 7px;">
-          ${renderActionPieceIconSvg("monopoly", pColor, 20)}
-          <strong style="font-size: var(--t-small); font-weight: 500;">Monopoly — claim every opponent copy of 1 resource</strong>
+        <div class="ga-trade-head">
+          <div style="display: inline-flex; align-items: center; gap: 7px;">
+            ${renderActionPieceIconSvg("monopoly", pColor, 20)}
+            <strong style="font-size: var(--t-small); font-weight: 500;">Monopoly — claim every opponent copy of 1 resource</strong>
+          </div>
+          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
         </div>
         <div class="ga-res-matrix">
           ${this.renderResourceColumnHeaders(actingPlayer.resources)}
@@ -4831,17 +5120,17 @@ class MultiGamePlatformApp {
           state.phase === "MAIN_PHASE"
             ? `<button type="button" id="btn-mode-maritime" class="btn btn--secondary btn--sm action-btn-graphic ${
                 this.buildMode === "maritime_trade" ? "is-selected" : ""
-              }" ${!canMaritime ? "disabled" : ""}>
+              }" title="${
+                canMaritime
+                  ? "Trade resources with the bank or harbors"
+                  : "Inspect harbor rates or switch to player trade"
+              }">
                 ${renderActionPieceIconSvg("maritime_trade", pColor, 18)}
-                <span>Port trade</span>
+                <span>Bank trade</span>
               </button>
               <button type="button" id="btn-mode-domestic" class="btn btn--secondary btn--sm action-btn-graphic ${
                 this.buildMode === "domestic_trade" ? "is-selected" : ""
-              }" ${
-                totalResourceCount(actingPlayer.resources) === 0
-                  ? "disabled"
-                  : ""
-              }>
+              }">
                 ${renderActionPieceIconSvg("domestic_trade", pColor, 18)}
                 <span>Player trade</span>
               </button>`
@@ -4888,8 +5177,10 @@ class MultiGamePlatformApp {
     p: CatanState["players"][number],
     isActing: boolean
   ): string {
-    const totalVp = computePlayerVictoryPoints(state, p.id, false);
     const visibleVp = computePlayerVictoryPoints(state, p.id, true);
+    const totalVp = computePlayerVictoryPoints(state, p.id, false);
+    const showPrivateHand = !p.handRedacted || state.phase === "GAME_OVER";
+    const cardCount = getPlayerResourceCount(p);
     const safeLimit = getPlayerSafeHandLimit(state, p.id);
     const unplayedDevs = p.devCards.filter((c) => !c.played);
     const botBadge = p.isBot
@@ -4898,46 +5189,108 @@ class MultiGamePlatformApp {
         ? "You · Guest"
         : "Guest";
 
+    const hiddenCardIconSvg = `<svg width="13" height="15" viewBox="0 0 14 16" aria-hidden="true"><rect x="1.5" y="1" width="11" height="14" rx="2.2" fill="#27272a" stroke="#a1a1aa" stroke-width="1.2"/><path d="M4.2 4.5h5.6M4.2 8h5.6M4.2 11.5h3.6" stroke="#fb923c" stroke-width="1.1" stroke-linecap="round"/></svg>`;
+
     return `
       <div class="player-card ${isActing ? "active-turn" : ""}">
         <div class="player-header">
-          <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
             <span class="player-dot" style="background: ${p.color}"></span>
-            <strong style="font-weight: 500;">${escapeAttr(p.name)}</strong>
+            <strong class="player-card__name">${escapeAttr(p.name)}</strong>
             <span class="ga-chip">${botBadge}</span>
           </div>
-          <span class="ga-chip ga-chip--warn ga-num">${totalVp} VP${
-            totalVp !== visibleVp ? ` (${visibleVp})` : ""
+          <span class="ga-chip ga-chip--warn ga-num">${
+            showPrivateHand
+              ? `${totalVp} VP${totalVp !== visibleVp ? ` (${visibleVp})` : ""}`
+              : `${visibleVp} VP`
           }</span>
         </div>
 
-        <div class="res-pills">
-          ${RESOURCES.map(
-            (r) =>
-              `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r)} ${p.resources[r]}</span>`
-          ).join("")}
-          <span class="ga-chip ga-num" title="Cards in hand vs safe limit on 7">${totalResourceCount(
-            p.resources
-          )}/${safeLimit}</span>
-        </div>
+        <div class="player-card__hud-row">
+          <div class="res-pills">
+            ${
+              showPrivateHand
+                ? RESOURCES.map(
+                    (r) =>
+                      `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r)} ${p.resources[r]}</span>`
+                  ).join("")
+                : `<span class="res-pill res-pill--hidden ga-num" title="Hidden resource cards in hand">${hiddenCardIconSvg} ${cardCount} ${
+                    cardCount === 1 ? "card" : "cards"
+                  }</span>`
+            }
+            <span class="ga-chip ga-num" title="Cards in hand vs safe limit on 7">${cardCount}/${safeLimit}</span>
+          </div>
 
-        <div style="font-size: var(--t-label); color: var(--muted); display: flex; flex-wrap: wrap; gap: 10px;">
-          <span>Route <strong class="ga-num" style="color: var(--ink); font-weight: 500;">${p.longestRoadLength}</strong></span>
-          <span>Knights <strong class="ga-num" style="color: var(--ink); font-weight: 500;">${p.knightsPlayed}</strong></span>
-          <span>Devs <strong class="ga-num" style="color: var(--ink); font-weight: 500;">${unplayedDevs.length}</strong></span>
-          ${
-            state.config.enableHarbormaster
-              ? `<span>Harbors <strong class="ga-num" style="color: var(--ink); font-weight: 500;">${p.harborPoints}</strong></span>`
-              : ""
-          }
-          ${
-            p.bonusVictoryPoints > 0
-              ? `<span>Island <strong class="ga-num" style="color: var(--ink); font-weight: 500;">+${p.bonusVictoryPoints}</strong></span>`
-              : ""
-          }
+          <div class="player-card__stats">
+            <span title="Longest route">R <strong class="ga-num">${p.longestRoadLength}</strong></span>
+            <span title="Knights played">K <strong class="ga-num">${p.knightsPlayed}</strong></span>
+            <span title="Unplayed dev cards">D <strong class="ga-num">${unplayedDevs.length}</strong></span>
+            ${
+              state.config.enableHarbormaster
+                ? `<span title="Harbor points">H <strong class="ga-num">${p.harborPoints}</strong></span>`
+                : ""
+            }
+            ${
+              p.bonusVictoryPoints > 0
+                ? `<span title="Island bonus">+<strong class="ga-num">${p.bonusVictoryPoints}</strong></span>`
+                : ""
+            }
+          </div>
         </div>
       </div>
     `;
+  }
+
+  public switchTradeMode(nextMode: "maritime_trade" | "domestic_trade"): void {
+    this.selectedBoardSpot = null;
+    if (this.buildMode === "domestic_trade" && nextMode === "maritime_trade") {
+      this.maritimeWant = { ...this.domesticWant };
+    } else if (
+      this.buildMode === "maritime_trade" &&
+      nextMode === "domestic_trade"
+    ) {
+      this.domesticWant = { ...this.maritimeWant };
+    } else if (nextMode === "maritime_trade") {
+      if (
+        totalResourceCount(this.maritimeWant) === 0 &&
+        totalResourceCount(this.domesticWant) > 0
+      ) {
+        this.maritimeWant = { ...this.domesticWant };
+      } else {
+        this.domesticWant = { ...this.maritimeWant };
+      }
+    } else {
+      if (
+        totalResourceCount(this.domesticWant) === 0 &&
+        totalResourceCount(this.maritimeWant) > 0
+      ) {
+        this.domesticWant = { ...this.maritimeWant };
+      } else {
+        this.maritimeWant = { ...this.domesticWant };
+      }
+    }
+
+    for (const r of RESOURCES) {
+      if (this.maritimeWant[r] > 0) {
+        this.maritimeGive[r] = 0;
+      }
+      if (this.domesticWant[r] > 0) {
+        this.domesticGive[r] = 0;
+      }
+    }
+
+    this.buildMode = nextMode;
+    this.render();
+  }
+
+  private setSharedTradeWant(resource: ResourceType, amount: number): void {
+    const clamped = Math.max(0, amount);
+    this.maritimeWant[resource] = clamped;
+    this.domesticWant[resource] = clamped;
+    if (clamped > 0) {
+      this.maritimeGive[resource] = 0;
+      this.domesticGive[resource] = 0;
+    }
   }
 
   private bindDropdownEvents(): void {
@@ -5110,7 +5463,8 @@ class MultiGamePlatformApp {
   private bindInGameEvents(
     room: ClientRoom,
     state: any,
-    actingPlayerId: string | null
+    actingPlayerId: string | null,
+    canCancelMyTrade = false
   ): void {
     this.bindCommonIdentityEvents();
     this.root
@@ -5207,19 +5561,24 @@ class MultiGamePlatformApp {
     // Multi-guest turn isolation: in online rooms, only seats controlled by this computer
     // (the active guest or local friends added on this computer) can dispatch turn actions.
     if (!this.canControlPlayerOnThisDevice(room, actingPlayerId)) {
-      if (
-        room.gameId === "catan" &&
-        state.activeTradeOffer &&
-        this.canControlPlayerOnThisDevice(
-          room,
-          state.activeTradeOffer.fromPlayerId
-        )
-      ) {
+      if (canCancelMyTrade && state.activeTradeOffer) {
+        this.root
+          .querySelectorAll("[data-confirm-trade]")
+          .forEach((confirmBtn) => {
+            confirmBtn.addEventListener("click", () => {
+              const partnerId = confirmBtn.getAttribute("data-confirm-trade")!;
+              this.dispatchUiAction(state.activeTradeOffer.fromPlayerId, {
+                type: "CONFIRM_DOMESTIC_TRADE",
+                offerId: state.activeTradeOffer.id,
+                partnerId,
+              });
+            });
+          });
         this.root
           .querySelectorAll("#btn-cancel-domestic")
           .forEach((cancelBtn) => {
             cancelBtn.addEventListener("click", () => {
-              this.dispatch(state.activeTradeOffer.fromPlayerId, {
+              this.dispatchUiAction(state.activeTradeOffer.fromPlayerId, {
                 type: "CANCEL_DOMESTIC_TRADE",
               });
             });
@@ -5394,6 +5753,20 @@ class MultiGamePlatformApp {
   }
 
   private bindCatanEvents(state: CatanState, actingPlayerId: string): void {
+    const room = this.getActiveRoom();
+    if (!this.canControlPlayerOnThisDevice(room, actingPlayerId)) {
+      this.bindReadOnlyCatanSpotInspect();
+      return;
+    }
+
+    this.root.querySelectorAll("[data-close-submodal]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this.selectedBoardSpot = null;
+        this.buildMode = null;
+        this.render();
+      });
+    });
+
     this.root.querySelectorAll("[data-hand-res-card]").forEach((cardEl) => {
       cardEl.addEventListener("click", () => {
         const r = cardEl.getAttribute("data-hand-res-card") as ResourceType;
@@ -5412,12 +5785,23 @@ class MultiGamePlatformApp {
         } else if (this.buildMode === "domestic_trade") {
           if (this.domesticGive[r] < actingPlayer.resources[r]) {
             this.domesticGive[r]++;
+            this.setSharedTradeWant(r, 0);
             this.render();
           }
-        } else if (state.phase === "MAIN_PHASE") {
-          this.tradeGiveRes = r;
-          this.buildMode = "maritime_trade";
-          this.render();
+        } else if (state.phase === "MAIN_PHASE" && !state.activeTradeOffer) {
+          const ratios = getPlayerTradeRatios(state, actingPlayerId);
+          const ratio = ratios[r];
+          if (actingPlayer.resources[r] >= this.maritimeGive[r] + ratio) {
+            this.maritimeGive[r] += ratio;
+            this.setSharedTradeWant(r, 0);
+            this.switchTradeMode("maritime_trade");
+          } else {
+            if (this.domesticGive[r] < actingPlayer.resources[r]) {
+              this.domesticGive[r]++;
+              this.setSharedTradeWant(r, 0);
+            }
+            this.switchTradeMode("domestic_trade");
+          }
         }
       });
     });
@@ -5425,12 +5809,12 @@ class MultiGamePlatformApp {
     this.root
       .querySelector("#btn-hand-play-knight")
       ?.addEventListener("click", () => {
-        this.dispatch(actingPlayerId, { type: "PLAY_KNIGHT" });
+        this.dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" });
       });
     this.root
       .querySelector("#btn-hand-play-roadbuild")
       ?.addEventListener("click", () => {
-        this.dispatch(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
+        this.dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
       });
     this.root
       .querySelector("#btn-hand-play-yop")
@@ -5761,7 +6145,7 @@ class MultiGamePlatformApp {
     });
 
     this.root.querySelector("#btn-roll-dice")?.addEventListener("click", () => {
-      this.dispatch(actingPlayerId, { type: "ROLL_DICE" });
+      this.dispatchUiAction(actingPlayerId, { type: "ROLL_DICE" });
     });
 
     this.root.querySelector("#btn-mode-road")?.addEventListener("click", () => {
@@ -5809,22 +6193,38 @@ class MultiGamePlatformApp {
       this.dispatch(actingPlayerId, { type: "BUY_DEV_CARD" });
     });
 
+    this.root.querySelectorAll("[data-trade-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const nextTab = btn.getAttribute("data-trade-tab") as
+          | "maritime_trade"
+          | "domestic_trade";
+        if (nextTab === this.buildMode) return;
+        this.switchTradeMode(nextTab);
+      });
+    });
+
     this.root
       .querySelector("#btn-mode-maritime")
       ?.addEventListener("click", () => {
-        this.selectedBoardSpot = null;
-        this.buildMode =
-          this.buildMode === "maritime_trade" ? null : "maritime_trade";
-        this.render();
+        if (this.buildMode === "maritime_trade") {
+          this.selectedBoardSpot = null;
+          this.buildMode = null;
+          this.render();
+        } else {
+          this.switchTradeMode("maritime_trade");
+        }
       });
 
     this.root
       .querySelector("#btn-mode-domestic")
       ?.addEventListener("click", () => {
-        this.selectedBoardSpot = null;
-        this.buildMode =
-          this.buildMode === "domestic_trade" ? null : "domestic_trade";
-        this.render();
+        if (this.buildMode === "domestic_trade") {
+          this.selectedBoardSpot = null;
+          this.buildMode = null;
+          this.render();
+        } else {
+          this.switchTradeMode("domestic_trade");
+        }
       });
 
     this.root
@@ -5838,7 +6238,7 @@ class MultiGamePlatformApp {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-dom-give") as ResourceType;
         this.domesticGive[r]++;
-        this.domesticWant[r] = 0;
+        this.setSharedTradeWant(r, 0);
         this.render();
       });
     });
@@ -5856,8 +6256,7 @@ class MultiGamePlatformApp {
     this.root.querySelectorAll("[data-dom-want]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-dom-want") as ResourceType;
-        this.domesticWant[r]++;
-        this.domesticGive[r] = 0;
+        this.setSharedTradeWant(r, this.domesticWant[r] + 1);
         this.render();
       });
     });
@@ -5866,13 +6265,15 @@ class MultiGamePlatformApp {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-dom-want-dec") as ResourceType;
         if (this.domesticWant[r] > 0) {
-          this.domesticWant[r]--;
+          this.setSharedTradeWant(r, this.domesticWant[r] - 1);
           this.render();
         }
       });
     });
 
     this.root.querySelector("#btn-dom-reset")?.addEventListener("click", () => {
+      this.maritimeGive = emptyResources();
+      this.maritimeWant = emptyResources();
       this.domesticGive = emptyResources();
       this.domesticWant = emptyResources();
       this.render();
@@ -5883,14 +6284,24 @@ class MultiGamePlatformApp {
       ?.addEventListener("click", () => {
         this.dispatch(actingPlayerId, {
           type: "OFFER_DOMESTIC_TRADE",
-          toPlayerId:
-            this.domesticTargetPlayerId === "all"
-              ? null
-              : this.domesticTargetPlayerId,
+          toPlayerId: null,
           give: { ...this.domesticGive },
           want: { ...this.domesticWant },
         });
       });
+
+    this.root.querySelectorAll("[data-confirm-trade]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const partnerId = btn.getAttribute("data-confirm-trade")!;
+        if (state.activeTradeOffer) {
+          this.dispatch(state.activeTradeOffer.fromPlayerId, {
+            type: "CONFIRM_DOMESTIC_TRADE",
+            offerId: state.activeTradeOffer.id,
+            partnerId,
+          });
+        }
+      });
+    });
 
     this.root.querySelectorAll("[data-accept-trade]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -5928,11 +6339,29 @@ class MultiGamePlatformApp {
 
     this.root.querySelectorAll("[data-maritime-give]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const nextGive = btn.getAttribute("data-maritime-give") as ResourceType;
-        this.tradeGiveRes = nextGive;
-        if (this.tradeReceiveRes === nextGive) {
-          this.tradeReceiveRes =
-            RESOURCES.find((r) => r !== nextGive) ?? "ore";
+        const r = btn.getAttribute("data-maritime-give") as ResourceType;
+        const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
+        if (!actingPlayer) return;
+        const ratios = getPlayerTradeRatios(state, actingPlayerId);
+        const step = ratios[r];
+        if (actingPlayer.resources[r] >= this.maritimeGive[r] + step) {
+          this.maritimeGive[r] += step;
+          this.setSharedTradeWant(r, 0);
+          this.tradeGiveRes = r;
+          this.render();
+        }
+      });
+    });
+
+    this.root.querySelectorAll("[data-maritime-give-dec]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const r = btn.getAttribute("data-maritime-give-dec") as ResourceType;
+        const ratios = getPlayerTradeRatios(state, actingPlayerId);
+        const step = ratios[r];
+        if (this.maritimeGive[r] >= step) {
+          this.maritimeGive[r] -= step;
+        } else {
+          this.maritimeGive[r] = 0;
         }
         this.render();
       });
@@ -5940,40 +6369,75 @@ class MultiGamePlatformApp {
 
     this.root.querySelectorAll("[data-maritime-receive]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const nextRecv = btn.getAttribute(
-          "data-maritime-receive"
-        ) as ResourceType;
-        this.tradeReceiveRes = nextRecv;
-        if (this.tradeGiveRes === nextRecv) {
-          this.tradeGiveRes =
-            RESOURCES.find((r) => r !== nextRecv) ?? "brick";
+        const r = btn.getAttribute("data-maritime-receive") as ResourceType;
+        if (this.maritimeWant[r] < state.bank[r]) {
+          this.setSharedTradeWant(r, this.maritimeWant[r] + 1);
+          this.tradeReceiveRes = r;
+          this.render();
         }
-        this.render();
+      });
+    });
+
+    this.root.querySelectorAll("[data-maritime-receive-dec]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const r = btn.getAttribute("data-maritime-receive-dec") as ResourceType;
+        if (this.maritimeWant[r] > 0) {
+          this.setSharedTradeWant(r, this.maritimeWant[r] - 1);
+          this.render();
+        }
       });
     });
 
     this.root
+      .querySelector("#btn-maritime-reset")
+      ?.addEventListener("click", () => {
+        this.maritimeGive = emptyResources();
+        this.maritimeWant = emptyResources();
+        this.domesticGive = emptyResources();
+        this.domesticWant = emptyResources();
+        this.render();
+      });
+
+    this.root
       .querySelector("#btn-exec-maritime")
       ?.addEventListener("click", () => {
-        const ratios = getPlayerTradeRatios(state, actingPlayerId);
-        this.dispatch(actingPlayerId, {
-          type: "MARITIME_TRADE",
-          give: this.tradeGiveRes,
-          giveAmount: ratios[this.tradeGiveRes],
-          receive: this.tradeReceiveRes,
-        });
+        const activeGive = RESOURCES.filter((r) => this.maritimeGive[r] > 0);
+        const activeWant = RESOURCES.filter((r) => this.maritimeWant[r] > 0);
+        if (activeGive.length === 0 || activeWant.length === 0) return;
+
+        const firstGive = activeGive[0]!;
+        const firstWant = activeWant[0]!;
+        if (activeGive.length === 1 && activeWant.length === 1) {
+          this.dispatch(actingPlayerId, {
+            type: "MARITIME_TRADE",
+            give: firstGive,
+            giveAmount: this.maritimeGive[firstGive],
+            receive: firstWant,
+            receiveAmount: this.maritimeWant[firstWant],
+          });
+        } else {
+          this.dispatch(actingPlayerId, {
+            type: "MARITIME_TRADE",
+            give: firstGive,
+            giveAmount: this.maritimeGive[firstGive],
+            receive: firstWant,
+            receiveAmount: this.maritimeWant[firstWant],
+            giveMap: { ...this.maritimeGive },
+            receiveMap: { ...this.maritimeWant },
+          });
+        }
       });
 
     this.root
       .querySelector("#btn-play-knight")
       ?.addEventListener("click", () => {
-        this.dispatch(actingPlayerId, { type: "PLAY_KNIGHT" });
+        this.dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" });
       });
 
     this.root
       .querySelector("#btn-play-roadbuild")
       ?.addEventListener("click", () => {
-        this.dispatch(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
+        this.dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
       });
 
     this.root.querySelector("#btn-mode-yop")?.addEventListener("click", () => {
@@ -5998,7 +6462,7 @@ class MultiGamePlatformApp {
     });
 
     this.root.querySelector("#btn-exec-yop")?.addEventListener("click", () => {
-      this.dispatch(actingPlayerId, {
+      this.dispatchUiAction(actingPlayerId, {
         type: "PLAY_YEAR_OF_PLENTY",
         resource1: this.yopRes1,
         resource2: this.yopRes2,
@@ -6019,7 +6483,7 @@ class MultiGamePlatformApp {
     });
 
     this.root.querySelector("#btn-exec-mono")?.addEventListener("click", () => {
-      this.dispatch(actingPlayerId, {
+      this.dispatchUiAction(actingPlayerId, {
         type: "PLAY_MONOPOLY",
         resource: this.monoRes,
       });

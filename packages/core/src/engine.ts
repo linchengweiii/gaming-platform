@@ -99,6 +99,18 @@ export interface GameEngine<
    * Checks domain invariants on `state` (conservation of resources, valid board placement, VP totals).
    */
   checkInvariants(state: TState): InvariantCheckResult;
+
+  /**
+   * Optional rule hook returning whether `action` applied by `playerId` (transitioning `prevState -> nextState`)
+   * may be undone by that player during the same turn. Actions that reveal random or hidden information
+   * (e.g. rolling dice, drawing secret cards, stealing from a hand) must return false.
+   */
+  isActionUndoable?(
+    prevState: TState,
+    action: TAction,
+    nextState: TState,
+    playerId: string
+  ): boolean;
 }
 
 /**
@@ -224,6 +236,68 @@ export class MatchSession<
 
   public canRedo(): boolean {
     return this.cursor < this.snapshots.length - 1;
+  }
+
+  /**
+   * Counts how many consecutive trailing steps belong to `actingPlayerId` and are reversible
+   * (stopping immediately at another player's action or an irreversible RNG/hidden-reveal step).
+   */
+  public getUndoableStepCount(actingPlayerId: string | null): number {
+    if (!actingPlayerId || this.cursor <= 0) {
+      return 0;
+    }
+    let count = 0;
+    for (let idx = this.cursor - 1; idx >= 0; idx--) {
+      const entry = this.actionLog[idx];
+      if (!entry || entry.playerId !== actingPlayerId) {
+        break;
+      }
+      const prevState = this.snapshots[idx]!;
+      const nextState = this.snapshots[idx + 1]!;
+      const undoable = this.engine.isActionUndoable
+        ? this.engine.isActionUndoable(
+            prevState,
+            entry.action,
+            nextState,
+            entry.playerId
+          )
+        : true;
+      if (!undoable) {
+        break;
+      }
+      count++;
+    }
+    return count;
+  }
+
+  public canPlayerUndo(actingPlayerId: string | null): boolean {
+    return this.getUndoableStepCount(actingPlayerId) > 0;
+  }
+
+  public undoForPlayer(actingPlayerId: string | null): TState {
+    if (!this.canPlayerUndo(actingPlayerId)) {
+      throw new Error(
+        "Cannot undo: only reversible actions from your current turn can be undone"
+      );
+    }
+    this.cursor--;
+    return this.getState();
+  }
+
+  public canPlayerRedo(actingPlayerId: string | null): boolean {
+    if (!actingPlayerId || this.cursor >= this.snapshots.length - 1) {
+      return false;
+    }
+    const nextEntry = this.actionLog[this.cursor];
+    return Boolean(nextEntry && nextEntry.playerId === actingPlayerId);
+  }
+
+  public redoForPlayer(actingPlayerId: string | null): TState {
+    if (!this.canPlayerRedo(actingPlayerId)) {
+      throw new Error("Cannot redo: no undone action from your current turn");
+    }
+    this.cursor++;
+    return this.getState();
   }
 
   public undo(): TState {

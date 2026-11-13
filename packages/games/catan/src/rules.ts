@@ -47,6 +47,15 @@ export function totalResourceCount(res: Partial<ResourceMap>): number {
   return sum;
 }
 
+export function getPlayerResourceCount(
+  player: Pick<CatanPlayerState, "resources" | "hiddenResourceCount">
+): number {
+  if (typeof player.hiddenResourceCount === "number") {
+    return player.hiddenResourceCount;
+  }
+  return totalResourceCount(player.resources);
+}
+
 export function hasResources(hand: ResourceMap, cost: Partial<ResourceMap>): boolean {
   for (const r of RESOURCES) {
     if ((hand[r] ?? 0) < (cost[r] ?? 0)) {
@@ -760,9 +769,11 @@ export function getCatanLegalActions(state: CatanState, playerId: string): Catan
   // If there is an active domestic trade offer and a non-active player is responding
   if (state.phase === "MAIN_PHASE" && state.activeTradeOffer && playerId !== activePlayer.id) {
     const offer = state.activeTradeOffer;
+    const accepted = offer.acceptedBy ?? [];
     if (
       (offer.toPlayerId === null || offer.toPlayerId === playerId) &&
-      !offer.declinedBy.includes(playerId)
+      !offer.declinedBy.includes(playerId) &&
+      !accepted.includes(playerId)
     ) {
       const responder = state.players.find((p) => p.id === playerId);
       if (!responder) return [];
@@ -863,7 +874,24 @@ export function getCatanLegalActions(state: CatanState, playerId: string): Catan
       const actions: CatanAction[] = [];
 
       if (state.activeTradeOffer) {
-        actions.push({ type: "CANCEL_DOMESTIC_TRADE" });
+        const offer = state.activeTradeOffer;
+        const wantTotalCount = totalResourceCount(offer.want);
+        const confirmActions: CatanAction[] = (offer.acceptedBy ?? [])
+          .filter((pid) => {
+            const partner = state.players.find((p) => p.id === pid);
+            if (!partner || !hasResources(activePlayer.resources, offer.give)) {
+              return false;
+            }
+            return partner.handRedacted
+              ? getPlayerResourceCount(partner) >= wantTotalCount
+              : hasResources(partner.resources, offer.want);
+          })
+          .map((partnerId) => ({
+            type: "CONFIRM_DOMESTIC_TRADE",
+            offerId: offer.id,
+            partnerId,
+          }));
+        return [...confirmActions, { type: "CANCEL_DOMESTIC_TRADE" }];
       }
 
       // Building actions
@@ -1927,31 +1955,93 @@ export function applyCatanAction(
       if (state.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
         throw new Error("Can only trade during your main phase");
       }
-      if (action.give === action.receive) {
-        throw new Error("Cannot trade a resource for itself");
-      }
       const ratios = getPlayerTradeRatios(state, playerId);
-      const expectedRatio = ratios[action.give];
-      if (action.giveAmount !== expectedRatio) {
-        throw new Error(`Expected trade ratio ${expectedRatio}:1 for ${action.give}`);
-      }
-      if (player.resources[action.give] < expectedRatio) {
-        throw new Error(`Not enough ${action.give} for maritime trade`);
-      }
-      if (state.bank[action.receive] < 1) {
-        throw new Error(`Bank is out of ${action.receive}`);
+
+      const giveBundle = emptyResources();
+      const receiveBundle = emptyResources();
+      if (action.giveMap || action.receiveMap) {
+        const srcGive = action.giveMap ?? { [action.give]: action.giveAmount };
+        const srcRecv = action.receiveMap ?? {
+          [action.receive]: action.receiveAmount ?? 1,
+        };
+        for (const r of RESOURCES) {
+          const g = srcGive[r] ?? 0;
+          const w = srcRecv[r] ?? 0;
+          if (!Number.isInteger(g) || g < 0 || !Number.isInteger(w) || w < 0) {
+            throw new Error("Maritime trade quantities must be non-negative integers");
+          }
+          giveBundle[r] = g;
+          receiveBundle[r] = w;
+        }
+      } else {
+        const recvAmt = action.receiveAmount ?? 1;
+        if (
+          !Number.isInteger(action.giveAmount) ||
+          action.giveAmount <= 0 ||
+          !Number.isInteger(recvAmt) ||
+          recvAmt <= 0
+        ) {
+          throw new Error("Maritime trade quantities must be positive integers");
+        }
+        giveBundle[action.give] = action.giveAmount;
+        receiveBundle[action.receive] = recvAmt;
       }
 
-      player.resources[action.give] -= expectedRatio;
-      state.bank[action.give] += expectedRatio;
-      state.bank[action.receive] -= 1;
-      player.resources[action.receive] += 1;
+      let totalCredits = 0;
+      let totalReceive = 0;
+      const giveParts: string[] = [];
+      const recvParts: string[] = [];
+
+      for (const r of RESOURCES) {
+        const g = giveBundle[r];
+        const w = receiveBundle[r];
+        if (g > 0 && w > 0) {
+          throw new Error("Cannot trade a resource for itself");
+        }
+        if (g > 0) {
+          const expectedRatio = ratios[r];
+          if (g % expectedRatio !== 0) {
+            throw new Error(
+              `Expected ${r} trade amount to be a multiple of ${expectedRatio} (${expectedRatio}:1)`
+            );
+          }
+          if (player.resources[r] < g) {
+            throw new Error(`Not enough ${r} for maritime trade`);
+          }
+          totalCredits += g / expectedRatio;
+          giveParts.push(`${g} ${r}`);
+        }
+        if (w > 0) {
+          if (state.bank[r] < w) {
+            throw new Error(`Bank does not have ${w} ${r}`);
+          }
+          totalReceive += w;
+          recvParts.push(`${w} ${r}`);
+        }
+      }
+
+      if (totalCredits <= 0 || totalCredits !== totalReceive) {
+        throw new Error(
+          `Maritime trade mismatch: ${totalCredits} port trade(s) offered for ${totalReceive} bank card(s)`
+        );
+      }
+
+      subtractResources(player.resources, giveBundle);
+      addResources(state.bank, giveBundle);
+      subtractResources(state.bank, receiveBundle);
+      addResources(player.resources, receiveBundle);
+
+      const singleGiveRes = RESOURCES.filter((r) => giveBundle[r] > 0);
+      const rateSuffix =
+        singleGiveRes.length === 1
+          ? ` (${ratios[singleGiveRes[0]!]}:1)`
+          : "";
 
       pushEvent(
         state,
         emitted,
         "MARITIME_TRADE",
-        `${player.name} traded ${expectedRatio} ${action.give} for 1 ${action.receive} (${expectedRatio}:1).`,
+        `${player.name} traded ${giveParts.join(" + ")} for ${recvParts.join(" + ")}${rateSuffix}.`,
         playerId,
         action
       );
@@ -1969,13 +2059,15 @@ export function applyCatanAction(
         throw new Error("You do not have the offered resources");
       }
 
-      state.activeTradeOffer = {
-        id: `offer-${state.turn}-${ state.eventLog.length}`,
+      const offerId = `offer-${state.turn}-${state.eventLog.length}`;
+      const baseOffer = {
+        id: offerId,
         fromPlayerId: playerId,
         toPlayerId: action.toPlayerId,
         give: action.give,
         want: action.want,
-        declinedBy: [],
+        acceptedBy: [] as string[],
+        declinedBy: [] as string[],
       };
 
       pushEvent(
@@ -1984,8 +2076,38 @@ export function applyCatanAction(
         "DOMESTIC_TRADE_OFFERED",
         `${player.name} offered a trade to ${action.toPlayerId ? state.players.find((p) => p.id === action.toPlayerId)?.name : "all players"}.`,
         playerId,
-        state.activeTradeOffer
+        baseOffer
       );
+
+      // Automatically decline for any targeted player who does not hold the requested resources
+      const otherPlayers = state.players.filter((p) => p.id !== playerId);
+      const targetedPlayers =
+        action.toPlayerId !== null
+          ? otherPlayers.filter((p) => p.id === action.toPlayerId)
+          : otherPlayers;
+      const autoDeclinedBy = targetedPlayers
+        .filter((p) => !hasResources(p.resources, action.want))
+        .map((p) => p.id);
+
+      const allDeclined =
+        targetedPlayers.length === 0 ||
+        targetedPlayers.every((p) => autoDeclinedBy.includes(p.id));
+
+      if (allDeclined) {
+        state.activeTradeOffer = null;
+        pushEvent(
+          state,
+          emitted,
+          "DOMESTIC_TRADE_DECLINED",
+          "Trade offer declined.",
+          playerId
+        );
+      } else {
+        state.activeTradeOffer = {
+          ...baseOffer,
+          declinedBy: autoDeclinedBy,
+        };
+      }
       break;
     }
 
@@ -2012,19 +2134,21 @@ export function applyCatanAction(
         throw new Error("You do not have the requested resources");
       }
 
-      subtractResources(proposer.resources, offer.give);
-      addResources(player.resources, offer.give);
-      subtractResources(player.resources, offer.want);
-      addResources(proposer.resources, offer.want);
-      state.activeTradeOffer = null;
+      if (!offer.acceptedBy) {
+        offer.acceptedBy = [];
+      }
+      offer.declinedBy = offer.declinedBy.filter((id) => id !== playerId);
+      if (!offer.acceptedBy.includes(playerId)) {
+        offer.acceptedBy.push(playerId);
+      }
 
       pushEvent(
         state,
         emitted,
-        "DOMESTIC_TRADE_COMPLETED",
-        `${player.name} accepted ${proposer.name}'s trade offer!`,
+        "DOMESTIC_TRADE_ACCEPTED",
+        `${player.name} accepted ${proposer.name}'s trade offer.`,
         playerId,
-        offer
+        { offerId: offer.id, acceptorId: playerId }
       );
       break;
     }
@@ -2034,14 +2158,19 @@ export function applyCatanAction(
         throw new Error("No active trade offer");
       }
       const offer = state.activeTradeOffer;
-      if (!offer.declinedBy.includes(playerId)) {
+      const accepted = offer.acceptedBy ?? [];
+      if (!offer.declinedBy.includes(playerId) && !accepted.includes(playerId)) {
         offer.declinedBy.push(playerId);
       }
       const otherPlayers = state.players.filter((p) => p.id !== offer.fromPlayerId);
-      const allDeclined =
-        (offer.toPlayerId !== null && offer.declinedBy.includes(offer.toPlayerId)) ||
-        otherPlayers.every((p) => offer.declinedBy.includes(p.id));
-      if (allDeclined) {
+      const targetedPlayers =
+        offer.toPlayerId !== null
+          ? otherPlayers.filter((p) => p.id === offer.toPlayerId)
+          : otherPlayers;
+      const everyoneResponded = targetedPlayers.every(
+        (p) => offer.declinedBy.includes(p.id) || accepted.includes(p.id)
+      );
+      if (everyoneResponded && accepted.length === 0) {
         state.activeTradeOffer = null;
       }
       pushEvent(
@@ -2050,6 +2179,52 @@ export function applyCatanAction(
         "DOMESTIC_TRADE_DECLINED",
         `${player.name} declined the trade offer.`,
         playerId
+      );
+      break;
+    }
+
+    case "CONFIRM_DOMESTIC_TRADE": {
+      if (state.phase !== "MAIN_PHASE" || !state.activeTradeOffer) {
+        throw new Error("No active domestic trade offer");
+      }
+      const offer = state.activeTradeOffer;
+      if (offer.id !== action.offerId) {
+        throw new Error("Mismatched trade offer ID");
+      }
+      if (offer.fromPlayerId !== playerId) {
+        throw new Error(
+          "Only the player who offered the trade can select the trade partner"
+        );
+      }
+      const accepted = offer.acceptedBy ?? [];
+      if (!accepted.includes(action.partnerId)) {
+        throw new Error("Selected player has not accepted this trade offer");
+      }
+
+      const partner = state.players.find((p) => p.id === action.partnerId);
+      if (!partner) {
+        throw new Error("Selected trade partner not found");
+      }
+      if (!hasResources(player.resources, offer.give)) {
+        throw new Error("You no longer have the offered resources");
+      }
+      if (!hasResources(partner.resources, offer.want)) {
+        throw new Error("Selected partner no longer has the requested resources");
+      }
+
+      subtractResources(player.resources, offer.give);
+      addResources(partner.resources, offer.give);
+      subtractResources(partner.resources, offer.want);
+      addResources(player.resources, offer.want);
+      state.activeTradeOffer = null;
+
+      pushEvent(
+        state,
+        emitted,
+        "DOMESTIC_TRADE_COMPLETED",
+        `${player.name} traded with ${partner.name}.`,
+        playerId,
+        { ...offer, partnerId: partner.id }
       );
       break;
     }
@@ -2332,6 +2507,50 @@ function stealOneRandomCard(
   );
 }
 
+const IRREVERSIBLE_CATAN_ACTIONS = new Set<CatanAction["type"]>([
+  "ROLL_DICE",
+  "BUY_DEV_CARD",
+  "STEAL_FROM_PLAYER",
+  "PLAY_MONOPOLY",
+  "OFFER_DOMESTIC_TRADE",
+  "ACCEPT_DOMESTIC_TRADE",
+  "DECLINE_DOMESTIC_TRADE",
+  "CONFIRM_DOMESTIC_TRADE",
+  "CANCEL_DOMESTIC_TRADE",
+  "END_TURN",
+  "END_SPECIAL_BUILD",
+]);
+
+/**
+ * Returns whether `action` can be fairly undone by the acting player within their own turn.
+ * Disallows undoing dice rolls, dev-card draws, random steals, fog reveals, Monopoly hand reveals,
+ * or interpersonal trade steps.
+ */
+export function isCatanActionUndoable(
+  prevState: CatanState,
+  action: CatanAction,
+  nextState: CatanState
+): boolean {
+  if (
+    nextState.phase === "GAME_OVER" ||
+    prevState.turn !== nextState.turn ||
+    prevState.phase.startsWith("SETUP_") !== nextState.phase.startsWith("SETUP_")
+  ) {
+    return false;
+  }
+  if (IRREVERSIBLE_CATAN_ACTIONS.has(action.type)) {
+    return false;
+  }
+  if (
+    prevState.rngState !== nextState.rngState ||
+    prevState.devCardDeck.length !== nextState.devCardDeck.length ||
+    prevState.fogPool.length !== nextState.fogPool.length
+  ) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Verifies domain invariants on `state` to catch any state corruption or rule bug immediately.
  */
@@ -2342,22 +2561,47 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
   const isExpanded =
     state.players.length >= 5 || state.config.scenarioId === "big_island_5_6";
   const expectedTotalPerResource = isExpanded ? 24 : 19;
+  const hasRedactedHands = state.players.some((p) => p.handRedacted);
 
-  for (const r of RESOURCES) {
-    if (state.bank[r] < 0) {
-      violations.push(`Bank has negative ${r}: ${state.bank[r]}`);
-    }
-    let playerSum = 0;
-    for (const p of state.players) {
-      if (p.resources[r] < 0) {
-        violations.push(`Player ${p.id} has negative ${r}: ${p.resources[r]}`);
+  if (hasRedactedHands) {
+    let bankSum = 0;
+    for (const r of RESOURCES) {
+      if (state.bank[r] < 0) {
+        violations.push(`Bank has negative ${r}: ${state.bank[r]}`);
       }
-      playerSum += p.resources[r];
+      bankSum += state.bank[r];
     }
-    if (state.bank[r] + playerSum !== expectedTotalPerResource) {
+    let playerCardSum = 0;
+    for (const p of state.players) {
+      const count = getPlayerResourceCount(p);
+      if (count < 0) {
+        violations.push(`Player ${p.id} has negative card count: ${count}`);
+      }
+      playerCardSum += count;
+    }
+    const expectedGrandTotal = expectedTotalPerResource * RESOURCES.length;
+    if (bankSum + playerCardSum !== expectedGrandTotal) {
       violations.push(
-        `Resource conservation violated for ${r}: bank(${state.bank[r]}) + players(${playerSum}) !== ${expectedTotalPerResource}`
+        `Aggregate resource conservation violated: bank(${bankSum}) + players(${playerCardSum}) !== ${expectedGrandTotal}`
       );
+    }
+  } else {
+    for (const r of RESOURCES) {
+      if (state.bank[r] < 0) {
+        violations.push(`Bank has negative ${r}: ${state.bank[r]}`);
+      }
+      let playerSum = 0;
+      for (const p of state.players) {
+        if (p.resources[r] < 0) {
+          violations.push(`Player ${p.id} has negative ${r}: ${p.resources[r]}`);
+        }
+        playerSum += p.resources[r];
+      }
+      if (state.bank[r] + playerSum !== expectedTotalPerResource) {
+        violations.push(
+          `Resource conservation violated for ${r}: bank(${state.bank[r]}) + players(${playerSum}) !== ${expectedTotalPerResource}`
+        );
+      }
     }
   }
 

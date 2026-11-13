@@ -95,40 +95,77 @@ describe("@gaming-platform/catan - Base Game Rules", () => {
     expect(CatanEngine.checkInvariants(state).valid).toBe(true);
   });
 
-  test("Domestic player-to-player trade offer and acceptance", () => {
+  test("Domestic player-to-player trade offer, multi-player acceptance, and partner selection", () => {
     let { state } = completeSnakeDraftSetup(
       CatanEngine.initGame(FOUR_PLAYERS, { scenarioId: "standard" }, "domestic-test")
     );
     state.phase = "MAIN_PHASE";
     state.activePlayerIndex = 0;
 
-    // Give p1 1 brick and p2 1 ore from bank
+    // Reset hands cleanly into bank, then give p1 1 brick, and give BOTH p2 and p3 1 ore (p4 has 0 ore)
+    for (const p of state.players) {
+      for (const r of RESOURCES) {
+        state.bank[r] += p.resources[r];
+        p.resources[r] = 0;
+      }
+    }
     state.bank.brick -= 1;
     state.players[0]!.resources.brick += 1;
-    state.bank.ore -= 1;
+    state.bank.ore -= 2;
     state.players[1]!.resources.ore += 1;
+    state.players[2]!.resources.ore += 1;
 
     const p1BrickBefore = state.players[0]!.resources.brick;
     const p1OreBefore = state.players[0]!.resources.ore;
+    const p2OreBefore = state.players[1]!.resources.ore;
+    const p3OreBefore = state.players[2]!.resources.ore;
 
     state = CatanEngine.applyAction(state, "p1", {
       type: "OFFER_DOMESTIC_TRADE",
-      toPlayerId: "p2",
+      toPlayerId: null,
       give: { brick: 1 },
       want: { ore: 1 },
     }).state;
 
     expect(state.activeTradeOffer).not.toBeNull();
+    // p4 lacks ore and is automatically declined
+    expect(state.activeTradeOffer!.declinedBy).toContain("p4");
     const offerId = state.activeTradeOffer!.id;
 
+    // p2 accepts -> trade stays open so other players can respond and p1 can select partner
     state = CatanEngine.applyAction(state, "p2", {
       type: "ACCEPT_DOMESTIC_TRADE",
       offerId,
+    }).state;
+    expect(state.activeTradeOffer).not.toBeNull();
+    expect(state.activeTradeOffer!.acceptedBy).toEqual(["p2"]);
+    // As soon as p2 accepts, p1 ALREADY has CONFIRM_DOMESTIC_TRADE for p2 available!
+    expect(
+      CatanEngine.getLegalActions(state, "p1").some(
+        (a) => a.type === "CONFIRM_DOMESTIC_TRADE" && a.partnerId === "p2"
+      )
+    ).toBe(true);
+
+    // p3 also accepts -> now both p2 and p3 have accepted, and control returns to p1
+    state = CatanEngine.applyAction(state, "p3", {
+      type: "ACCEPT_DOMESTIC_TRADE",
+      offerId,
+    }).state;
+    expect(state.activeTradeOffer!.acceptedBy).toEqual(["p2", "p3"]);
+
+    // p1 chooses to trade with p3 instead of p2!
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "CONFIRM_DOMESTIC_TRADE",
+      offerId,
+      partnerId: "p3",
     }).state;
 
     expect(state.activeTradeOffer).toBeNull();
     expect(state.players[0]!.resources.brick).toBe(p1BrickBefore - 1);
     expect(state.players[0]!.resources.ore).toBe(p1OreBefore + 1);
+    expect(state.players[1]!.resources.ore).toBe(p2OreBefore); // p2 untouched
+    expect(state.players[2]!.resources.ore).toBe(p3OreBefore - 1); // p3 traded
+    expect(state.players[2]!.resources.brick).toBe(1);
     expect(CatanEngine.checkInvariants(state).valid).toBe(true);
   });
 
@@ -583,5 +620,205 @@ describe("@gaming-platform/catan - Multi-Tier AI & Trading Strategy", () => {
     const cityAct = CatanEngine.chooseBotAction(state, "p1")!;
     expect(cityAct.type).toBe("BUILD_CITY");
     expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+  });
+
+  test("Bidirectional Near-Victory Embargo: Master refuses 7-VP & burst-VP opponents unless trade is immediately lethal for Master", () => {
+    const tieredPlayers: PlayerDescriptor[] = [
+      { id: "p1", name: "Master", color: "#e63946", isBot: true, botDifficulty: "master" },
+      { id: "p2", name: "NearWinHuman", color: "#2563eb", isBot: false },
+      { id: "p3", name: "BurstHuman", color: "#f59e0b", isBot: false },
+      { id: "p4", name: "SafePeer", color: "#10b981", isBot: false },
+    ];
+    let { state } = completeSnakeDraftSetup(
+      CatanEngine.initGame(tieredPlayers, { scenarioId: "standard" }, "bi-embargo-spec")
+    );
+    for (const p of state.players) {
+      for (const r of RESOURCES) {
+        state.bank[r] += p.resources[r];
+        p.resources[r] = 0;
+      }
+    }
+
+    // Case A: p2 sits at 7 visible VP (3 away from 10 VP) and offers Ore for Brick -> Master MUST decline!
+    state.players[1]!.bonusVictoryPoints = 5; // 2 setup + 5 = 7 visible VP
+    expect(computePlayerVictoryPoints(state, "p2", true)).toBe(7);
+    state.phase = "MAIN_PHASE";
+    state.activePlayerIndex = 1;
+    state.players[1]!.resources.ore = 2;
+    state.players[0]!.resources.brick = 2;
+    state.bank.ore -= 2;
+    state.bank.brick -= 2;
+
+    state = CatanEngine.applyAction(state, "p2", {
+      type: "OFFER_DOMESTIC_TRADE",
+      toPlayerId: null,
+      give: { ore: 1 },
+      want: { brick: 1 },
+    }).state;
+    expect(CatanEngine.chooseBotAction(state, "p1")!.type).toBe("DECLINE_DOMESTIC_TRADE");
+    state = CatanEngine.applyAction(state, "p2", { type: "CANCEL_DOMESTIC_TRADE" }).state;
+
+    // Case B: p3 sits at only 6 visible VP, BUT holds 2 unplayed dev cards (burst threat >= 8 VP) -> Master MUST decline!
+    state.players[2]!.bonusVictoryPoints = 4; // 6 visible VP
+    state.players[2]!.devCards = [
+      { id: "dc1", type: "knight", boughtOnTurn: 1, played: false },
+      { id: "dc2", type: "victory_point", boughtOnTurn: 1, played: false },
+    ];
+    state.activePlayerIndex = 2;
+    state.players[2]!.resources.ore = 2;
+    state.bank.ore -= 2;
+
+    state = CatanEngine.applyAction(state, "p3", {
+      type: "OFFER_DOMESTIC_TRADE",
+      toPlayerId: null,
+      give: { ore: 1 },
+      want: { brick: 1 },
+    }).state;
+    // Also verify Master makes the exact same fair decision through redacted getPlayerView!
+    const redactedForMaster = CatanEngine.getPlayerView(state, "p1");
+    expect(CatanEngine.chooseBotAction(redactedForMaster, "p1")!.type).toBe(
+      "DECLINE_DOMESTIC_TRADE"
+    );
+    state = CatanEngine.applyAction(state, "p3", { type: "CANCEL_DOMESTIC_TRADE" }).state;
+
+    // Case C: Master (at 4 VP) broadcasts a trade; ONLY 7-VP p2 accepts while SafePeer declines -> Master MUST CANCEL!
+    state.activePlayerIndex = 0;
+    state.players[0]!.bonusVictoryPoints = 2; // 4 VP (not lethal)
+    state.players[0]!.resources = { brick: 1, lumber: 0, wool: 0, grain: 2, ore: 2 };
+    state.players[1]!.resources = { brick: 0, lumber: 0, wool: 0, grain: 0, ore: 1 };
+    state.players[2]!.resources = { brick: 0, lumber: 0, wool: 0, grain: 0, ore: 0 };
+    state.players[3]!.resources = { brick: 0, lumber: 0, wool: 0, grain: 0, ore: 1 };
+    state.bank.brick = 18;
+    state.bank.lumber = 19;
+    state.bank.wool = 19;
+    state.bank.grain = 17;
+    state.bank.ore = 15;
+
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "OFFER_DOMESTIC_TRADE",
+      toPlayerId: null,
+      give: { brick: 1 },
+      want: { ore: 1 },
+    }).state;
+    const offerId1 = state.activeTradeOffer!.id;
+    state = CatanEngine.applyAction(state, "p2", {
+      type: "ACCEPT_DOMESTIC_TRADE",
+      offerId: offerId1,
+    }).state;
+    state = CatanEngine.applyAction(state, "p4", {
+      type: "DECLINE_DOMESTIC_TRADE",
+      offerId: offerId1,
+    }).state;
+    // p3 auto-declined (0 ore), so Master now chooses whether to confirm with 7-VP p2 or cancel!
+    expect(getNextActingPlayerId(state)).toBe("p1");
+    expect(CatanEngine.chooseBotAction(state, "p1")).toEqual({
+      type: "CANCEL_DOMESTIC_TRADE",
+    });
+    state = CatanEngine.applyAction(state, "p1", { type: "CANCEL_DOMESTIC_TRADE" }).state;
+
+    // Case D: Lethal Exception! Master is at 9 VP (needs 1 Ore for winning City = 10 VP) and 7-VP p2 accepts -> Master CONFIRMS and WINS!
+    state.players[0]!.bonusVictoryPoints = 7; // 2 + 7 = 9 VP!
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "OFFER_DOMESTIC_TRADE",
+      toPlayerId: null,
+      give: { brick: 1 },
+      want: { ore: 1 },
+    }).state;
+    const offerId2 = state.activeTradeOffer!.id;
+    state = CatanEngine.applyAction(state, "p2", {
+      type: "ACCEPT_DOMESTIC_TRADE",
+      offerId: offerId2,
+    }).state;
+    state = CatanEngine.applyAction(state, "p4", {
+      type: "DECLINE_DOMESTIC_TRADE",
+      offerId: offerId2,
+    }).state;
+    const lethalConfirm = CatanEngine.chooseBotAction(state, "p1")!;
+    expect(lethalConfirm).toEqual({
+      type: "CONFIRM_DOMESTIC_TRADE",
+      offerId: offerId2,
+      partnerId: "p2",
+    });
+    // Also verify redacted getPlayerView preserves CONFIRM_DOMESTIC_TRADE legal actions & identical Master decision!
+    expect(
+      CatanEngine.chooseBotAction(CatanEngine.getPlayerView(state, "p1"), "p1")
+    ).toEqual(lethalConfirm);
+    state = CatanEngine.applyAction(state, "p1", lethalConfirm).state;
+    const winningCity = CatanEngine.chooseBotAction(state, "p1")!;
+    expect(winningCity.type).toBe("BUILD_CITY");
+    state = CatanEngine.applyAction(state, "p1", winningCity).state;
+    expect(state.phase).toBe("GAME_OVER");
+    expect(state.winnerId).toBe("p1");
+  });
+
+  test("Master Multi-Step Turn Lethal Solver finds Year of Plenty -> City and Monopoly -> City wins", () => {
+    const tieredPlayers: PlayerDescriptor[] = [
+      { id: "p1", name: "Master", color: "#e63946", isBot: true, botDifficulty: "master" },
+      { id: "p2", name: "RivalA", color: "#2563eb", isBot: true, botDifficulty: "smart" },
+      { id: "p3", name: "RivalB", color: "#10b981", isBot: true, botDifficulty: "smart" },
+    ];
+    let { state } = completeSnakeDraftSetup(
+      CatanEngine.initGame(tieredPlayers, { scenarioId: "standard" }, "lethal-combo-spec")
+    );
+    for (const p of state.players) {
+      for (const r of RESOURCES) {
+        state.bank[r] += p.resources[r];
+        p.resources[r] = 0;
+      }
+    }
+
+    // Put Master at 9 VP (including 1 secret VP dev card!), holding 2 Grain + 1 Ore + unplayed Year of Plenty + Road Building!
+    // Old bot wasted its 1 dev-card play on Road Building; Upgraded Master spots YoP(ore, ore) -> BUILD_CITY lethal!
+    state.phase = "MAIN_PHASE";
+    state.turn = 4;
+    state.activePlayerIndex = 0;
+    state.players[0]!.bonusVictoryPoints = 6; // 2 setup + 6 + 1 VP card = 9 true VP!
+    state.players[0]!.devCards = [
+      { id: "vp1", type: "victory_point", boughtOnTurn: 1, played: false },
+      { id: "rb1", type: "road_building", boughtOnTurn: 1, played: false },
+      { id: "yop1", type: "year_of_plenty", boughtOnTurn: 1, played: false },
+    ];
+    state.players[0]!.resources = { brick: 0, lumber: 0, wool: 0, grain: 2, ore: 1 };
+    state.bank.grain -= 2;
+    state.bank.ore -= 1;
+
+    const firstLethalStep = CatanEngine.chooseBotAction(state, "p1")!;
+    expect(firstLethalStep).toEqual({
+      type: "PLAY_YEAR_OF_PLENTY",
+      resource1: "ore",
+      resource2: "ore",
+    });
+    state = CatanEngine.applyAction(state, "p1", firstLethalStep).state;
+    const finishCity = CatanEngine.chooseBotAction(state, "p1")!;
+    expect(finishCity.type).toBe("BUILD_CITY");
+
+    // Also verify Monopoly (deducing 2 Ore in opponent hands from public bank supply) -> City lethal!
+    let { state: monoState } = completeSnakeDraftSetup(
+      CatanEngine.initGame(tieredPlayers, { scenarioId: "standard" }, "mono-lethal-spec")
+    );
+    for (const p of monoState.players) {
+      for (const r of RESOURCES) {
+        monoState.bank[r] += p.resources[r];
+        p.resources[r] = 0;
+      }
+    }
+    monoState.phase = "MAIN_PHASE";
+    monoState.turn = 5;
+    monoState.activePlayerIndex = 0;
+    monoState.players[0]!.bonusVictoryPoints = 7; // 9 VP
+    monoState.players[0]!.devCards = [
+      { id: "rb2", type: "road_building", boughtOnTurn: 1, played: false },
+      { id: "mono1", type: "monopoly", boughtOnTurn: 1, played: false },
+    ];
+    monoState.players[0]!.resources = { brick: 0, lumber: 0, wool: 0, grain: 2, ore: 1 };
+    monoState.players[1]!.resources.ore = 2; // Opponents collectively hold 2 Ore (bank has 16)
+    monoState.bank.grain -= 2;
+    monoState.bank.ore -= 3;
+
+    const monoAct = CatanEngine.chooseBotAction(
+      CatanEngine.getPlayerView(monoState, "p1"),
+      "p1"
+    )!;
+    expect(monoAct).toEqual({ type: "PLAY_MONOPOLY", resource: "ore" });
   });
 });

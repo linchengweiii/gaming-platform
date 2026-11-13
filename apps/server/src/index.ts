@@ -93,7 +93,6 @@ export function createPlatformServer() {
     } catch {
       return;
     }
-    const summary = roomManager.toRoomSummary(room);
     const engine = roomManager.registry.get(room.gameId);
     const state = room.session?.getState() ?? null;
     const actingId = state ? getRoomActingPlayerId(room.gameId, state) : null;
@@ -104,6 +103,7 @@ export function createPlatformServer() {
           client.playerId,
           actingId
         );
+        const summary = roomManager.toRoomSummary(room, client.playerId);
         const view = state
           ? engine.getPlayerView(state, effectiveViewerId)
           : null;
@@ -262,7 +262,7 @@ export function createPlatformServer() {
             ? engine.getPlayerView(state, effectiveViewerId)
             : null;
           sendJson(res, 200, {
-            room: roomManager.toRoomSummary(room),
+            room: roomManager.toRoomSummary(room, viewerId),
             state: view,
             actingPlayerId,
           });
@@ -382,6 +382,16 @@ export function createPlatformServer() {
           const body = await readJsonBody(req);
           clearRoomBotTimer(roomId);
           const room = roomManager.getRoom(roomId);
+          if (
+            body.requesterId &&
+            !roomManager.canViewerControlActor(
+              room,
+              body.requesterId,
+              body.playerId
+            )
+          ) {
+            throw new Error("You cannot act on behalf of another player");
+          }
           const prevStatus = room.status;
           const nextState = roomManager.dispatchAction(
             roomId,
@@ -389,33 +399,55 @@ export function createPlatformServer() {
             body.action
           );
           const engine = roomManager.registry.get(room.gameId);
-          const view = engine.getPlayerView(nextState, body.playerId ?? null);
+          const actingId = getRoomActingPlayerId(room.gameId, nextState);
+          const effectiveViewerId = resolveEffectiveViewerId(
+            room,
+            body.requesterId ?? body.playerId ?? null,
+            actingId
+          );
+          const view = engine.getPlayerView(nextState, effectiveViewerId);
           broadcastRoomState(roomId);
           if (room.status !== prevStatus) {
             broadcastLobbyRooms();
           }
           scheduleRoomBotTurn(roomId);
           sendJson(res, 200, {
-            room: roomManager.toRoomSummary(room),
+            room: roomManager.toRoomSummary(
+              room,
+              body.requesterId ?? body.playerId ?? null
+            ),
             state: view,
-            actingPlayerId: getRoomActingPlayerId(room.gameId, nextState),
+            actingPlayerId: actingId,
           });
           return;
         }
 
         if (subRoute === "bot-step" && req.method === "POST") {
+          const body = await readJsonBody(req);
           clearRoomBotTimer(roomId);
           const room = roomManager.getRoom(roomId);
           const prevStatus = room.status;
           const result = roomManager.stepBot(roomId);
+          const engine = roomManager.registry.get(room.gameId);
+          const actingId = result.state
+            ? getRoomActingPlayerId(room.gameId, result.state)
+            : null;
+          const effectiveViewerId = resolveEffectiveViewerId(
+            room,
+            body.requesterId ?? null,
+            actingId
+          );
           broadcastRoomState(roomId);
           if (room.status !== prevStatus) {
             broadcastLobbyRooms();
           }
           sendJson(res, 200, {
             ...result,
-            room: roomManager.toRoomSummary(room),
-            actingPlayerId: getRoomActingPlayerId(room.gameId, result.state),
+            state: result.state
+              ? engine.getPlayerView(result.state, effectiveViewerId)
+              : null,
+            room: roomManager.toRoomSummary(room, body.requesterId ?? null),
+            actingPlayerId: actingId,
           });
           return;
         }
@@ -458,19 +490,25 @@ export function createPlatformServer() {
           const body = await readJsonBody(req);
           clearRoomBotTimer(roomId);
           const room = roomManager.getRoom(roomId);
-          room.autoStepBots = false;
-          const nextState = roomManager.undoAction(roomId);
-          const engine = roomManager.registry.get(room.gameId);
-          const view = engine.getPlayerView(
-            nextState,
+          const nextState = roomManager.undoAction(
+            roomId,
             body.requesterId ?? null
           );
+          room.autoStepBots = false;
+          const engine = roomManager.registry.get(room.gameId);
+          const actingId = getRoomActingPlayerId(room.gameId, nextState);
+          const effectiveViewerId = resolveEffectiveViewerId(
+            room,
+            body.requesterId ?? null,
+            actingId
+          );
+          const view = engine.getPlayerView(nextState, effectiveViewerId);
           broadcastRoomState(roomId);
           broadcastLobbyRooms();
           sendJson(res, 200, {
-            room: roomManager.toRoomSummary(room),
+            room: roomManager.toRoomSummary(room, body.requesterId ?? null),
             state: view,
-            actingPlayerId: getRoomActingPlayerId(room.gameId, nextState),
+            actingPlayerId: actingId,
           });
           return;
         }
@@ -479,18 +517,24 @@ export function createPlatformServer() {
           const body = await readJsonBody(req);
           clearRoomBotTimer(roomId);
           const room = roomManager.getRoom(roomId);
-          const nextState = roomManager.redoAction(roomId);
-          const engine = roomManager.registry.get(room.gameId);
-          const view = engine.getPlayerView(
-            nextState,
+          const nextState = roomManager.redoAction(
+            roomId,
             body.requesterId ?? null
           );
+          const engine = roomManager.registry.get(room.gameId);
+          const actingId = getRoomActingPlayerId(room.gameId, nextState);
+          const effectiveViewerId = resolveEffectiveViewerId(
+            room,
+            body.requesterId ?? null,
+            actingId
+          );
+          const view = engine.getPlayerView(nextState, effectiveViewerId);
           broadcastRoomState(roomId);
           broadcastLobbyRooms();
           sendJson(res, 200, {
-            room: roomManager.toRoomSummary(room),
+            room: roomManager.toRoomSummary(room, body.requesterId ?? null),
             state: view,
-            actingPlayerId: getRoomActingPlayerId(room.gameId, nextState),
+            actingPlayerId: actingId,
           });
           return;
         }

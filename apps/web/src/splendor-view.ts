@@ -320,53 +320,46 @@ export function renderSplendorPlayerCard(
   return `
     <div class="player-card ${isActing ? "active-turn" : ""}">
       <div class="player-header">
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
           <span class="player-dot" style="background: ${p.color}"></span>
-          <strong style="font-weight: 500;">${p.name}</strong>
+          <strong class="player-card__name">${p.name}</strong>
           <span class="ga-chip">${seatBadge}</span>
         </div>
         <span class="ga-chip ga-chip--warn ga-num">${p.points}/${state.config.targetPoints} VP</span>
       </div>
 
-      <div class="t-label muted">
-        <span>Tokens (${totalTokens(p.tokens)}/10)</span>
-        <div style="display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap;">
-          ${ALL_TOKEN_COLORS.map((c) => {
-            const st = GEM_STYLES[c];
-            return `<span class="ga-num" style="
-              padding: 2px 7px;
-              border-radius: 999px;
-              background: ${st.bg};
-              border: 1px solid ${st.border};
-              color: ${st.text};
-              font-size: 13px;
-              font-weight: 500;
-            ">${st.short} ${p.tokens[c]}</span>`;
-          }).join("")}
-        </div>
+      <div style="display: flex; gap: 3px; flex-wrap: wrap; align-items: center;">
+        ${ALL_TOKEN_COLORS.map((c) => {
+          const st = GEM_STYLES[c];
+          return `<span class="ga-num" title="${st.label} tokens" style="
+            padding: 1px 5px;
+            border-radius: 999px;
+            background: ${st.bg};
+            border: 1px solid ${st.border};
+            color: ${st.text};
+            font-size: 11px;
+            font-weight: 500;
+          ">${st.short[0]}${p.tokens[c]}</span>`;
+        }).join("")}
+        <span class="ga-chip ga-num" title="Tokens in hand">${totalTokens(p.tokens)}/10</span>
       </div>
 
-      <div class="t-label muted">
-        <span>Mine bonuses (${p.purchasedCards.length} cards)</span>
-        <div style="display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
+        <div style="display: flex; gap: 3px; flex-wrap: wrap;">
           ${GEM_COLORS.map((c) => {
             const st = GEM_STYLES[c];
-            return `<span class="ga-num" style="
-              padding: 2px 7px;
-              border-radius: 5px;
+            return `<span class="ga-num" title="${st.label} mine bonus" style="
+              padding: 1px 5px;
+              border-radius: 4px;
               background: ${st.bg};
               border: 1px solid ${st.border};
               color: ${st.text};
-              font-size: 13px;
+              font-size: 11px;
               font-weight: 500;
             ">+${p.bonuses[c]}</span>`;
           }).join("")}
         </div>
-      </div>
-
-      <div class="ga-stat-row t-label muted">
-        <span>Reserved: <strong class="ga-num">${p.reservedCards.length}/3</strong></span>
-        <span>Nobles: <strong class="ga-num">${p.nobles.length}</strong></span>
+        <span class="t-label muted ga-num">Hold ${p.reservedCards.length}/3 · Nobles ${p.nobles.length}</span>
       </div>
     </div>
   `;

@@ -70,4 +70,24 @@ export const SplendorEngine: GameEngine<
   checkInvariants(state: SplendorState) {
     return checkSplendorInvariants(state);
   },
+
+  isActionUndoable(
+    prevState: SplendorState,
+    action: SplendorAction,
+    nextState: SplendorState
+  ): boolean {
+    if (nextState.phase === "GAME_OVER") return false;
+    if (action.type === "RESERVE_CARD" || action.type === "PURCHASE_CARD") {
+      return false;
+    }
+    const prevDeckCount =
+      prevState.decks[1].length +
+      prevState.decks[2].length +
+      prevState.decks[3].length;
+    const nextDeckCount =
+      nextState.decks[1].length +
+      nextState.decks[2].length +
+      nextState.decks[3].length;
+    return prevDeckCount === nextDeckCount;
+  },
 };

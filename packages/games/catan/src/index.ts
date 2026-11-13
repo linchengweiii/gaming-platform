@@ -4,8 +4,11 @@ import {
   applyCatanAction,
   checkCatanInvariants,
   computePlayerVictoryPoints,
+  emptyResources,
   getCatanLegalActions,
+  getPlayerResourceCount,
   initCatanGame,
+  isCatanActionUndoable,
 } from "./rules.ts";
 import type { CatanAction, CatanConfig, CatanState } from "./types.ts";
 
@@ -33,6 +36,7 @@ export function getNextActingPlayerId(state: CatanState): string | null {
 
   if (state.phase === "MAIN_PHASE" && state.activeTradeOffer) {
     const offer = state.activeTradeOffer;
+    const accepted = offer.acceptedBy ?? [];
     const proposerIdx = state.players.findIndex(
       (p) => p.id === offer.fromPlayerId
     );
@@ -41,11 +45,13 @@ export function getNextActingPlayerId(state: CatanState): string | null {
       const candidate = state.players[(Math.max(0, proposerIdx) + offset) % n]!;
       if (
         (offer.toPlayerId === null || offer.toPlayerId === candidate.id) &&
-        !offer.declinedBy.includes(candidate.id)
+        !offer.declinedBy.includes(candidate.id) &&
+        !accepted.includes(candidate.id)
       ) {
         return candidate.id;
       }
     }
+    return offer.fromPlayerId;
   }
 
   if (state.phase === "SPECIAL_BUILDING") {
@@ -97,19 +103,33 @@ export const CatanEngine: GameEngine<
   },
 
   getPlayerView(state: CatanState, viewerPlayerId: string | null): CatanState {
-    if (!viewerPlayerId || state.phase === "GAME_OVER") {
+    if (state.phase === "GAME_OVER") {
       return state;
     }
     const redacted = structuredClone(state);
-    // Redact unplayed development card identities of other players and deck order
+    // Redact unplayed development card deck order and unrevealed fog pool
     redacted.devCardDeck = redacted.devCardDeck.map(() => "knight");
+    redacted.fogPool = redacted.fogPool.map(() => ({
+      terrain: "fog",
+      numberToken: null,
+    }));
     for (const p of redacted.players) {
       if (p.id !== viewerPlayerId) {
+        p.hiddenResourceCount = getPlayerResourceCount(p);
+        p.handRedacted = true;
+        p.resources = emptyResources();
         p.devCards = p.devCards.map((c) =>
           c.played ? c : { ...c, type: "knight" }
         );
       }
     }
+    redacted.eventLog = redacted.eventLog.map((evt) => {
+      if (evt.type === "CARDS_DISCARDED" && evt.playerId !== viewerPlayerId) {
+        const { payload: _hidden, ...rest } = evt;
+        return rest;
+      }
+      return evt;
+    });
     return redacted;
   },
 
@@ -123,6 +143,14 @@ export const CatanEngine: GameEngine<
 
   checkInvariants(state: CatanState) {
     return checkCatanInvariants(state);
+  },
+
+  isActionUndoable(
+    prevState: CatanState,
+    action: CatanAction,
+    nextState: CatanState
+  ): boolean {
+    return isCatanActionUndoable(prevState, action, nextState);
   },
 };
 
