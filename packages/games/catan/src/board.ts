@@ -180,6 +180,29 @@ export const SCENARIO_CATALOG: Record<ScenarioId, ScenarioDescriptor> = {
   },
 };
 
+export const SELECTABLE_SCENARIO_IDS: readonly ScenarioId[] = [
+  "standard",
+  "seafarers_new_shores",
+  "seafarers_four_islands",
+  "seafarers_fog_islands",
+];
+
+export function toBaseMapScenarioId(scenarioId: ScenarioId): ScenarioId {
+  switch (scenarioId) {
+    case "seafarers_new_shores":
+    case "seafarers_new_shores_5_6":
+      return "seafarers_new_shores";
+    case "seafarers_four_islands":
+    case "seafarers_six_islands_5_6":
+      return "seafarers_four_islands";
+    case "seafarers_fog_islands":
+    case "seafarers_fog_islands_5_6":
+      return "seafarers_fog_islands";
+    default:
+      return "standard";
+  }
+}
+
 export function isExpanded56Scenario(scenarioId: ScenarioId): boolean {
   return Boolean(SCENARIO_CATALOG[scenarioId]?.is56PlayerPreset);
 }

@@ -1271,10 +1271,15 @@ describe("Functional Refactoring Golden Parity & Immutability Suite", () => {
       }) as any;
       app.autoRespondBotsToHuman = false;
       app.enterOrJoinRoom("room-1");
+      expect(root.innerHTML).toContain('id="setup-chk-citiesknights"');
+      expect(root.innerHTML).not.toContain('id="setup-chk-allbots"');
+      expect(root.innerHTML).not.toContain('id="setup-chk-extension56"');
+      expect(root.innerHTML).not.toContain('value="cities_and_knights"');
+      expect(root.innerHTML).not.toContain('value="big_island_5_6"');
       const room = app.getActiveRoom();
       room.config = {
         ...room.config,
-        scenarioId: "cities_and_knights",
+        scenarioId: "standard",
         enableCitiesAndKnights: true,
         enableCityWalls: true,
         targetVictoryPoints: 13,

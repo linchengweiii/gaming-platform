@@ -21,6 +21,7 @@ import {
   type ResourceMap,
   type ResourceType,
   SCENARIO_CATALOG,
+  SELECTABLE_SCENARIO_IDS,
   type ScenarioId,
   TERRAIN_TO_COMMODITY,
   TERRAIN_TO_RESOURCE,
@@ -59,8 +60,7 @@ import {
   hasResources,
   isCommodityType,
   isExpanded56Scenario,
-  toExpanded56ScenarioId,
-  toStandard34ScenarioId,
+  toBaseMapScenarioId,
   totalCommodityCount,
   totalResourceCount,
 } from "@gaming-platform/catan";
@@ -1554,8 +1554,7 @@ export function startOfflineRoomMatchPure(
       ? {
           scenarioId: rebuilt.config.scenarioId,
           enable56PlayerExtension: Boolean(
-            rebuilt.config.enable56PlayerExtension ||
-              rebuilt.players.length >= 5 ||
+            rebuilt.players.length >= 5 ||
               isExpanded56Scenario(rebuilt.config.scenarioId)
           ),
           enableHarbormaster: rebuilt.config.enableHarbormaster,
@@ -2253,7 +2252,6 @@ export function getRoomSetupSummaryDataPure(
   );
   const is56Active = Boolean(
     room.players.length >= 5 ||
-      room.config.enable56PlayerExtension ||
       isExpanded56Scenario(room.config.scenarioId)
   );
   const targetVp =
@@ -2459,21 +2457,33 @@ export function renderRoomSetupViewPure(
 
         ${
           room.gameId === "catan"
-            ? `
+            ? (() => {
+                const mapScenarioId = toBaseMapScenarioId(room.config.scenarioId);
+                return `
           <div class="ga-field">
             <label for="setup-sel-scenario-btn">Catan scenario</label>
             ${renderDropdown({
               id: "setup-sel-scenario",
-              value: room.config.scenarioId,
-              options: Object.values(SCENARIO_CATALOG).map((sc) => ({
-                value: sc.id,
-                label: sc.name,
-                meta: `${sc.minPlayers}–${sc.maxPlayers}P`,
-              })),
+              value: mapScenarioId,
+              options: SELECTABLE_SCENARIO_IDS.map((id) => {
+                const sc = SCENARIO_CATALOG[id];
+                return {
+                  value: sc.id,
+                  label: sc.name,
+                  meta: `${sc.minPlayers}–${sc.maxPlayers}P`,
+                };
+              }),
             })}
-            <p class="t-small muted">${SCENARIO_CATALOG[room.config.scenarioId].description}</p>
+            <p class="t-small muted">${
+              SCENARIO_CATALOG[mapScenarioId].description
+            }${
+              room.players.length >= 5
+                ? " (5–6 Player Extension active automatically.)"
+                : ""
+            }</p>
           </div>
-        `
+        `;
+              })()
             : ""
         }
 
@@ -2523,79 +2533,46 @@ export function renderRoomSetupViewPure(
           <p class="t-small muted">${BOT_DIFFICULTY_META[room.botDifficulty].desc}</p>
         </div>
 
+        ${
+          room.gameId === "catan"
+            ? (() => {
+                const ckChecked =
+                  room.config.enableCitiesAndKnights ||
+                  Boolean(
+                    SCENARIO_CATALOG[room.config.scenarioId]
+                      .enableCitiesAndKnights
+                  );
+                return `
         <div>
-          <label class="ga-check-row" for="setup-chk-allbots">
-            <span>All seats controlled by bots (spectator simulation)</span>
-            <input type="checkbox" id="setup-chk-allbots" ${
-              room.allBots ? "checked" : ""
+          <label class="ga-check-row" for="setup-chk-citiesknights">
+            <span>Cities &amp; Knights (commodities, knights, metropolises &amp; progress cards)</span>
+            <input type="checkbox" id="setup-chk-citiesknights" ${
+              ckChecked ? "checked" : ""
             } />
           </label>
-
-          ${
-            room.gameId === "catan"
-              ? `
-            <label class="ga-check-row" for="setup-chk-extension56">
-              <span>5–6 player extension (expanded map, bank &amp; special building)</span>
-              <input type="checkbox" id="setup-chk-extension56" ${
-                room.players.length >= 5 ||
-                room.config.enable56PlayerExtension ||
-                isExpanded56Scenario(room.config.scenarioId)
-                  ? "checked"
-                  : ""
-              } ${room.players.length >= 5 ? "disabled" : ""} />
-            </label>
-            <label class="ga-check-row" for="setup-chk-citiesknights">
-              <span>Cities &amp; Knights (commodities, knights, metropolises &amp; progress cards)</span>
-              <input type="checkbox" id="setup-chk-citiesknights" ${
-                room.config.enableCitiesAndKnights ||
-                Boolean(
-                  SCENARIO_CATALOG[room.config.scenarioId].enableCitiesAndKnights
-                )
-                  ? "checked"
-                  : ""
-              } ${
-                Boolean(
-                  SCENARIO_CATALOG[room.config.scenarioId].enableCitiesAndKnights
-                )
-                  ? "disabled"
-                  : ""
-              } />
-            </label>
-            <label class="ga-check-row" for="setup-chk-harbormaster">
-              <span>Harbormaster (+2 VP at 3 harbor points)</span>
-              <input type="checkbox" id="setup-chk-harbormaster" ${
-                room.config.enableHarbormaster ? "checked" : ""
-              } />
-            </label>
-            <label class="ga-check-row" for="setup-chk-citywalls">
-              <span>City walls (+2 safe hand limit on 7)</span>
-              <input type="checkbox" id="setup-chk-citywalls" ${
-                room.config.enableCityWalls ||
-                room.config.enableCitiesAndKnights ||
-                Boolean(
-                  SCENARIO_CATALOG[room.config.scenarioId].enableCitiesAndKnights
-                )
-                  ? "checked"
-                  : ""
-              } ${
-                room.config.enableCitiesAndKnights ||
-                Boolean(
-                  SCENARIO_CATALOG[room.config.scenarioId].enableCitiesAndKnights
-                )
-                  ? "disabled"
-                  : ""
-              } />
-            </label>
-            <label class="ga-check-row" for="setup-chk-friendlyrobber">
-              <span>Friendly robber (protects players at 2 VP or below)</span>
-              <input type="checkbox" id="setup-chk-friendlyrobber" ${
-                room.config.enableFriendlyRobber ? "checked" : ""
-              } />
-            </label>
-          `
-              : ""
-          }
+          <label class="ga-check-row" for="setup-chk-harbormaster">
+            <span>Harbormaster (+2 VP at 3 harbor points)</span>
+            <input type="checkbox" id="setup-chk-harbormaster" ${
+              room.config.enableHarbormaster ? "checked" : ""
+            } />
+          </label>
+          <label class="ga-check-row" for="setup-chk-citywalls">
+            <span>City walls (+2 safe hand limit on 7)</span>
+            <input type="checkbox" id="setup-chk-citywalls" ${
+              room.config.enableCityWalls || ckChecked ? "checked" : ""
+            } ${ckChecked ? "disabled" : ""} />
+          </label>
+          <label class="ga-check-row" for="setup-chk-friendlyrobber">
+            <span>Friendly robber (protects players at 2 VP or below)</span>
+            <input type="checkbox" id="setup-chk-friendlyrobber" ${
+              room.config.enableFriendlyRobber ? "checked" : ""
+            } />
+          </label>
         </div>
+        `;
+              })()
+            : ""
+        }
       </div>
     `;
 
@@ -7889,40 +7866,19 @@ export function createMultiGamePlatformApp(
       root
         .querySelector("#setup-sel-scenario")
         ?.addEventListener("change", (e) => {
-          const nextScenario = (e.target as HTMLSelectElement)
-            .value as ScenarioId;
-          model = updateRoomInModelPure(model, room.roomId, (r) => {
-            const prevIsCkPreset = Boolean(
-              SCENARIO_CATALOG[r.config.scenarioId].enableCitiesAndKnights
-            );
-            const nextIsCkPreset = Boolean(
-              SCENARIO_CATALOG[nextScenario].enableCitiesAndKnights
-            );
-            const nextCk = nextIsCkPreset
-              ? true
-              : prevIsCkPreset
-                ? false
-                : r.config.enableCitiesAndKnights;
-            const next56 = isExpanded56Scenario(nextScenario);
-            const nextBots =
-              !next56 &&
-              isExpanded56Scenario(r.config.scenarioId) &&
-              !r.allBots &&
-              r.humanPlayers.length + r.botCount > 4
-                ? Math.max(0, 4 - r.humanPlayers.length)
-                : r.botCount;
-            return rebuildRoomSeatsPure({
+          const nextScenario = toBaseMapScenarioId(
+            (e.target as HTMLSelectElement).value as ScenarioId
+          );
+          model = updateRoomInModelPure(model, room.roomId, (r) =>
+            rebuildRoomSeatsPure({
               ...r,
-              botCount: nextBots,
               config: {
                 ...r.config,
                 scenarioId: nextScenario,
-                enable56PlayerExtension: next56,
-                enableCitiesAndKnights: nextCk,
-                enableCityWalls: nextCk ? true : r.config.enableCityWalls,
+                enable56PlayerExtension: undefined,
               },
-            });
-          });
+            })
+          );
           const latest = model.rooms[room.roomId];
           if (latest) pushServerRoomSetup(latest);
           render();
@@ -7993,52 +7949,6 @@ export function createMultiGamePlatformApp(
         });
 
       root
-        .querySelector("#setup-chk-allbots")
-        ?.addEventListener("change", (e) => {
-          const checked = (e.target as HTMLInputElement).checked;
-          model = updateRoomInModelPure(model, room.roomId, (r) =>
-            rebuildRoomSeatsPure({
-              ...r,
-              allBots: checked,
-              botCount:
-                checked && r.botCount < bounds.minPlayers
-                  ? Math.min(bounds.maxPlayers, 4)
-                  : r.botCount,
-            })
-          );
-          const latest = model.rooms[room.roomId];
-          if (latest) pushServerRoomSetup(latest);
-          render();
-        });
-
-      root
-        .querySelector("#setup-chk-extension56")
-        ?.addEventListener("change", (e) => {
-          const checked = (e.target as HTMLInputElement).checked;
-          model = updateRoomInModelPure(model, room.roomId, (r) => {
-            const nextScenario = checked
-              ? toExpanded56ScenarioId(r.config.scenarioId)
-              : toStandard34ScenarioId(r.config.scenarioId);
-            const nextBots =
-              !checked && !r.allBots && r.humanPlayers.length + r.botCount > 4
-                ? Math.max(0, 4 - r.humanPlayers.length)
-                : r.botCount;
-            return rebuildRoomSeatsPure({
-              ...r,
-              botCount: nextBots,
-              config: {
-                ...r.config,
-                scenarioId: nextScenario,
-                enable56PlayerExtension: checked,
-              },
-            });
-          });
-          const latest = model.rooms[room.roomId];
-          if (latest) pushServerRoomSetup(latest);
-          render();
-        });
-
-      root
         .querySelector("#setup-chk-citiesknights")
         ?.addEventListener("change", (e) => {
           const checked = (e.target as HTMLInputElement).checked;
@@ -8046,13 +7956,8 @@ export function createMultiGamePlatformApp(
             ...r,
             config: {
               ...r.config,
-              scenarioId: !checked
-                ? r.config.scenarioId === "cities_and_knights"
-                  ? "standard"
-                  : r.config.scenarioId === "cities_and_knights_5_6"
-                    ? "big_island_5_6"
-                    : r.config.scenarioId
-                : r.config.scenarioId,
+              scenarioId: toBaseMapScenarioId(r.config.scenarioId),
+              enable56PlayerExtension: undefined,
               enableCitiesAndKnights: checked,
               enableCityWalls: checked ? true : r.config.enableCityWalls,
             },
