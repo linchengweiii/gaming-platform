@@ -32,71 +32,191 @@ export interface ScenarioDescriptor {
   maxPlayers: number;
   defaultTargetVp: number;
   enableSeafarers: boolean;
+  enableCitiesAndKnights?: boolean;
   enableSpecialBuildingPhase: boolean;
+  is56PlayerPreset?: boolean;
 }
 
 export const SCENARIO_CATALOG: Record<ScenarioId, ScenarioDescriptor> = {
   standard: {
     id: "standard",
     name: "Standard Catan (Base Game)",
-    subtitle: "3–4 Players • 19 Hexes • 10 VP",
+    subtitle: "3–6 Players • 19 / 30 Hexes • 10 VP",
     description:
-      "The classic island of Catan with 19 terrain hexes, 9 harbors, Longest Road, and Largest Army.",
+      "The classic island of Catan with 19 terrain hexes (auto-expands to the 30-hex Big Island for 5–6 players), harbors, Longest Road, and Largest Army.",
     minPlayers: 2,
-    maxPlayers: 4,
+    maxPlayers: 6,
     defaultTargetVp: 10,
     enableSeafarers: false,
+    enableCitiesAndKnights: false,
     enableSpecialBuildingPhase: false,
+    is56PlayerPreset: false,
   },
   big_island_5_6: {
     id: "big_island_5_6",
     name: "5–6 Player Extension (Big Island)",
-    subtitle: "3–6 Players • 30 Hexes • Special Building Phase",
+    subtitle: "5–6 Players • 30 Hexes • Special Building Phase",
     description:
       "Expanded 30-hex island with 11 harbors, larger resource bank & dev deck, and between-turn Special Building Phase.",
     minPlayers: 2,
     maxPlayers: 6,
     defaultTargetVp: 10,
     enableSeafarers: false,
+    enableCitiesAndKnights: false,
     enableSpecialBuildingPhase: true,
+    is56PlayerPreset: true,
+  },
+  cities_and_knights: {
+    id: "cities_and_knights",
+    name: "Cities & Knights",
+    subtitle: "3–6 Players • Knights & Barbarians • Metropolises • 13 VP",
+    description:
+      "Defend Catan from the Barbarian fleet! Collect Paper, Cloth, and Coin to upgrade Trade, Politics, and Science toward 3 Metropolises, muster Knights, and play Progress Cards.",
+    minPlayers: 2,
+    maxPlayers: 6,
+    defaultTargetVp: 13,
+    enableSeafarers: false,
+    enableCitiesAndKnights: true,
+    enableSpecialBuildingPhase: false,
+    is56PlayerPreset: false,
+  },
+  cities_and_knights_5_6: {
+    id: "cities_and_knights_5_6",
+    name: "Cities & Knights (5–6 Player Extension)",
+    subtitle: "5–6 Players • 30 Hexes • Knights, Metropolises & Special Building • 13 VP",
+    description:
+      "Expanded 30-hex Cities & Knights island for up to 6 players with 18 per commodity, larger resource bank, Barbarian fleet, 3 Metropolises, and between-turn Special Building Phase.",
+    minPlayers: 2,
+    maxPlayers: 6,
+    defaultTargetVp: 13,
+    enableSeafarers: false,
+    enableCitiesAndKnights: true,
+    enableSpecialBuildingPhase: true,
+    is56PlayerPreset: true,
   },
   seafarers_new_shores: {
     id: "seafarers_new_shores",
     name: "Seafarers: Heading for New Shores",
-    subtitle: "3–4 Players • Ships & Pirate • Gold Islands • 12 VP",
+    subtitle: "3–6 Players • Ships & Pirate • Gold Islands • 12 VP",
     description:
       "Start on the main island, build ships across the sea to colonize gold-rich offshore islands, and earn +2 Bonus VP per new island settled!",
     minPlayers: 2,
-    maxPlayers: 4,
+    maxPlayers: 6,
     defaultTargetVp: 12,
     enableSeafarers: true,
+    enableCitiesAndKnights: false,
     enableSpecialBuildingPhase: false,
+    is56PlayerPreset: false,
+  },
+  seafarers_new_shores_5_6: {
+    id: "seafarers_new_shores_5_6",
+    name: "Seafarers: Heading for New Shores (5–6P)",
+    subtitle: "5–6 Players • 51-Hex Marine Map • 3 Gold Islands • 12 VP",
+    description:
+      "Expanded 51-hex marine map! Start on the 20-hex home island, sail across open sea channels to colonize 3 gold-rich offshore islands (+2 Bonus VP each), with Special Building Phase.",
+    minPlayers: 2,
+    maxPlayers: 6,
+    defaultTargetVp: 12,
+    enableSeafarers: true,
+    enableCitiesAndKnights: false,
+    enableSpecialBuildingPhase: true,
+    is56PlayerPreset: true,
   },
   seafarers_four_islands: {
     id: "seafarers_four_islands",
     name: "Seafarers: The Four Islands",
-    subtitle: "3–4 Players • Archipelago • Ships & Pirate • 12 VP",
+    subtitle: "3–6 Players • Archipelago • Ships & Pirate • 12 VP",
     description:
-      "Four fertile islands separated by sea channels. Start on up to two home islands and sail to settle foreign islands for +2 Bonus VP each.",
+      "Fertile islands separated by sea channels (expands to Six Islands for 5–6 players). Start on up to two home islands and sail to settle foreign islands for +2 Bonus VP each.",
     minPlayers: 2,
-    maxPlayers: 4,
+    maxPlayers: 6,
     defaultTargetVp: 12,
     enableSeafarers: true,
+    enableCitiesAndKnights: false,
     enableSpecialBuildingPhase: false,
+    is56PlayerPreset: false,
+  },
+  seafarers_six_islands_5_6: {
+    id: "seafarers_six_islands_5_6",
+    name: "Seafarers: The Six Islands (5–6P)",
+    subtitle: "5–6 Players • 6-Island Archipelago • Ships & Pirate • 12 VP",
+    description:
+      "Official 5–6 player counterpart to Four Islands: six fertile 5-hex islands separated by sea channels across a 58-hex ocean. Settle foreign islands for +2 Bonus VP each!",
+    minPlayers: 2,
+    maxPlayers: 6,
+    defaultTargetVp: 12,
+    enableSeafarers: true,
+    enableCitiesAndKnights: false,
+    enableSpecialBuildingPhase: true,
+    is56PlayerPreset: true,
   },
   seafarers_fog_islands: {
     id: "seafarers_fog_islands",
     name: "Seafarers: The Fog Islands",
-    subtitle: "3–4 Players • Exploration • Mystery Fog Hexes • 12 VP",
+    subtitle: "3–6 Players • Exploration • Mystery Fog Hexes • 12 VP",
     description:
       "Sail into the uncharted central fog bank! Reaching a fog edge reveals hidden terrain, number tokens, and free discovery resources.",
     minPlayers: 2,
-    maxPlayers: 4,
+    maxPlayers: 6,
     defaultTargetVp: 12,
     enableSeafarers: true,
+    enableCitiesAndKnights: false,
     enableSpecialBuildingPhase: false,
+    is56PlayerPreset: false,
+  },
+  seafarers_fog_islands_5_6: {
+    id: "seafarers_fog_islands_5_6",
+    name: "Seafarers: The Fog Islands (5–6P)",
+    subtitle: "5–6 Players • Twin Home Islands • 11-Hex Fog Belt • 12 VP",
+    description:
+      "Expanded 58-hex archipelago with twin 11-hex East & West home islands separated by an uncharted 11-tile central fog belt hiding gold, resources, and discovery rewards.",
+    minPlayers: 2,
+    maxPlayers: 6,
+    defaultTargetVp: 12,
+    enableSeafarers: true,
+    enableCitiesAndKnights: false,
+    enableSpecialBuildingPhase: true,
+    is56PlayerPreset: true,
   },
 };
+
+export function isExpanded56Scenario(scenarioId: ScenarioId): boolean {
+  return Boolean(SCENARIO_CATALOG[scenarioId]?.is56PlayerPreset);
+}
+
+export function toExpanded56ScenarioId(scenarioId: ScenarioId): ScenarioId {
+  switch (scenarioId) {
+    case "standard":
+      return "big_island_5_6";
+    case "cities_and_knights":
+      return "cities_and_knights_5_6";
+    case "seafarers_new_shores":
+      return "seafarers_new_shores_5_6";
+    case "seafarers_four_islands":
+      return "seafarers_six_islands_5_6";
+    case "seafarers_fog_islands":
+      return "seafarers_fog_islands_5_6";
+    default:
+      return scenarioId;
+  }
+}
+
+export function toStandard34ScenarioId(scenarioId: ScenarioId): ScenarioId {
+  switch (scenarioId) {
+    case "big_island_5_6":
+      return "standard";
+    case "cities_and_knights_5_6":
+      return "cities_and_knights";
+    case "seafarers_new_shores_5_6":
+      return "seafarers_new_shores";
+    case "seafarers_six_islands_5_6":
+      return "seafarers_four_islands";
+    case "seafarers_fog_islands_5_6":
+      return "seafarers_fog_islands";
+    default:
+      return scenarioId;
+  }
+}
 
 const STANDARD_TERRAINS: readonly TerrainType[] = [
   "forest",
@@ -934,22 +1054,574 @@ function generateSeafarersFogIslandsBoardPure(
   ];
 }
 
+function buildElongatedMarineCoords(maxQ: number): AxialCoord[] {
+  const rows = [-3, -2, -1, 0, 1, 2, 3] as const;
+  return rows.flatMap((r) => {
+    const minQ = Math.max(-3, -3 - r);
+    const upperQ = Math.min(maxQ, maxQ - r);
+    return Array.from({ length: Math.max(0, upperQ - minQ + 1) }, (_, idx) => ({
+      q: minQ + idx,
+      r,
+    }));
+  });
+}
+
+function generateSeafarersNewShores56BoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
+  const coords = buildElongatedMarineCoords(5);
+  const topology = buildHexBoardTopology(coords);
+
+  const mainIslandSet: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(-1, -2),
+    hexId(0, -2),
+    hexId(1, -2),
+    hexId(-2, -1),
+    hexId(-1, -1),
+    hexId(0, -1),
+    hexId(1, -1),
+    hexId(-3, 0),
+    hexId(-2, 0),
+    hexId(-1, 0),
+    hexId(0, 0),
+    hexId(1, 0),
+    hexId(-3, 1),
+    hexId(-2, 1),
+    hexId(-1, 1),
+    hexId(0, 1),
+    hexId(-3, 2),
+    hexId(-2, 2),
+    hexId(-1, 2),
+    hexId(0, 2),
+  ]);
+  const island2Set: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(3, -3),
+    hexId(4, -3),
+    hexId(3, -2),
+  ]);
+  const island3Set: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(5, -2),
+    hexId(5, -1),
+    hexId(5, 0),
+    hexId(4, 0),
+  ]);
+  const island4Set: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(3, 2),
+    hexId(2, 3),
+    hexId(1, 3),
+  ]);
+
+  const [mainTerrains, rng1] = shufflePure<TerrainType>(rng0, [
+    "forest",
+    "forest",
+    "forest",
+    "forest",
+    "pasture",
+    "pasture",
+    "pasture",
+    "pasture",
+    "fields",
+    "fields",
+    "fields",
+    "fields",
+    "hills",
+    "hills",
+    "hills",
+    "mountains",
+    "mountains",
+    "mountains",
+    "desert",
+    "desert",
+  ]);
+  const mainNumbers = STANDARD_NUMBERS;
+
+  const [foreignTerrains, rng2] = shufflePure<TerrainType>(rng1, [
+    "gold",
+    "gold",
+    "gold",
+    "mountains",
+    "mountains",
+    "hills",
+    "hills",
+    "fields",
+    "pasture",
+    "forest",
+  ]);
+  const [foreignNumbers, rng3] = shufflePure(rng2, [
+    4, 5, 6, 8, 9, 9, 10, 10, 11, 12,
+  ]);
+
+  const laidOut = coords.reduce<{
+    hexes: Record<HexId, HexTile>;
+    mainProductiveIds: HexId[];
+    mainIdx: number;
+    foreignIdx: number;
+    robberHexId: HexId;
+  }>(
+    (acc, { q, r }) => {
+      const id = hexId(q, r);
+      if (mainIslandSet.has(id)) {
+        const terrain = mainTerrains[acc.mainIdx]!;
+        const tile: HexTile = {
+          id,
+          q,
+          r,
+          terrain,
+          numberToken: null,
+          islandId: 1,
+          allowSetupSettlement: true,
+        };
+        return {
+          hexes: { ...acc.hexes, [id]: tile },
+          mainProductiveIds:
+            terrain === "desert"
+              ? acc.mainProductiveIds
+              : [...acc.mainProductiveIds, id],
+          mainIdx: acc.mainIdx + 1,
+          foreignIdx: acc.foreignIdx,
+          robberHexId: terrain === "desert" ? id : acc.robberHexId,
+        };
+      }
+      if (island2Set.has(id) || island3Set.has(id) || island4Set.has(id)) {
+        const islandId = island2Set.has(id) ? 2 : island3Set.has(id) ? 3 : 4;
+        const tile: HexTile = {
+          id,
+          q,
+          r,
+          terrain: foreignTerrains[acc.foreignIdx]!,
+          numberToken: foreignNumbers[acc.foreignIdx]!,
+          islandId,
+          allowSetupSettlement: false,
+        };
+        return {
+          ...acc,
+          hexes: { ...acc.hexes, [id]: tile },
+          foreignIdx: acc.foreignIdx + 1,
+        };
+      }
+      const seaTile: HexTile = {
+        id,
+        q,
+        r,
+        terrain: "sea",
+        numberToken: null,
+        islandId: 0,
+        allowSetupSettlement: false,
+      };
+      return {
+        ...acc,
+        hexes: { ...acc.hexes, [id]: seaTile },
+      };
+    },
+    {
+      hexes: {},
+      mainProductiveIds: [],
+      mainIdx: 0,
+      foreignIdx: 0,
+      robberHexId: hexId(-1, 0),
+    }
+  );
+
+  const [hexes, rng4] = assignBalancedNumbersPure(
+    laidOut.hexes,
+    laidOut.mainProductiveIds,
+    mainNumbers,
+    rng3,
+    config.balancedNumbers
+  );
+  const [harbors, rng5] = placeCoastalHarborsPure(
+    topology,
+    hexes,
+    BIG_ISLAND_HARBORS,
+    rng4
+  );
+
+  return [
+    {
+      topology,
+      hexes,
+      harbors,
+      robberHexId: laidOut.robberHexId,
+      pirateHexId: hexId(2, 0),
+      fogPool: [],
+    },
+    rng5,
+  ];
+}
+
+function generateSeafarersSixIslands56BoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
+  const coords = buildElongatedMarineCoords(6);
+  const topology = buildHexBoardTopology(coords);
+
+  const island1Coords = [
+    hexId(-1, -2),
+    hexId(0, -2),
+    hexId(0, -3),
+    hexId(-2, -1),
+    hexId(-1, -1),
+  ] as const;
+  const island2Coords = [
+    hexId(2, -3),
+    hexId(3, -3),
+    hexId(4, -3),
+    hexId(2, -2),
+    hexId(3, -2),
+  ] as const;
+  const island3Coords = [
+    hexId(6, -3),
+    hexId(5, -2),
+    hexId(6, -2),
+    hexId(5, -1),
+    hexId(6, -1),
+  ] as const;
+  const island4Coords = [
+    hexId(-3, 1),
+    hexId(-2, 1),
+    hexId(-3, 2),
+    hexId(-2, 2),
+    hexId(-3, 3),
+  ] as const;
+  const island5Coords = [
+    hexId(0, 2),
+    hexId(1, 2),
+    hexId(0, 3),
+    hexId(1, 3),
+    hexId(1, 1),
+  ] as const;
+  const island6Coords = [
+    hexId(4, 1),
+    hexId(5, 1),
+    hexId(3, 2),
+    hexId(4, 2),
+    hexId(3, 3),
+  ] as const;
+
+  const islandMap: ReadonlyMap<HexId, number> = new Map<HexId, number>([
+    ...island1Coords.map((id) => [id, 1] as const),
+    ...island2Coords.map((id) => [id, 2] as const),
+    ...island3Coords.map((id) => [id, 3] as const),
+    ...island4Coords.map((id) => [id, 4] as const),
+    ...island5Coords.map((id) => [id, 5] as const),
+    ...island6Coords.map((id) => [id, 6] as const),
+  ]);
+
+  const [landTerrains, rng1] = shufflePure<TerrainType>(rng0, [
+    "forest",
+    "forest",
+    "forest",
+    "forest",
+    "forest",
+    "forest",
+    "pasture",
+    "pasture",
+    "pasture",
+    "pasture",
+    "pasture",
+    "pasture",
+    "fields",
+    "fields",
+    "fields",
+    "fields",
+    "fields",
+    "fields",
+    "hills",
+    "hills",
+    "hills",
+    "hills",
+    "hills",
+    "hills",
+    "mountains",
+    "mountains",
+    "mountains",
+    "mountains",
+    "mountains",
+    "mountains",
+  ]);
+  const landNumbers = [
+    ...BIG_ISLAND_NUMBERS,
+    4,
+    9,
+  ] as const;
+
+  const laidOut = coords.reduce<{
+    hexes: Record<HexId, HexTile>;
+    productiveIds: HexId[];
+    landIdx: number;
+  }>(
+    (acc, { q, r }) => {
+      const id = hexId(q, r);
+      const islandId = islandMap.get(id) ?? 0;
+      if (islandId > 0) {
+        const tile: HexTile = {
+          id,
+          q,
+          r,
+          terrain: landTerrains[acc.landIdx]!,
+          numberToken: null,
+          islandId,
+          allowSetupSettlement: true,
+        };
+        return {
+          hexes: { ...acc.hexes, [id]: tile },
+          productiveIds: [...acc.productiveIds, id],
+          landIdx: acc.landIdx + 1,
+        };
+      }
+      const seaTile: HexTile = {
+        id,
+        q,
+        r,
+        terrain: "sea",
+        numberToken: null,
+        islandId: 0,
+        allowSetupSettlement: false,
+      };
+      return {
+        ...acc,
+        hexes: { ...acc.hexes, [id]: seaTile },
+      };
+    },
+    { hexes: {}, productiveIds: [], landIdx: 0 }
+  );
+
+  const [hexes, rng2] = assignBalancedNumbersPure(
+    laidOut.hexes,
+    laidOut.productiveIds,
+    landNumbers,
+    rng1,
+    config.balancedNumbers
+  );
+  const [harbors, rng3] = placeCoastalHarborsPure(
+    topology,
+    hexes,
+    [...BIG_ISLAND_HARBORS, "generic"],
+    rng2
+  );
+
+  return [
+    {
+      topology,
+      hexes,
+      harbors,
+      robberHexId: island1Coords[0],
+      pirateHexId: hexId(1, -1),
+      fogPool: [],
+    },
+    rng3,
+  ];
+}
+
+function generateSeafarersFogIslands56BoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
+  const coords = buildElongatedMarineCoords(6);
+  const topology = buildHexBoardTopology(coords);
+
+  const westIsland: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(-2, -1),
+    hexId(-3, 0),
+    hexId(-2, 0),
+    hexId(-3, 1),
+    hexId(-2, 1),
+    hexId(-1, 1),
+    hexId(-3, 2),
+    hexId(-2, 2),
+    hexId(-1, 2),
+    hexId(-3, 3),
+    hexId(-2, 3),
+  ]);
+  const eastIsland: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(5, -3),
+    hexId(6, -3),
+    hexId(4, -2),
+    hexId(5, -2),
+    hexId(6, -2),
+    hexId(4, -1),
+    hexId(5, -1),
+    hexId(6, -1),
+    hexId(5, 0),
+    hexId(6, 0),
+    hexId(5, 1),
+  ]);
+  const fogBelt: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(1, -2),
+    hexId(2, -2),
+    hexId(0, -1),
+    hexId(1, -1),
+    hexId(2, -1),
+    hexId(1, 0),
+    hexId(2, 0),
+    hexId(1, 1),
+    hexId(2, 1),
+    hexId(1, 2),
+    hexId(2, 2),
+  ]);
+
+  const [startTerrains, rng1] = shufflePure<TerrainType>(rng0, [
+    "forest",
+    "forest",
+    "forest",
+    "forest",
+    "pasture",
+    "pasture",
+    "pasture",
+    "pasture",
+    "fields",
+    "fields",
+    "fields",
+    "fields",
+    "hills",
+    "hills",
+    "hills",
+    "hills",
+    "mountains",
+    "mountains",
+    "mountains",
+    "mountains",
+    "desert",
+    "desert",
+  ]);
+  const startNumbers = [
+    ...STANDARD_NUMBERS,
+    5,
+    9,
+  ] as const;
+
+  const laidOut = coords.reduce<{
+    hexes: Record<HexId, HexTile>;
+    productiveIds: HexId[];
+    idx: number;
+    robberHexId: HexId;
+  }>(
+    (acc, { q, r }) => {
+      const id = hexId(q, r);
+      if (westIsland.has(id) || eastIsland.has(id)) {
+        const terrain = startTerrains[acc.idx]!;
+        const tile: HexTile = {
+          id,
+          q,
+          r,
+          terrain,
+          numberToken: null,
+          islandId: westIsland.has(id) ? 1 : 2,
+          allowSetupSettlement: true,
+        };
+        return {
+          hexes: { ...acc.hexes, [id]: tile },
+          productiveIds:
+            terrain === "desert"
+              ? acc.productiveIds
+              : [...acc.productiveIds, id],
+          idx: acc.idx + 1,
+          robberHexId: terrain === "desert" ? id : acc.robberHexId,
+        };
+      }
+      if (fogBelt.has(id)) {
+        const fogTile: HexTile = {
+          id,
+          q,
+          r,
+          terrain: "fog",
+          numberToken: null,
+          islandId: 3,
+          allowSetupSettlement: false,
+        };
+        return { ...acc, hexes: { ...acc.hexes, [id]: fogTile } };
+      }
+      const seaTile: HexTile = {
+        id,
+        q,
+        r,
+        terrain: "sea",
+        numberToken: null,
+        islandId: 0,
+        allowSetupSettlement: false,
+      };
+      return { ...acc, hexes: { ...acc.hexes, [id]: seaTile } };
+    },
+    { hexes: {}, productiveIds: [], idx: 0, robberHexId: hexId(-2, 1) }
+  );
+
+  const [hexes, rng2] = assignBalancedNumbersPure(
+    laidOut.hexes,
+    laidOut.productiveIds,
+    startNumbers,
+    rng1,
+    config.balancedNumbers
+  );
+
+  const [fogPool, rng3] = shufflePure<FogRevealTile>(rng2, [
+    { terrain: "gold", numberToken: 6 },
+    { terrain: "gold", numberToken: 8 },
+    { terrain: "gold", numberToken: 5 },
+    { terrain: "mountains", numberToken: 5 },
+    { terrain: "mountains", numberToken: 9 },
+    { terrain: "fields", numberToken: 9 },
+    { terrain: "fields", numberToken: 4 },
+    { terrain: "forest", numberToken: 4 },
+    { terrain: "forest", numberToken: 10 },
+    { terrain: "hills", numberToken: 10 },
+    { terrain: "pasture", numberToken: 11 },
+  ]);
+
+  const [harbors, rng4] = placeCoastalHarborsPure(
+    topology,
+    hexes,
+    BIG_ISLAND_HARBORS,
+    rng3
+  );
+
+  return [
+    {
+      topology,
+      hexes,
+      harbors,
+      robberHexId: laidOut.robberHexId,
+      pirateHexId: hexId(0, -2),
+      fogPool,
+    },
+    rng4,
+  ];
+}
+
 export function generateCatanBoardPure(
   config: CatanConfig,
   rngState: RngState
 ): readonly [GeneratedBoard, RngState] {
+  const use56 = Boolean(config.enable56PlayerExtension);
   switch (config.scenarioId) {
     case "big_island_5_6":
+    case "cities_and_knights_5_6":
       return generateBigIslandBoardPure(config, rngState);
+    case "seafarers_new_shores_5_6":
+      return generateSeafarersNewShores56BoardPure(config, rngState);
+    case "seafarers_six_islands_5_6":
+      return generateSeafarersSixIslands56BoardPure(config, rngState);
+    case "seafarers_fog_islands_5_6":
+      return generateSeafarersFogIslands56BoardPure(config, rngState);
     case "seafarers_new_shores":
-      return generateSeafarersNewShoresBoardPure(config, rngState);
+      return use56
+        ? generateSeafarersNewShores56BoardPure(config, rngState)
+        : generateSeafarersNewShoresBoardPure(config, rngState);
     case "seafarers_four_islands":
-      return generateSeafarersFourIslandsBoardPure(config, rngState);
+      return use56
+        ? generateSeafarersSixIslands56BoardPure(config, rngState)
+        : generateSeafarersFourIslandsBoardPure(config, rngState);
     case "seafarers_fog_islands":
-      return generateSeafarersFogIslandsBoardPure(config, rngState);
+      return use56
+        ? generateSeafarersFogIslands56BoardPure(config, rngState)
+        : generateSeafarersFogIslandsBoardPure(config, rngState);
+    case "cities_and_knights":
     case "standard":
     default:
-      return generateStandardBoardPure(config, rngState);
+      return use56
+        ? generateBigIslandBoardPure(config, rngState)
+        : generateStandardBoardPure(config, rngState);
   }
 }
 

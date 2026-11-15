@@ -15,19 +15,66 @@ import {
   SCENARIO_CATALOG,
   createDevCardDeckPure,
   generateCatanBoardPure,
+  isExpanded56Scenario,
 } from "./board.ts";
 import {
+  PROGRESS_CARD_CATALOG,
+  addCommoditiesPure,
+  applyMainPhaseProgressCardPure,
+  canPlayerUpgradeDiscipline,
+  canPromoteKnightAtVertex,
+  consumePlayerProgressCardPure,
+  createProgressDecksPure,
+  displaceKnightAtVertexPure,
+  downgradePillagedCityPure,
+  drawProgressCardForPlayerPure,
+  emptyCityImprovements,
+  emptyCommodities,
+  emptyMetropolises,
+  emptyTradeGoodMap,
+  emptyTurnDiscounts,
+  getBankGoodCount,
+  getEffectiveCityCost,
+  getLegalActivateKnightVertices,
+  getLegalBuildKnightVertices,
+  getLegalChaseRobberActions,
+  getLegalMoveKnightActions,
+  getLegalProgressCardActions,
+  getLegalPromoteKnightVertices,
+  getPlayerGoodCount,
+  getPlayerGoodTradeRatios,
+  getPlayerVulnerableCities,
+  hasCommodities,
+  isCommodityType,
+  isResourceType,
+  resolveEventDieRollPure,
+  returnKnightToSupplyPure,
+  rollEventDiePure,
+  subtractCommoditiesPure,
+  takeKnightFromSupplyPure,
+  totalCommodityCount,
+} from "./cities-and-knights.ts";
+import {
   BUILDING_COSTS,
+  COMMODITIES,
   type CatanAction,
   type CatanConfig,
   type CatanPlayerState,
   type CatanState,
+  type CommodityMap,
+  type CommodityType,
   type DevCardInstance,
   type DevCardType,
+  IMPROVEMENT_DISCIPLINES,
+  type KnightLevel,
   RESOURCES,
   type ResourceMap,
   type ResourceType,
+  TERRAIN_TO_COMMODITY,
   TERRAIN_TO_RESOURCE,
+  TRADE_GOODS,
+  type TradeGoodMap,
+  type TradeGoodType,
 } from "./types.ts";
 
 export const PLAYER_COLORS = [
@@ -48,12 +95,17 @@ export function totalResourceCount(res: Partial<ResourceMap>): number {
 }
 
 export function getPlayerResourceCount(
-  player: Pick<CatanPlayerState, "resources" | "hiddenResourceCount">
+  player: Pick<CatanPlayerState, "resources" | "hiddenResourceCount"> & {
+    commodities?: Partial<CommodityMap>;
+  }
 ): number {
   if (typeof player.hiddenResourceCount === "number") {
     return player.hiddenResourceCount;
   }
-  return totalResourceCount(player.resources);
+  return (
+    totalResourceCount(player.resources) +
+    totalCommodityCount(player.commodities)
+  );
 }
 
 export function hasResources(hand: ResourceMap, cost: Partial<ResourceMap>): boolean {
@@ -132,6 +184,16 @@ function markFirstPlayableDevCardUsed(
   return devCards.map((c, idx) => (idx === targetIdx ? { ...c, played: true } : c));
 }
 
+export function isExpanded56State(
+  state: Pick<CatanState, "players" | "config">
+): boolean {
+  return (
+    state.players.length >= 5 ||
+    Boolean(state.config.enable56PlayerExtension) ||
+    isExpanded56Scenario(state.config.scenarioId)
+  );
+}
+
 export function resolveDefaultConfig(
   playerCount: number,
   partial?: Partial<CatanConfig>
@@ -140,20 +202,39 @@ export function resolveDefaultConfig(
     partial?.scenarioId ?? (playerCount >= 5 ? "big_island_5_6" : "standard");
   const descriptor = SCENARIO_CATALOG[defaultScenario] ?? SCENARIO_CATALOG.standard;
 
+  const enable56PlayerExtension = Boolean(
+    partial?.enable56PlayerExtension ??
+      (playerCount >= 5 || isExpanded56Scenario(defaultScenario))
+  );
+
+  const enableCitiesAndKnights = Boolean(
+    partial?.enableCitiesAndKnights ?? descriptor.enableCitiesAndKnights ?? false
+  );
+  const ckTargetBonus =
+    enableCitiesAndKnights && !descriptor.enableCitiesAndKnights
+      ? descriptor.enableSeafarers
+        ? 2
+        : 3
+      : 0;
+
   const targetVp =
     partial?.targetVictoryPoints ??
-    descriptor.defaultTargetVp + (partial?.enableHarbormaster ? 1 : 0);
+    descriptor.defaultTargetVp +
+      ckTargetBonus +
+      (partial?.enableHarbormaster ? 1 : 0);
 
   return {
     scenarioId: defaultScenario,
     targetVictoryPoints: targetVp,
     balancedNumbers: partial?.balancedNumbers ?? true,
+    enable56PlayerExtension,
     enableSpecialBuildingPhase:
       partial?.enableSpecialBuildingPhase ??
-      (playerCount >= 5 || descriptor.enableSpecialBuildingPhase),
+      (enable56PlayerExtension || descriptor.enableSpecialBuildingPhase),
     enableSeafarers: partial?.enableSeafarers ?? descriptor.enableSeafarers,
+    enableCitiesAndKnights,
     enableHarbormaster: partial?.enableHarbormaster ?? false,
-    enableCityWalls: partial?.enableCityWalls ?? false,
+    enableCityWalls: partial?.enableCityWalls ?? enableCitiesAndKnights,
     enableFriendlyRobber: partial?.enableFriendlyRobber ?? false,
     startingPlayerIndex: partial?.startingPlayerIndex,
     randomizeStartingPlayer: partial?.randomizeStartingPlayer,
@@ -177,8 +258,28 @@ export function computePlayerVictoryPoints(
     (sum, b) => (b.ownerId === playerId ? sum + (b.type === "city" ? 2 : 1) : sum),
     0
   );
+  const metropolisVp = state.config.enableCitiesAndKnights
+    ? IMPROVEMENT_DISCIPLINES.reduce<number>(
+        (sum, d) =>
+          state.metropolises[d].ownerId === playerId ? sum + 2 : sum,
+        0
+      )
+    : 0;
+  const defenderVp = state.config.enableCitiesAndKnights
+    ? player.defenderPoints
+    : 0;
+  const merchantVp =
+    state.config.enableCitiesAndKnights && state.merchantOwnerId === playerId
+      ? 1
+      : 0;
+  const publicProgressVp = state.config.enableCitiesAndKnights
+    ? player.publicProgressVpCards.length
+    : 0;
   const longestRoadVp = state.longestRoadOwnerId === playerId ? 2 : 0;
-  const largestArmyVp = state.largestArmyOwnerId === playerId ? 2 : 0;
+  const largestArmyVp =
+    !state.config.enableCitiesAndKnights && state.largestArmyOwnerId === playerId
+      ? 2
+      : 0;
   const harbormasterVp =
     state.config.enableHarbormaster && state.harbormasterOwnerId === playerId ? 2 : 0;
   const hiddenCardVp = visibleOnly
@@ -191,6 +292,10 @@ export function computePlayerVictoryPoints(
   return (
     player.bonusVictoryPoints +
     buildingVp +
+    metropolisVp +
+    defenderVp +
+    merchantVp +
+    publicProgressVp +
     longestRoadVp +
     largestArmyVp +
     harbormasterVp +
@@ -199,34 +304,21 @@ export function computePlayerVictoryPoints(
 }
 
 /**
- * Computes each resource's maritime trade ratio (4, 3, or 2) for `playerId` based on harbors.
+ * Computes each resource's maritime trade ratio (4, 3, or 2) for `playerId` based on harbors
+ * (and Merchant / Merchant Fleet in Cities & Knights).
  */
 export function getPlayerTradeRatios(
   state: CatanState,
   playerId: string
 ): Record<ResourceType, number> {
-  return state.harbors.reduce<Record<ResourceType, number>>(
-    (ratios, harbor) => {
-      const ownsHarbor = harbor.vertexIds.some(
-        (vId) => state.buildings[vId]?.ownerId === playerId
-      );
-      if (!ownsHarbor) return ratios;
-      if (harbor.type === "generic") {
-        return {
-          brick: Math.min(ratios.brick, 3),
-          lumber: Math.min(ratios.lumber, 3),
-          wool: Math.min(ratios.wool, 3),
-          grain: Math.min(ratios.grain, 3),
-          ore: Math.min(ratios.ore, 3),
-        };
-      }
-      return {
-        ...ratios,
-        [harbor.type]: 2,
-      };
-    },
-    { brick: 4, lumber: 4, wool: 4, grain: 4, ore: 4 }
-  );
+  const goodRatios = getPlayerGoodTradeRatios(state, playerId);
+  return {
+    brick: goodRatios.brick,
+    lumber: goodRatios.lumber,
+    wool: goodRatios.wool,
+    grain: goodRatios.grain,
+    ore: goodRatios.ore,
+  };
 }
 
 /**
@@ -256,11 +348,14 @@ export function recalculateAwardsPure(state: CatanState): CatanState {
       .filter(([, e]) => e.ownerId === player.id)
       .map(([eId]) => eId);
 
-    const blockedVertices = new Set<VertexId>(
-      Object.entries(state.buildings)
+    const blockedVertices = new Set<VertexId>([
+      ...Object.entries(state.buildings)
         .filter(([, b]) => b.ownerId !== player.id)
-        .map(([vId]) => vId)
-    );
+        .map(([vId]) => vId),
+      ...Object.entries(state.knights)
+        .filter(([, k]) => k.ownerId !== player.id)
+        .map(([vId]) => vId),
+    ]);
 
     const roadResult = computeLongestSimpleEdgePath(
       state.topology,
@@ -312,14 +407,16 @@ export function recalculateAwardsPure(state: CatanState): CatanState {
     return { ownerId: null as string | null, length: 0 };
   })();
 
-  // 2. Largest Army (>= 3 knights played)
-  const nextArmyAward = nextPlayers.reduce(
-    (acc, player) =>
-      player.knightsPlayed >= 3 && player.knightsPlayed > acc.size
-        ? { ownerId: player.id as string | null, size: player.knightsPlayed }
-        : acc,
-    { ownerId: state.largestArmyOwnerId, size: state.largestArmySize }
-  );
+  // 2. Largest Army (>= 3 knights played; disabled in Cities & Knights)
+  const nextArmyAward = state.config.enableCitiesAndKnights
+    ? { ownerId: null as string | null, size: 0 }
+    : nextPlayers.reduce(
+        (acc, player) =>
+          player.knightsPlayed >= 3 && player.knightsPlayed > acc.size
+            ? { ownerId: player.id as string | null, size: player.knightsPlayed }
+            : acc,
+        { ownerId: state.largestArmyOwnerId, size: state.largestArmySize }
+      );
 
   // 3. Harbormaster (>= 3 harbor points)
   const nextHarborAward = state.config.enableHarbormaster
@@ -399,8 +496,16 @@ export function initCatanGame(
   const config = resolveDefaultConfig(playerDescriptors.length, partialConfig);
   const rng0 = createRngState(seed);
   const [board, rng1] = generateCatanBoardPure(config, rng0);
-  const isExpanded = playerDescriptors.length >= 5 || config.scenarioId === "big_island_5_6";
+  const isExpanded =
+    playerDescriptors.length >= 5 ||
+    Boolean(config.enable56PlayerExtension) ||
+    isExpanded56Scenario(config.scenarioId);
   const bankPerResource = isExpanded ? 24 : 19;
+  const bankPerCommodity = config.enableCitiesAndKnights
+    ? isExpanded
+      ? 18
+      : 12
+    : 0;
 
   const players: CatanPlayerState[] = playerDescriptors.map((p, idx) => ({
     id: p.id,
@@ -409,7 +514,16 @@ export function initCatanGame(
     isBot: Boolean(p.isBot),
     botDifficulty: p.botDifficulty ?? "smart",
     resources: emptyResources(),
+    commodities: emptyCommodities(),
     devCards: [],
+    progressCards: [],
+    publicProgressVpCards: [],
+    cityImprovements: emptyCityImprovements(),
+    defenderPoints: 0,
+    basicKnightsRemaining: config.enableCitiesAndKnights ? 2 : 0,
+    strongKnightsRemaining: config.enableCitiesAndKnights ? 2 : 0,
+    mightyKnightsRemaining: config.enableCitiesAndKnights ? 2 : 0,
+    activeTurnDiscounts: emptyTurnDiscounts(),
     knightsPlayed: 0,
     roadsRemaining: 15,
     shipsRemaining: config.enableSeafarers ? 15 : 0,
@@ -439,13 +553,24 @@ export function initCatanGame(
         ? nextIntPure(rng2, 0, players.length - 1)
         : [0, rng2];
 
+  const [progressDecks, rng4] = config.enableCitiesAndKnights
+    ? createProgressDecksPure(rng3)
+    : [{ trade: [], politics: [], science: [] }, rng3];
+
+  const scenarioTitle =
+    config.enableCitiesAndKnights &&
+    !SCENARIO_CATALOG[config.scenarioId].enableCitiesAndKnights
+      ? `${SCENARIO_CATALOG[config.scenarioId].name} + Cities & Knights`
+      : SCENARIO_CATALOG[config.scenarioId].name;
+
   return {
     gameId: "catan",
     config,
-    rngState: rng3,
+    rngState: rng4,
     turn: 1,
     phase: "SETUP_SETTLEMENT_1",
     phaseAfterRobber: "MAIN_PHASE",
+    phaseAfterDiscard: "MOVE_ROBBER_OR_PIRATE",
     startingPlayerIndex,
     activePlayerIndex: startingPlayerIndex,
     specialBuildPlayerIndex: null,
@@ -458,16 +583,33 @@ export function initCatanGame(
       grain: bankPerResource,
       ore: bankPerResource,
     },
-    devCardDeck,
+    commodityBank: {
+      paper: bankPerCommodity,
+      cloth: bankPerCommodity,
+      coin: bankPerCommodity,
+    },
+    devCardDeck: config.enableCitiesAndKnights ? [] : devCardDeck,
+    progressDecks,
     topology: board.topology,
     hexes: board.hexes,
     harbors: board.harbors,
     buildings: {},
     edges: {},
+    knights: {},
+    metropolises: emptyMetropolises(),
+    barbarianPosition: 0,
+    barbarianAttacksCount: 0,
+    lastBarbarianAttackResult: null,
+    merchantHexId: null,
+    merchantOwnerId: null,
     robberHexId: board.robberHexId,
     pirateHexId: board.pirateHexId,
     fogPool: board.fogPool,
     lastRoll: null,
+    pendingRollResolution: null,
+    pendingPillageSelections: [],
+    pendingDefenderDeckPicks: [],
+    pendingProgressDiscards: [],
     pendingDiscards: {},
     pendingGoldPicks: {},
     stealCandidates: [],
@@ -486,14 +628,14 @@ export function initCatanGame(
         timestamp: 0,
         turn: 1,
         type: "GAME_STARTED",
-        message: `Started ${SCENARIO_CATALOG[config.scenarioId].name} with ${players.length} players (${players[startingPlayerIndex]!.name} goes first · Target: ${config.targetVictoryPoints} VP).`,
+        message: `Started ${scenarioTitle} with ${players.length} players (${players[startingPlayerIndex]!.name} goes first · Target: ${config.targetVictoryPoints} VP).`,
       },
     ],
   };
 }
 
 /**
- * Returns all valid vertices where `playerId` can build a Settlement.
+ * Returns all valid vertices where `playerId` can build a Settlement (or 2nd-setup City in Cities & Knights).
  */
 export function getLegalSettlementVertices(
   state: CatanState,
@@ -501,10 +643,19 @@ export function getLegalSettlementVertices(
   isSetup: boolean
 ): VertexId[] {
   const player = state.players.find((p) => p.id === playerId);
-  if (!player || player.settlementsRemaining <= 0) return [];
+  if (!player) return [];
+  const placingSetupCity =
+    isSetup &&
+    state.config.enableCitiesAndKnights &&
+    state.phase === "SETUP_SETTLEMENT_2";
+  if (placingSetupCity) {
+    if (player.citiesRemaining <= 0) return [];
+  } else if (player.settlementsRemaining <= 0) {
+    return [];
+  }
 
   return state.topology.vertexOrder.filter((vId) => {
-    if (state.buildings[vId]) return false;
+    if (state.buildings[vId] || state.knights[vId]) return false;
     const vNode = state.topology.vertices[vId]!;
 
     // Distance rule: no adjacent vertex can have a building
@@ -563,6 +714,10 @@ export function getLegalRoadEdges(
       if (building) {
         return building.ownerId === playerId;
       }
+      const knight = state.knights[vId];
+      if (knight && knight.ownerId !== playerId) {
+        return false;
+      }
       const vNode = state.topology.vertices[vId]!;
       return vNode.incidentEdgeIds.some((incId) => {
         const route = state.edges[incId];
@@ -606,6 +761,10 @@ export function getLegalShipEdges(
       const building = state.buildings[vId];
       if (building) {
         return building.ownerId === playerId;
+      }
+      const knight = state.knights[vId];
+      if (knight && knight.ownerId !== playerId) {
+        return false;
       }
       const vNode = state.topology.vertices[vId]!;
       return vNode.incidentEdgeIds.some((incId) => {
@@ -717,46 +876,83 @@ export function getLegalPirateHexes(state: CatanState): HexId[] {
  * Generates deterministic discard options for a player who needs to discard `count` cards.
  * Also allows arbitrary valid combinations in `applyAction`.
  */
-function buildGreedyDiscardOption(
-  hand: ResourceMap,
-  orderedResources: readonly ResourceType[],
+function buildGreedyGoodDiscardOption(
+  player: Pick<CatanPlayerState, "resources" | "commodities">,
+  orderedGoods: readonly TradeGoodType[],
   discardCount: number
-): { option: Partial<ResourceMap>; remaining: number } {
-  return orderedResources.reduce<{ option: Partial<ResourceMap>; remaining: number }>(
-    (acc, r) => {
-      const take = Math.min(hand[r], acc.remaining);
+): {
+  resources: Partial<ResourceMap>;
+  commodities: Partial<CommodityMap>;
+  remaining: number;
+} {
+  return orderedGoods.reduce<{
+    resources: Partial<ResourceMap>;
+    commodities: Partial<CommodityMap>;
+    remaining: number;
+  }>(
+    (acc, g) => {
+      const held = isCommodityType(g)
+        ? player.commodities[g]
+        : player.resources[g];
+      const take = Math.min(held, acc.remaining);
       if (take <= 0) return acc;
+      if (isCommodityType(g)) {
+        return {
+          resources: acc.resources,
+          commodities: { ...acc.commodities, [g]: take },
+          remaining: acc.remaining - take,
+        };
+      }
       return {
-        option: { ...acc.option, [r]: take },
+        resources: { ...acc.resources, [g]: take },
+        commodities: acc.commodities,
         remaining: acc.remaining - take,
       };
     },
-    { option: {}, remaining: discardCount }
+    { resources: {}, commodities: {}, remaining: discardCount }
   );
 }
 
 function generateDiscardActions(
-  hand: ResourceMap,
-  discardCount: number
-): Array<{ type: "DISCARD_CARDS"; resources: Partial<ResourceMap> }> {
-  const byAbundance = [...RESOURCES].sort((a, b) => hand[b] - hand[a]);
-  const first = buildGreedyDiscardOption(hand, byAbundance, discardCount);
-  const lowPriority: readonly ResourceType[] = [
-    "wool",
-    "lumber",
-    "brick",
-    "grain",
-    "ore",
-  ];
-  const second = buildGreedyDiscardOption(hand, lowPriority, discardCount);
+  player: Pick<CatanPlayerState, "resources" | "commodities">,
+  discardCount: number,
+  includeCommodities: boolean
+): Array<{
+  type: "DISCARD_CARDS";
+  resources: Partial<ResourceMap>;
+  commodities?: Partial<CommodityMap>;
+}> {
+  const pool: readonly TradeGoodType[] = includeCommodities
+    ? TRADE_GOODS
+    : RESOURCES;
+  const byAbundance = [...pool].sort(
+    (a, b) => getPlayerGoodCount(player, b) - getPlayerGoodCount(player, a)
+  );
+  const first = buildGreedyGoodDiscardOption(player, byAbundance, discardCount);
+  const lowPriority: readonly TradeGoodType[] = includeCommodities
+    ? ["wool", "lumber", "brick", "grain", "ore", "cloth", "coin", "paper"]
+    : ["wool", "lumber", "brick", "grain", "ore"];
+  const second = buildGreedyGoodDiscardOption(player, lowPriority, discardCount);
+
+  const toAction = (opt: {
+    resources: Partial<ResourceMap>;
+    commodities: Partial<CommodityMap>;
+  }) => ({
+    type: "DISCARD_CARDS" as const,
+    resources: opt.resources,
+    ...(totalCommodityCount(opt.commodities) > 0
+      ? { commodities: opt.commodities }
+      : {}),
+  });
+
+  const firstAct = first.remaining === 0 ? toAction(first) : null;
+  const secondAct = second.remaining === 0 ? toAction(second) : null;
 
   return [
-    ...(first.remaining === 0
-      ? [{ type: "DISCARD_CARDS" as const, resources: first.option }]
-      : []),
-    ...(second.remaining === 0 &&
-    JSON.stringify(second.option) !== JSON.stringify(first.option)
-      ? [{ type: "DISCARD_CARDS" as const, resources: second.option }]
+    ...(firstAct ? [firstAct] : []),
+    ...(secondAct &&
+    JSON.stringify(secondAct) !== JSON.stringify(firstAct)
+      ? [secondAct]
       : []),
   ];
 }
@@ -766,6 +962,7 @@ function canPlayDevCard(
   player: CatanPlayerState,
   type: DevCardType
 ): boolean {
+  if (state.config.enableCitiesAndKnights) return false;
   if (player.hasPlayedDevCardThisTurn) return false;
   return player.devCards.some(
     (c) => !c.played && c.type === type && c.boughtOnTurn < state.turn
@@ -785,8 +982,14 @@ function getBuildActionsPure(
         }))
       : [];
 
+  const cityCost = getEffectiveCityCost(player);
+  const hasBorrowedCitySettlement = Object.values(state.buildings).some(
+    (b) =>
+      b.ownerId === player.id && b.type === "settlement" && b.borrowedCityPiece
+  );
   const cityActions: CatanAction[] =
-    player.citiesRemaining > 0 && hasResources(player.resources, BUILDING_COSTS.city)
+    (player.citiesRemaining > 0 || hasBorrowedCitySettlement) &&
+    hasResources(player.resources, cityCost)
       ? Object.entries(state.buildings)
           .filter(([, b]) => b.ownerId === player.id && b.type === "settlement")
           .map(([vertexId]) => ({ type: "BUILD_CITY", vertexId }))
@@ -804,6 +1007,7 @@ function getBuildActionsPure(
       : [];
 
   const devCardActions: CatanAction[] =
+    !state.config.enableCitiesAndKnights &&
     state.devCardDeck.length > 0 &&
     hasResources(player.resources, BUILDING_COSTS.devCard)
       ? [{ type: "BUY_DEV_CARD" }]
@@ -827,6 +1031,66 @@ function getBuildActionsPure(
         }))
       : [];
 
+  const ckBuildActions: CatanAction[] = state.config.enableCitiesAndKnights
+    ? (() => {
+        const upgradeActions: CatanAction[] = IMPROVEMENT_DISCIPLINES.flatMap(
+          (discipline): CatanAction[] => {
+            const check = canPlayerUpgradeDiscipline(state, player, discipline);
+            if (!check.allowed) return [];
+            if (check.claimsMetropolis) {
+              return check.eligibleMetropolisVertices.map(
+                (metropolisVertexId) => ({
+                  type: "UPGRADE_CITY_IMPROVEMENT" as const,
+                  discipline,
+                  metropolisVertexId,
+                })
+              );
+            }
+            return [{ type: "UPGRADE_CITY_IMPROVEMENT" as const, discipline }];
+          }
+        );
+
+        const buildKnightActions: CatanAction[] = hasResources(
+          player.resources,
+          BUILDING_COSTS.knight
+        )
+          ? getLegalBuildKnightVertices(state, player.id).map((vertexId) => ({
+              type: "BUILD_KNIGHT" as const,
+              vertexId,
+            }))
+          : [];
+
+        const promoteKnightActions: CatanAction[] = hasResources(
+          player.resources,
+          BUILDING_COSTS.knight
+        )
+          ? getLegalPromoteKnightVertices(state, player.id, false).map(
+              (vertexId) => ({
+                type: "PROMOTE_KNIGHT" as const,
+                vertexId,
+              })
+            )
+          : [];
+
+        const activateKnightActions: CatanAction[] = hasResources(
+          player.resources,
+          BUILDING_COSTS.activateKnight
+        )
+          ? getLegalActivateKnightVertices(state, player.id).map((vertexId) => ({
+              type: "ACTIVATE_KNIGHT" as const,
+              vertexId,
+            }))
+          : [];
+
+        return [
+          ...upgradeActions,
+          ...buildKnightActions,
+          ...promoteKnightActions,
+          ...activateKnightActions,
+        ];
+      })()
+    : [];
+
   return [
     ...settlementActions,
     ...cityActions,
@@ -834,6 +1098,7 @@ function getBuildActionsPure(
     ...devCardActions,
     ...roadActions,
     ...shipActions,
+    ...ckBuildActions,
   ];
 }
 
@@ -845,12 +1110,45 @@ export function getCatanLegalActions(state: CatanState, playerId: string): Catan
 
   const activePlayer = state.players[state.activePlayerIndex]!;
 
-  // Multi-player asynchronous phases (Discard on 7, Gold Resource Selection, Domestic Trade response)
+  // Multi-player asynchronous phases
+  if (state.phase === "BARBARIAN_PILLAGE_SELECTION") {
+    if (state.pendingPillageSelections[0] !== playerId) return [];
+    return getPlayerVulnerableCities(state, playerId).map((vertexId) => ({
+      type: "SELECT_PILLAGED_CITY",
+      vertexId,
+    }));
+  }
+
+  if (state.phase === "PROGRESS_CARD_SELECTION") {
+    if (state.pendingDefenderDeckPicks.length > 0) {
+      if (state.pendingDefenderDeckPicks[0] !== playerId) return [];
+      const avail = IMPROVEMENT_DISCIPLINES.filter(
+        (d) => state.progressDecks[d].length > 0
+      );
+      const list = avail.length > 0 ? avail : IMPROVEMENT_DISCIPLINES;
+      return list.map((discipline) => ({
+        type: "SELECT_PROGRESS_DECK",
+        discipline,
+      }));
+    }
+    if (state.pendingProgressDiscards[0] !== playerId) return [];
+    const player = state.players.find((p) => p.id === playerId);
+    if (!player) return [];
+    return player.progressCards.map((c) => ({
+      type: "DISCARD_PROGRESS_CARD",
+      cardId: c.id,
+    }));
+  }
+
   if (state.phase === "DISCARD_ON_SEVEN") {
     const needed = state.pendingDiscards[playerId] ?? 0;
     if (needed <= 0) return [];
     const player = state.players.find((p) => p.id === playerId)!;
-    return generateDiscardActions(player.resources, needed);
+    return generateDiscardActions(
+      player,
+      needed,
+      state.config.enableCitiesAndKnights
+    );
   }
 
   if (state.phase === "GOLD_RESOURCE_SELECTION") {
@@ -874,7 +1172,9 @@ export function getCatanLegalActions(state: CatanState, playerId: string): Catan
     ) {
       const responder = state.players.find((p) => p.id === playerId);
       if (!responder) return [];
-      const canAccept = hasResources(responder.resources, offer.want);
+      const canAccept =
+        hasResources(responder.resources, offer.want) &&
+        hasCommodities(responder.commodities, offer.wantCommodities);
       return canAccept
         ? [
             { type: "ACCEPT_DOMESTIC_TRADE", offerId: offer.id },
@@ -932,9 +1232,21 @@ export function getCatanLegalActions(state: CatanState, playerId: string): Catan
     }
 
     case "PRE_ROLL": {
-      return canPlayDevCard(state, activePlayer, "knight")
-        ? [{ type: "ROLL_DICE" }, { type: "PLAY_KNIGHT" }]
-        : [{ type: "ROLL_DICE" }];
+      const progressPreRoll = getLegalProgressCardActions(
+        state,
+        activePlayer,
+        computePlayerVictoryPoints,
+        (s, pid) => getLegalRoadEdges(s, pid, null),
+        (s, pid) => getLegalShipEdges(s, pid, null),
+        getLegalRobberHexes
+      );
+      return [
+        { type: "ROLL_DICE" as const },
+        ...(canPlayDevCard(state, activePlayer, "knight")
+          ? [{ type: "PLAY_KNIGHT" as const }]
+          : []),
+        ...progressPreRoll,
+      ];
     }
 
     case "MOVE_ROBBER_OR_PIRATE": {
@@ -968,16 +1280,23 @@ export function getCatanLegalActions(state: CatanState, playerId: string): Catan
     case "MAIN_PHASE": {
       if (state.activeTradeOffer) {
         const offer = state.activeTradeOffer;
-        const wantTotalCount = totalResourceCount(offer.want);
+        const wantTotalCount =
+          totalResourceCount(offer.want) +
+          totalCommodityCount(offer.wantCommodities);
         const confirmActions: CatanAction[] = (offer.acceptedBy ?? [])
           .filter((pid) => {
             const partner = state.players.find((p) => p.id === pid);
-            if (!partner || !hasResources(activePlayer.resources, offer.give)) {
+            if (
+              !partner ||
+              !hasResources(activePlayer.resources, offer.give) ||
+              !hasCommodities(activePlayer.commodities, offer.giveCommodities)
+            ) {
               return false;
             }
             return partner.handRedacted
               ? getPlayerResourceCount(partner) >= wantTotalCount
-              : hasResources(partner.resources, offer.want);
+              : hasResources(partner.resources, offer.want) &&
+                  hasCommodities(partner.commodities, offer.wantCommodities);
           })
           .map((partnerId) => ({
             type: "CONFIRM_DOMESTIC_TRADE",
@@ -989,6 +1308,21 @@ export function getCatanLegalActions(state: CatanState, playerId: string): Catan
 
       const buildActions = getBuildActionsPure(state, activePlayer);
       const moveShipActions = getLegalMoveShipActions(state, playerId);
+      const moveKnightActions = getLegalMoveKnightActions(state, playerId);
+      const chaseRobberActions = getLegalChaseRobberActions(
+        state,
+        playerId,
+        getLegalRobberHexes(state, playerId),
+        getLegalPirateHexes(state)
+      );
+      const progressCardActions = getLegalProgressCardActions(
+        state,
+        activePlayer,
+        computePlayerVictoryPoints,
+        (s, pid) => getLegalRoadEdges(s, pid, null),
+        (s, pid) => getLegalShipEdges(s, pid, null),
+        getLegalRobberHexes
+      );
 
       const knightActions: CatanAction[] = canPlayDevCard(state, activePlayer, "knight")
         ? [{ type: "PLAY_KNIGHT" }]
@@ -1029,23 +1363,33 @@ export function getCatanLegalActions(state: CatanState, playerId: string): Catan
         ? RESOURCES.map((resource) => ({ type: "PLAY_MONOPOLY", resource }))
         : [];
 
-      const ratios = getPlayerTradeRatios(state, playerId);
-      const maritimeActions: CatanAction[] = RESOURCES.flatMap((give) => {
-        const ratio = ratios[give];
-        if (activePlayer.resources[give] < ratio) return [];
-        return RESOURCES.filter(
-          (receive) => receive !== give && state.bank[receive] > 0
-        ).map((receive) => ({
-          type: "MARITIME_TRADE" as const,
-          give,
-          giveAmount: ratio,
-          receive,
-        }));
+      const allowedGoods: readonly TradeGoodType[] = state.config
+        .enableCitiesAndKnights
+        ? TRADE_GOODS
+        : RESOURCES;
+      const goodRatios = getPlayerGoodTradeRatios(state, playerId);
+      const maritimeActions: CatanAction[] = allowedGoods.flatMap((give) => {
+        const ratio = goodRatios[give];
+        if (getPlayerGoodCount(activePlayer, give) < ratio) return [];
+        return allowedGoods
+          .filter(
+            (receive) =>
+              receive !== give && getBankGoodCount(state, receive) > 0
+          )
+          .map((receive) => ({
+            type: "MARITIME_TRADE" as const,
+            give,
+            giveAmount: ratio,
+            receive,
+          }));
       });
 
       return [
         ...buildActions,
         ...moveShipActions,
+        ...moveKnightActions,
+        ...chaseRobberActions,
+        ...progressCardActions,
         ...knightActions,
         ...roadBuildingActions,
         ...yearOfPlentyActions,
@@ -1279,13 +1623,26 @@ function advanceToNextPlayerTurnPure(
     ...p,
     hasPlayedDevCardThisTurn: false,
     hasMovedShipThisTurn: false,
+    activeTurnDiscounts: emptyTurnDiscounts(),
   }));
+  const resetKnights = Object.fromEntries(
+    Object.entries(state.knights).map(([vId, k]) => [
+      vId,
+      {
+        ...k,
+        activatedThisTurn: false,
+        actedThisTurn: false,
+        promotedThisTurn: false,
+      },
+    ])
+  );
 
   const advancedState: CatanState = {
     ...state,
     activePlayerIndex: nextActivePlayerIndex,
     turn: nextTurn,
     players: resetPlayers,
+    knights: resetKnights,
   };
 
   if (nextTurn > advancedState.config.maxTurns) {
@@ -1328,7 +1685,7 @@ function advanceToNextPlayerTurnPure(
 }
 
 /**
- * Purely distributes resources on a non-7 dice roll, respecting the Catan bank shortage rule.
+ * Purely distributes resources (and Cities & Knights commodities + Aqueduct picks) on a non-7 roll.
  */
 function distributeRollResourcesPure(
   state: CatanState,
@@ -1337,6 +1694,7 @@ function distributeRollResourcesPure(
 ): StateWithEvents {
   const demands = state.topology.hexOrder.reduce<{
     owedByResource: Record<ResourceType, Record<string, number>>;
+    owedByCommodity: Record<CommodityType, Record<string, number>>;
     goldOwed: Record<string, number>;
   }>(
     (acc, hId) => {
@@ -1348,9 +1706,9 @@ function distributeRollResourcesPure(
       return hNode.cornerVertexIds.reduce((inner, vId) => {
         const b = state.buildings[vId];
         if (!b) return inner;
-        const amount = b.type === "city" ? 2 : 1;
 
         if (tile.terrain === "gold") {
+          const amount = b.type === "city" ? 2 : 1;
           return {
             ...inner,
             goldOwed: {
@@ -1362,6 +1720,33 @@ function distributeRollResourcesPure(
 
         const res = TERRAIN_TO_RESOURCE[tile.terrain];
         if (!res) return inner;
+
+        const comm = state.config.enableCitiesAndKnights
+          ? TERRAIN_TO_COMMODITY[tile.terrain]
+          : null;
+
+        if (b.type === "city" && comm) {
+          return {
+            ...inner,
+            owedByResource: {
+              ...inner.owedByResource,
+              [res]: {
+                ...inner.owedByResource[res],
+                [b.ownerId]: (inner.owedByResource[res][b.ownerId] ?? 0) + 1,
+              },
+            },
+            owedByCommodity: {
+              ...inner.owedByCommodity,
+              [comm]: {
+                ...inner.owedByCommodity[comm],
+                [b.ownerId]:
+                  (inner.owedByCommodity[comm][b.ownerId] ?? 0) + 1,
+              },
+            },
+          };
+        }
+
+        const amount = b.type === "city" ? 2 : 1;
         return {
           ...inner,
           owedByResource: {
@@ -1376,6 +1761,7 @@ function distributeRollResourcesPure(
     },
     {
       owedByResource: { brick: {}, lumber: {}, wool: {}, grain: {}, ore: {} },
+      owedByCommodity: { paper: {}, cloth: {}, coin: {} },
       goldOwed: {},
     }
   );
@@ -1384,6 +1770,7 @@ function distributeRollResourcesPure(
     bank: ResourceMap;
     players: CatanPlayerState[];
     summaryParts: string[];
+    gainedPlayers: ReadonlySet<string>;
   }>(
     (acc, res) => {
       const playerDemands = demands.owedByResource[res];
@@ -1395,26 +1782,28 @@ function distributeRollResourcesPure(
         0
       );
       if (acc.bank[res] >= totalDemand) {
-        return Object.entries(playerDemands).reduce(
-          (inner, [pId, amt]) => {
-            const p = inner.players.find((pl) => pl.id === pId)!;
-            return {
-              bank: { ...inner.bank, [res]: inner.bank[res] - amt },
-              players: updatePlayerById(inner.players, pId, (pl) => ({
-                ...pl,
-                resources: addResourcesPure(pl.resources, { [res]: amt }),
-              })),
-              summaryParts: [...inner.summaryParts, `${p.name} +${amt} ${res}`],
-            };
-          },
-          acc
-        );
+        return Object.entries(playerDemands).reduce((inner, [pId, amt]) => {
+          const p = inner.players.find((pl) => pl.id === pId)!;
+          const nextSet = new Set(inner.gainedPlayers);
+          nextSet.add(pId);
+          return {
+            bank: { ...inner.bank, [res]: inner.bank[res] - amt },
+            players: updatePlayerById(inner.players, pId, (pl) => ({
+              ...pl,
+              resources: addResourcesPure(pl.resources, { [res]: amt }),
+            })),
+            summaryParts: [...inner.summaryParts, `${p.name} +${amt} ${res}`],
+            gainedPlayers: nextSet,
+          };
+        }, acc);
       }
 
       if (demandingPlayerIds.length === 1 && acc.bank[res] > 0) {
         const pId = demandingPlayerIds[0]!;
         const p = acc.players.find((pl) => pl.id === pId)!;
         const amt = acc.bank[res];
+        const nextSet = new Set(acc.gainedPlayers);
+        nextSet.add(pId);
         return {
           bank: { ...acc.bank, [res]: 0 },
           players: updatePlayerById(acc.players, pId, (pl) => ({
@@ -1425,6 +1814,7 @@ function distributeRollResourcesPure(
             ...acc.summaryParts,
             `${p.name} +${amt} ${res} (partial bank)`,
           ],
+          gainedPlayers: nextSet,
         };
       }
 
@@ -1434,8 +1824,91 @@ function distributeRollResourcesPure(
       bank: state.bank,
       players: state.players,
       summaryParts: [],
+      gainedPlayers: new Set<string>(),
     }
   );
+
+  const commodityDistribution = state.config.enableCitiesAndKnights
+    ? COMMODITIES.reduce<{
+        commodityBank: CommodityMap;
+        players: CatanPlayerState[];
+        summaryParts: string[];
+        gainedPlayers: ReadonlySet<string>;
+      }>(
+        (acc, comm) => {
+          const playerDemands = demands.owedByCommodity[comm];
+          const demandingPlayerIds = Object.keys(playerDemands);
+          if (demandingPlayerIds.length === 0) return acc;
+
+          const totalDemand = Object.values(playerDemands).reduce<number>(
+            (a, b) => a + b,
+            0
+          );
+          if (acc.commodityBank[comm] >= totalDemand) {
+            return Object.entries(playerDemands).reduce(
+              (inner, [pId, amt]) => {
+                const p = inner.players.find((pl) => pl.id === pId)!;
+                const nextSet = new Set(inner.gainedPlayers);
+                nextSet.add(pId);
+                return {
+                  commodityBank: {
+                    ...inner.commodityBank,
+                    [comm]: inner.commodityBank[comm] - amt,
+                  },
+                  players: updatePlayerById(inner.players, pId, (pl) => ({
+                    ...pl,
+                    commodities: addCommoditiesPure(pl.commodities, {
+                      [comm]: amt,
+                    }),
+                  })),
+                  summaryParts: [
+                    ...inner.summaryParts,
+                    `${p.name} +${amt} ${comm}`,
+                  ],
+                  gainedPlayers: nextSet,
+                };
+              },
+              acc
+            );
+          }
+
+          if (demandingPlayerIds.length === 1 && acc.commodityBank[comm] > 0) {
+            const pId = demandingPlayerIds[0]!;
+            const p = acc.players.find((pl) => pl.id === pId)!;
+            const amt = acc.commodityBank[comm];
+            const nextSet = new Set(acc.gainedPlayers);
+            nextSet.add(pId);
+            return {
+              commodityBank: { ...acc.commodityBank, [comm]: 0 },
+              players: updatePlayerById(acc.players, pId, (pl) => ({
+                ...pl,
+                commodities: addCommoditiesPure(pl.commodities, {
+                  [comm]: amt,
+                }),
+              })),
+              summaryParts: [
+                ...acc.summaryParts,
+                `${p.name} +${amt} ${comm} (partial bank)`,
+              ],
+              gainedPlayers: nextSet,
+            };
+          }
+
+          return acc;
+        },
+        {
+          commodityBank: state.commodityBank,
+          players: resourceDistribution.players,
+          summaryParts: resourceDistribution.summaryParts,
+          gainedPlayers: resourceDistribution.gainedPlayers,
+        }
+      )
+    : {
+        commodityBank: state.commodityBank,
+        players: resourceDistribution.players,
+        summaryParts: resourceDistribution.summaryParts,
+        gainedPlayers: resourceDistribution.gainedPlayers,
+      };
 
   const totalBankRemaining = totalResourceCount(resourceDistribution.bank);
   const goldDistribution =
@@ -1443,36 +1916,78 @@ function distributeRollResourcesPure(
       ? Object.entries(demands.goldOwed).reduce<{
           pendingGoldPicks: Record<string, number>;
           summaryParts: string[];
+          gainedPlayers: ReadonlySet<string>;
         }>(
           (acc, [pId, count]) => {
             if (count <= 0) return acc;
-            const p = resourceDistribution.players.find((pl) => pl.id === pId)!;
+            const p = commodityDistribution.players.find((pl) => pl.id === pId)!;
+            const nextSet = new Set(acc.gainedPlayers);
+            nextSet.add(pId);
             return {
               pendingGoldPicks: { ...acc.pendingGoldPicks, [pId]: count },
               summaryParts: [
                 ...acc.summaryParts,
                 `${p.name} +${count} Gold pick(s)`,
               ],
+              gainedPlayers: nextSet,
             };
           },
           {
             pendingGoldPicks: state.pendingGoldPicks,
-            summaryParts: resourceDistribution.summaryParts,
+            summaryParts: commodityDistribution.summaryParts,
+            gainedPlayers: commodityDistribution.gainedPlayers,
           }
         )
       : {
           pendingGoldPicks: state.pendingGoldPicks,
-          summaryParts: resourceDistribution.summaryParts,
+          summaryParts: commodityDistribution.summaryParts,
+          gainedPlayers: commodityDistribution.gainedPlayers,
+        };
+
+  // Science Level 3+ Aqueduct: if dice != 7 and player received 0 resources/commodities/gold, pick 1 free resource
+  const aqueductDistribution =
+    state.config.enableCitiesAndKnights && totalBankRemaining > 0
+      ? commodityDistribution.players.reduce<{
+          pendingGoldPicks: Record<string, number>;
+          summaryParts: string[];
+        }>(
+          (acc, p) => {
+            if (
+              p.cityImprovements.science >= 3 &&
+              !goldDistribution.gainedPlayers.has(p.id)
+            ) {
+              return {
+                pendingGoldPicks: {
+                  ...acc.pendingGoldPicks,
+                  [p.id]: (acc.pendingGoldPicks[p.id] ?? 0) + 1,
+                },
+                summaryParts: [
+                  ...acc.summaryParts,
+                  `${p.name} +1 Aqueduct pick`,
+                ],
+              };
+            }
+            return acc;
+          },
+          {
+            pendingGoldPicks: goldDistribution.pendingGoldPicks,
+            summaryParts: goldDistribution.summaryParts,
+          }
+        )
+      : {
+          pendingGoldPicks: goldDistribution.pendingGoldPicks,
+          summaryParts: goldDistribution.summaryParts,
         };
 
   const nextState: CatanState = {
     ...state,
     bank: resourceDistribution.bank,
-    players: resourceDistribution.players,
-    pendingGoldPicks: goldDistribution.pendingGoldPicks,
+    commodityBank: commodityDistribution.commodityBank,
+    players: commodityDistribution.players,
+    pendingGoldPicks: aqueductDistribution.pendingGoldPicks,
   };
 
-  if (goldDistribution.summaryParts.length === 0) {
+  if (aqueductDistribution.summaryParts.length === 0) {
     return { state: nextState, emitted: emitted.slice() };
   }
 
@@ -1480,8 +1995,118 @@ function distributeRollResourcesPure(
     nextState,
     emitted,
     "RESOURCES_PRODUCED",
-    `Production: ${goldDistribution.summaryParts.join(", ")}.`
+    `Production: ${aqueductDistribution.summaryParts.join(", ")}.`
   );
+}
+
+/**
+ * Shared continuation after resolving the Event Die (and any pillage / deck / progress-discard interrupts).
+ */
+function continuePostEventDieRollPure(
+  state: CatanState,
+  emitted: readonly GameEvent[]
+): StateWithEvents {
+  if (state.pendingPillageSelections.length > 0) {
+    return {
+      state: recalculateAwardsPure({
+        ...state,
+        phase: "BARBARIAN_PILLAGE_SELECTION",
+      }),
+      emitted: emitted.slice(),
+    };
+  }
+
+  if (
+    state.pendingDefenderDeckPicks.length > 0 ||
+    state.pendingProgressDiscards.length > 0
+  ) {
+    return {
+      state: recalculateAwardsPure({
+        ...state,
+        phase: "PROGRESS_CARD_SELECTION",
+      }),
+      emitted: emitted.slice(),
+    };
+  }
+
+  const activePlayer = state.players[state.activePlayerIndex]!;
+  const winCheck = checkAndAssignWinnerPure(state, activePlayer.id);
+  if (winCheck.won) {
+    return {
+      state: { ...winCheck.state, pendingRollResolution: null },
+      emitted: emitted.slice(),
+    };
+  }
+
+  const roll = winCheck.state.pendingRollResolution;
+  if (!roll) {
+    return {
+      state: { ...winCheck.state, phase: "MAIN_PHASE" },
+      emitted: emitted.slice(),
+    };
+  }
+
+  const clearedRollState: CatanState = {
+    ...winCheck.state,
+    pendingRollResolution: null,
+  };
+
+  if (roll.total === 7) {
+    const pendingDiscards = clearedRollState.players.reduce<
+      Record<string, number>
+    >((acc, p) => {
+      const count = getPlayerResourceCount(p);
+      const safeLimit = getPlayerSafeHandLimit(clearedRollState, p.id);
+      return count > safeLimit
+        ? { ...acc, [p.id]: Math.floor(count / 2) }
+        : acc;
+    }, {});
+
+    const canMoveRobber =
+      !clearedRollState.config.enableCitiesAndKnights ||
+      clearedRollState.barbarianAttacksCount >= 1;
+    const postSevenPhase = canMoveRobber
+      ? ("MOVE_ROBBER_OR_PIRATE" as const)
+      : ("MAIN_PHASE" as const);
+
+    const sevenState: CatanState = {
+      ...clearedRollState,
+      pendingDiscards,
+      phaseAfterRobber: "MAIN_PHASE",
+      phaseAfterDiscard: postSevenPhase,
+      phase:
+        Object.keys(pendingDiscards).length > 0
+          ? "DISCARD_ON_SEVEN"
+          : postSevenPhase,
+    };
+
+    if (!canMoveRobber) {
+      return appendCatanEvent(
+        sevenState,
+        emitted,
+        "ROBBER_DORMANT",
+        "The Robber stays on the desert until the first Barbarian attack."
+      );
+    }
+
+    return { state: sevenState, emitted: emitted.slice() };
+  }
+
+  const distributed = distributeRollResourcesPure(
+    clearedRollState,
+    roll.total,
+    emitted
+  );
+  return {
+    state: {
+      ...distributed.state,
+      phase:
+        Object.keys(distributed.state.pendingGoldPicks).length > 0
+          ? "GOLD_RESOURCE_SELECTION"
+          : "MAIN_PHASE",
+    },
+    emitted: distributed.emitted,
+  };
 }
 
 function stealOneRandomCardPure(
@@ -1492,9 +2117,16 @@ function stealOneRandomCardPure(
 ): StateWithEvents {
   const thief = state.players.find((p) => p.id === thiefId)!;
   const victim = state.players.find((p) => p.id === victimId)!;
-  const pool = RESOURCES.flatMap((r) =>
-    Array.from({ length: victim.resources[r] }, () => r)
-  );
+  const pool: TradeGoodType[] = [
+    ...RESOURCES.flatMap((r) =>
+      Array.from({ length: victim.resources[r] }, (): TradeGoodType => r)
+    ),
+    ...(state.config.enableCitiesAndKnights
+      ? COMMODITIES.flatMap((c) =>
+          Array.from({ length: victim.commodities[c] }, (): TradeGoodType => c)
+        )
+      : []),
+  ];
   if (pool.length === 0) {
     return { state, emitted: emitted.slice() };
   }
@@ -1502,16 +2134,28 @@ function stealOneRandomCardPure(
   const [stolen, nextRngState] = pickPure(state.rngState, pool);
   const nextPlayers = state.players.map((p) => {
     if (p.id === victimId) {
-      return {
-        ...p,
-        resources: subtractResourcesPure(p.resources, { [stolen]: 1 }),
-      };
+      return isCommodityType(stolen)
+        ? {
+            ...p,
+            commodities: subtractCommoditiesPure(p.commodities, {
+              [stolen]: 1,
+            }),
+          }
+        : {
+            ...p,
+            resources: subtractResourcesPure(p.resources, { [stolen]: 1 }),
+          };
     }
     if (p.id === thiefId) {
-      return {
-        ...p,
-        resources: addResourcesPure(p.resources, { [stolen]: 1 }),
-      };
+      return isCommodityType(stolen)
+        ? {
+            ...p,
+            commodities: addCommoditiesPure(p.commodities, { [stolen]: 1 }),
+          }
+        : {
+            ...p,
+            resources: addResourcesPure(p.resources, { [stolen]: 1 }),
+          };
     }
     return p;
   });
@@ -1598,19 +2242,24 @@ export function applyCatanAction(
         throw new Error(`Illegal setup settlement vertex ${action.vertexId}`);
       }
 
+      const isSetupCity =
+        currentState.config.enableCitiesAndKnights &&
+        currentState.phase === "SETUP_SETTLEMENT_2";
+
       const placedState: CatanState = {
         ...currentState,
         buildings: {
           ...currentState.buildings,
           [action.vertexId]: {
             ownerId: playerId,
-            type: "settlement",
+            type: isSetupCity ? "city" : "settlement",
           },
         },
-        players: updatePlayerById(currentState.players, playerId, (p) => ({
-          ...p,
-          settlementsRemaining: p.settlementsRemaining - 1,
-        })),
+        players: updatePlayerById(currentState.players, playerId, (p) =>
+          isSetupCity
+            ? { ...p, citiesRemaining: p.citiesRemaining - 1 }
+            : { ...p, settlementsRemaining: p.settlementsRemaining - 1 }
+        ),
         lastSetupSettlementVertexId: action.vertexId,
       };
 
@@ -1656,11 +2305,12 @@ export function applyCatanAction(
           })),
         };
 
+        const buildingLabel = isSetupCity ? "starting city" : "2nd settlement";
         const logged = appendCatanEvent(
           withResources,
           islandRecorded.emitted,
           "SETUP_SETTLEMENT",
-          `${player.name} placed their 2nd settlement${startingGain.gained.length > 0 ? ` and received starting resources (${startingGain.gained.join(", ")})` : ""}.`,
+          `${player.name} placed their ${buildingLabel}${startingGain.gained.length > 0 ? ` and received starting resources (${startingGain.gained.join(", ")})` : ""}.`,
           playerId,
           { vertexId: action.vertexId, gained: startingGain.gained }
         );
@@ -1806,62 +2456,202 @@ export function applyCatanAction(
       if (currentState.phase !== "PRE_ROLL" || activePlayer.id !== playerId) {
         throw new Error("Cannot roll dice now");
       }
-      const [roll, nextRngState] = roll2d6Pure(currentState.rngState);
-      const rolledState: CatanState = {
-        ...currentState,
-        rngState: nextRngState,
-        lastRoll: roll,
-      };
 
-      const logged = appendCatanEvent(
-        rolledState,
-        [],
-        "DICE_ROLLED",
-        `${player.name} rolled ${roll.total} (${roll.die1} + ${roll.die2}).`,
-        playerId,
-        roll
-      );
+      if (!currentState.config.enableCitiesAndKnights) {
+        const [roll, nextRngState] = roll2d6Pure(currentState.rngState);
+        const rolledState: CatanState = {
+          ...currentState,
+          rngState: nextRngState,
+          lastRoll: roll,
+        };
 
-      if (roll.total === 7) {
-        const pendingDiscards = logged.state.players.reduce<Record<string, number>>(
-          (acc, p) => {
+        const logged = appendCatanEvent(
+          rolledState,
+          [],
+          "DICE_ROLLED",
+          `${player.name} rolled ${roll.total} (${roll.die1} + ${roll.die2}).`,
+          playerId,
+          roll
+        );
+
+        if (roll.total === 7) {
+          const pendingDiscards = logged.state.players.reduce<
+            Record<string, number>
+          >((acc, p) => {
             const count = totalResourceCount(p.resources);
             const safeLimit = getPlayerSafeHandLimit(logged.state, p.id);
             return count > safeLimit
               ? { ...acc, [p.id]: Math.floor(count / 2) }
               : acc;
-          },
-          {}
-        );
+          }, {});
 
+          return {
+            state: {
+              ...logged.state,
+              pendingDiscards,
+              phaseAfterRobber: "MAIN_PHASE",
+              phaseAfterDiscard: "MOVE_ROBBER_OR_PIRATE",
+              phase:
+                Object.keys(pendingDiscards).length > 0
+                  ? "DISCARD_ON_SEVEN"
+                  : "MOVE_ROBBER_OR_PIRATE",
+            },
+            events: logged.emitted,
+          };
+        }
+
+        const distributed = distributeRollResourcesPure(
+          logged.state,
+          roll.total,
+          logged.emitted
+        );
         return {
           state: {
-            ...logged.state,
-            pendingDiscards,
-            phaseAfterRobber: "MAIN_PHASE",
+            ...distributed.state,
             phase:
-              Object.keys(pendingDiscards).length > 0
-                ? "DISCARD_ON_SEVEN"
-                : "MOVE_ROBBER_OR_PIRATE",
+              Object.keys(distributed.state.pendingGoldPicks).length > 0
+                ? "GOLD_RESOURCE_SELECTION"
+                : "MAIN_PHASE",
           },
-          events: logged.emitted,
+          events: distributed.emitted,
         };
       }
 
-      const distributed = distributeRollResourcesPure(
+      // Cities & Knights: roll White + Red dice + Event Die
+      const [roll, rngAfter2d6] = roll2d6Pure(currentState.rngState);
+      const [eventFace, rngAfterEvent] = rollEventDiePure(rngAfter2d6);
+      const fullRoll = { ...roll, eventFace };
+      const eventLabel =
+        eventFace === "barbarian"
+          ? "Barbarian Ship"
+          : `${eventFace[0]!.toUpperCase()}${eventFace.slice(1)} Gate`;
+
+      const rolledCkState: CatanState = {
+        ...currentState,
+        rngState: rngAfterEvent,
+        lastRoll: fullRoll,
+        pendingRollResolution: roll,
+      };
+
+      const loggedRoll = appendCatanEvent(
+        rolledCkState,
+        [],
+        "DICE_ROLLED",
+        `${player.name} rolled ${roll.total} (${roll.die1} + red ${roll.die2} · ${eventLabel}).`,
+        playerId,
+        fullRoll
+      );
+
+      const eventResolved = resolveEventDieRollPure(
+        loggedRoll.state,
+        eventFace,
+        roll.die2,
+        loggedRoll.emitted
+      );
+      const continued = continuePostEventDieRollPure(
+        eventResolved.state,
+        eventResolved.emitted
+      );
+      return { state: continued.state, events: continued.emitted };
+    }
+
+    case "SELECT_PILLAGED_CITY": {
+      if (
+        currentState.phase !== "BARBARIAN_PILLAGE_SELECTION" ||
+        currentState.pendingPillageSelections[0] !== playerId
+      ) {
+        throw new Error("Not your turn to choose a pillaged city");
+      }
+      const vulnerable = getPlayerVulnerableCities(currentState, playerId);
+      if (!vulnerable.includes(action.vertexId)) {
+        throw new Error("Selected vertex is not a vulnerable city you own");
+      }
+
+      const downgraded = downgradePillagedCityPure(
+        currentState,
+        action.vertexId
+      );
+      const nextSelections = downgraded.pendingPillageSelections.slice(1);
+      const logged = appendCatanEvent(
+        { ...downgraded, pendingPillageSelections: nextSelections },
+        [],
+        "CITY_PILLAGED",
+        `${player.name}'s city was pillaged to a settlement.`,
+        playerId,
+        { vertexId: action.vertexId }
+      );
+      const continued = continuePostEventDieRollPure(
         logged.state,
-        roll.total,
         logged.emitted
       );
+      return { state: continued.state, events: continued.emitted };
+    }
+
+    case "SELECT_PROGRESS_DECK": {
+      if (
+        currentState.phase !== "PROGRESS_CARD_SELECTION" ||
+        currentState.pendingDefenderDeckPicks[0] !== playerId
+      ) {
+        throw new Error("Not your turn to select a Progress Card deck");
+      }
+      const nextPicks = currentState.pendingDefenderDeckPicks.slice(1);
+      const drawn = drawProgressCardForPlayerPure(
+        { ...currentState, pendingDefenderDeckPicks: nextPicks },
+        playerId,
+        action.discipline,
+        []
+      );
+      const continued = continuePostEventDieRollPure(
+        drawn.state,
+        drawn.emitted
+      );
+      return { state: continued.state, events: continued.emitted };
+    }
+
+    case "DISCARD_PROGRESS_CARD": {
+      if (
+        currentState.phase !== "PROGRESS_CARD_SELECTION" ||
+        currentState.pendingProgressDiscards[0] !== playerId
+      ) {
+        throw new Error("Not your turn to discard a Progress Card");
+      }
+      const consumed = consumePlayerProgressCardPure(
+        currentState,
+        playerId,
+        action.cardId
+      );
+      const updatedPlayer = consumed.state.players.find(
+        (p) => p.id === playerId
+      )!;
+      const nextDiscards =
+        updatedPlayer.progressCards.length <= 4
+          ? consumed.state.pendingProgressDiscards.slice(1)
+          : consumed.state.pendingProgressDiscards;
+
+      const logged = appendCatanEvent(
+        { ...consumed.state, pendingProgressDiscards: nextDiscards },
+        [],
+        "PROGRESS_CARD_DISCARDED",
+        `${player.name} returned 1 Progress Card to the bottom of the ${consumed.card.discipline} stack.`,
+        playerId,
+        { discipline: consumed.card.discipline }
+      );
+
+      if (logged.state.pendingRollResolution) {
+        const continued = continuePostEventDieRollPure(
+          logged.state,
+          logged.emitted
+        );
+        return { state: continued.state, events: continued.emitted };
+      }
+
       return {
         state: {
-          ...distributed.state,
+          ...logged.state,
           phase:
-            Object.keys(distributed.state.pendingGoldPicks).length > 0
-              ? "GOLD_RESOURCE_SELECTION"
-              : "MAIN_PHASE",
+            nextDiscards.length > 0 ? "PROGRESS_CARD_SELECTION" : "MAIN_PHASE",
         },
-        events: distributed.emitted,
+        events: logged.emitted,
       };
     }
 
@@ -1890,11 +2680,16 @@ export function applyCatanAction(
                   }),
                 })),
               };
+              const goldSuffix =
+                !currentState.config.enableCitiesAndKnights ||
+                currentState.config.enableSeafarers
+                  ? " from the Gold River."
+                  : " (Aqueduct).";
               return appendCatanEvent(
                 withPick,
                 [],
                 "GOLD_RESOURCE_PICKED",
-                `${player.name} chose 1 ${action.resource} from the Gold River.`,
+                `${player.name} chose 1 ${action.resource}${goldSuffix}`,
                 playerId,
                 { resource: action.resource }
               );
@@ -1927,12 +2722,17 @@ export function applyCatanAction(
       if (required <= 0) {
         throw new Error("You do not need to discard");
       }
-      const discardSum = totalResourceCount(action.resources);
+      const discardSum =
+        totalResourceCount(action.resources) +
+        totalCommodityCount(action.commodities);
       if (discardSum !== required) {
         throw new Error(`Must discard exactly ${required} cards (got ${discardSum})`);
       }
-      if (!hasResources(player.resources, action.resources)) {
-        throw new Error("Cannot discard resources you do not have");
+      if (
+        !hasResources(player.resources, action.resources) ||
+        !hasCommodities(player.commodities, action.commodities)
+      ) {
+        throw new Error("Cannot discard cards you do not have");
       }
 
       const nextPendingDiscards = omitRecordKey(
@@ -1942,9 +2742,17 @@ export function applyCatanAction(
       const discardedState: CatanState = {
         ...currentState,
         bank: addResourcesPure(currentState.bank, action.resources),
+        commodityBank: addCommoditiesPure(
+          currentState.commodityBank,
+          action.commodities
+        ),
         players: updatePlayerById(currentState.players, playerId, (p) => ({
           ...p,
           resources: subtractResourcesPure(p.resources, action.resources),
+          commodities: subtractCommoditiesPure(
+            p.commodities,
+            action.commodities
+          ),
         })),
         pendingDiscards: nextPendingDiscards,
       };
@@ -1955,7 +2763,9 @@ export function applyCatanAction(
         "CARDS_DISCARDED",
         `${player.name} discarded ${required} resource cards.`,
         playerId,
-        { resources: action.resources }
+        totalCommodityCount(action.commodities) > 0
+          ? { resources: action.resources, commodities: action.commodities }
+          : { resources: action.resources }
       );
 
       return {
@@ -1963,7 +2773,7 @@ export function applyCatanAction(
           ...logged.state,
           phase:
             Object.keys(nextPendingDiscards).length === 0
-              ? "MOVE_ROBBER_OR_PIRATE"
+              ? logged.state.phaseAfterDiscard
               : logged.state.phase,
         },
         events: logged.emitted,
@@ -1992,7 +2802,7 @@ export function applyCatanAction(
                 Boolean(b && b.ownerId !== playerId)
             )
             .map((b) => currentState.players.find((p) => p.id === b.ownerId)!)
-            .filter((victim) => totalResourceCount(victim.resources) > 0)
+            .filter((victim) => getPlayerResourceCount(victim) > 0)
             .map((victim) => victim.id)
         )
       );
@@ -2042,7 +2852,7 @@ export function applyCatanAction(
                 )
             )
             .map((route) => currentState.players.find((p) => p.id === route.ownerId)!)
-            .filter((victim) => totalResourceCount(victim.resources) > 0)
+            .filter((victim) => getPlayerResourceCount(victim) > 0)
             .map((victim) => victim.id)
         )
       );
@@ -2384,32 +3194,66 @@ export function applyCatanAction(
 
     case "BUILD_CITY": {
       assertCanBuildInCurrentPhase(currentState, playerId);
-      if (player.citiesRemaining <= 0) {
-        throw new Error("No cities remaining");
-      }
-      if (!hasResources(player.resources, BUILDING_COSTS.city)) {
-        throw new Error("Insufficient resources for city");
-      }
       const existing = currentState.buildings[action.vertexId];
       if (!existing || existing.ownerId !== playerId || existing.type !== "settlement") {
         throw new Error("Can only upgrade your own settlement to a city");
       }
+      const otherBorrowedVId =
+        Object.entries(currentState.buildings).find(
+          ([vId, b]) =>
+            vId !== action.vertexId &&
+            b.ownerId === playerId &&
+            b.type === "settlement" &&
+            b.borrowedCityPiece
+        )?.[0] ?? null;
+      const usesBorrowedPiece = Boolean(
+        existing.borrowedCityPiece || otherBorrowedVId !== null
+      );
+      if (!usesBorrowedPiece && player.citiesRemaining <= 0) {
+        throw new Error("No cities remaining");
+      }
+
+      const cityCost = getEffectiveCityCost(player);
+      if (!hasResources(player.resources, cityCost)) {
+        throw new Error("Insufficient resources for city");
+      }
+
+      const upgradedVertexBuilding = {
+        ownerId: existing.ownerId,
+        type: "city" as const,
+        ...(existing.hasWall ? { hasWall: true } : {}),
+        ...(existing.metropolis ? { metropolis: existing.metropolis } : {}),
+      };
+      const nextBuildings: CatanState["buildings"] = {
+        ...currentState.buildings,
+        [action.vertexId]: upgradedVertexBuilding,
+        ...(!existing.borrowedCityPiece && otherBorrowedVId !== null
+          ? {
+              [otherBorrowedVId]: {
+                ownerId: playerId,
+                type: "settlement" as const,
+              },
+            }
+          : {}),
+      };
 
       const upgradedState: CatanState = {
         ...currentState,
-        bank: addResourcesPure(currentState.bank, BUILDING_COSTS.city),
-        buildings: {
-          ...currentState.buildings,
-          [action.vertexId]: {
-            ...existing,
-            type: "city",
-          },
-        },
+        bank: addResourcesPure(currentState.bank, cityCost),
+        buildings: nextBuildings,
         players: updatePlayerById(currentState.players, playerId, (p) => ({
           ...p,
-          resources: subtractResourcesPure(p.resources, BUILDING_COSTS.city),
-          citiesRemaining: p.citiesRemaining - 1,
-          settlementsRemaining: p.settlementsRemaining + 1, // Settlement piece returned to supply
+          resources: subtractResourcesPure(p.resources, cityCost),
+          activeTurnDiscounts: {
+            ...p.activeTurnDiscounts,
+            medicine: false,
+          },
+          citiesRemaining: usesBorrowedPiece
+            ? p.citiesRemaining
+            : p.citiesRemaining - 1,
+          settlementsRemaining: usesBorrowedPiece
+            ? p.settlementsRemaining
+            : p.settlementsRemaining + 1,
         })),
       };
 
@@ -2469,6 +3313,575 @@ export function applyCatanAction(
         { vertexId: action.vertexId }
       );
       return { state: logged.state, events: logged.emitted };
+    }
+
+    case "UPGRADE_CITY_IMPROVEMENT": {
+      assertCanBuildInCurrentPhase(currentState, playerId);
+      const check = canPlayerUpgradeDiscipline(
+        currentState,
+        player,
+        action.discipline
+      );
+      if (!check.allowed) {
+        throw new Error(
+          `Cannot upgrade ${action.discipline} city improvement right now`
+        );
+      }
+
+      const currentMetro = currentState.metropolises[action.discipline];
+      const metroTransition = (() => {
+        if (check.claimsMetropolis) {
+          const targetVId =
+            action.metropolisVertexId &&
+            check.eligibleMetropolisVertices.includes(action.metropolisVertexId)
+              ? action.metropolisVertexId
+              : check.eligibleMetropolisVertices[0];
+          if (!targetVId) {
+            throw new Error(
+              "Must select an eligible non-metropolis city for the new Metropolis"
+            );
+          }
+
+          const clearedOldBuildings: CatanState["buildings"] =
+            currentMetro.vertexId && currentState.buildings[currentMetro.vertexId]
+              ? (() => {
+                  const prevB = currentState.buildings[currentMetro.vertexId]!;
+                  const withoutMetro = {
+                    ownerId: prevB.ownerId,
+                    type: prevB.type,
+                    ...(prevB.hasWall ? { hasWall: true } : {}),
+                  };
+                  return {
+                    ...currentState.buildings,
+                    [currentMetro.vertexId]: withoutMetro,
+                  };
+                })()
+              : currentState.buildings;
+
+          const nextTargetB = clearedOldBuildings[targetVId]!;
+          return {
+            buildings: {
+              ...clearedOldBuildings,
+              [targetVId]: {
+                ...nextTargetB,
+                metropolis: action.discipline,
+              },
+            },
+            metropolises: {
+              ...currentState.metropolises,
+              [action.discipline]: {
+                ownerId: playerId,
+                vertexId: targetVId,
+                level: check.nextLevel,
+              },
+            },
+            claimedTargetVId: targetVId,
+          };
+        }
+
+        if (currentMetro.ownerId === playerId) {
+          return {
+            buildings: currentState.buildings,
+            metropolises: {
+              ...currentState.metropolises,
+              [action.discipline]: {
+                ...currentMetro,
+                level: check.nextLevel,
+              },
+            },
+            claimedTargetVId: null as VertexId | null,
+          };
+        }
+
+        return {
+          buildings: currentState.buildings,
+          metropolises: currentState.metropolises,
+          claimedTargetVId: null as VertexId | null,
+        };
+      })();
+
+      const payment: Partial<CommodityMap> = {
+        [check.costCommodity]: check.costAmount,
+      };
+      const improvedState: CatanState = {
+        ...currentState,
+        commodityBank: addCommoditiesPure(currentState.commodityBank, payment),
+        buildings: metroTransition.buildings,
+        metropolises: metroTransition.metropolises,
+        players: updatePlayerById(currentState.players, playerId, (p) => ({
+          ...p,
+          commodities: subtractCommoditiesPure(p.commodities, payment),
+          cityImprovements: {
+            ...p.cityImprovements,
+            [action.discipline]: check.nextLevel,
+          },
+          activeTurnDiscounts: {
+            ...p.activeTurnDiscounts,
+            crane: false,
+          },
+        })),
+      };
+
+      const disciplineLabel =
+        action.discipline.charAt(0).toUpperCase() + action.discipline.slice(1);
+      const metroSuffix = metroTransition.claimedTargetVId
+        ? ` and crowned the ${disciplineLabel} Metropolis (+2 VP)!`
+        : ".";
+      const logged = appendCatanEvent(
+        improvedState,
+        [],
+        "CITY_IMPROVEMENT_UPGRADED",
+        `${player.name} upgraded ${disciplineLabel} to Level ${check.nextLevel}${metroSuffix}`,
+        playerId,
+        {
+          discipline: action.discipline,
+          level: check.nextLevel,
+          metropolisVertexId: metroTransition.claimedTargetVId,
+        }
+      );
+      const checked = checkAndAssignWinnerPure(logged.state, playerId);
+      return { state: checked.state, events: logged.emitted };
+    }
+
+    case "BUILD_KNIGHT": {
+      assertCanBuildInCurrentPhase(currentState, playerId);
+      if (!currentState.config.enableCitiesAndKnights) {
+        throw new Error("Cities & Knights is not enabled");
+      }
+      if (!hasResources(player.resources, BUILDING_COSTS.knight)) {
+        throw new Error("Insufficient resources to recruit a Knight");
+      }
+      const legal = getLegalBuildKnightVertices(currentState, playerId);
+      if (!legal.includes(action.vertexId)) {
+        throw new Error(`Illegal knight vertex ${action.vertexId}`);
+      }
+
+      const builtState: CatanState = {
+        ...currentState,
+        bank: addResourcesPure(currentState.bank, BUILDING_COSTS.knight),
+        knights: {
+          ...currentState.knights,
+          [action.vertexId]: {
+            ownerId: playerId,
+            level: 1,
+            active: false,
+            activatedThisTurn: false,
+            actedThisTurn: false,
+            promotedThisTurn: false,
+          },
+        },
+        players: updatePlayerById(currentState.players, playerId, (p) =>
+          takeKnightFromSupplyPure(
+            {
+              ...p,
+              resources: subtractResourcesPure(
+                p.resources,
+                BUILDING_COSTS.knight
+              ),
+            },
+            1
+          )
+        ),
+      };
+
+      const logged = appendCatanEvent(
+        builtState,
+        [],
+        "KNIGHT_BUILT",
+        `${player.name} recruited a Basic Knight.`,
+        playerId,
+        { vertexId: action.vertexId }
+      );
+      const checked = checkAndAssignWinnerPure(logged.state, playerId);
+      return { state: checked.state, events: logged.emitted };
+    }
+
+    case "PROMOTE_KNIGHT": {
+      assertCanBuildInCurrentPhase(currentState, playerId);
+      if (!currentState.config.enableCitiesAndKnights) {
+        throw new Error("Cities & Knights is not enabled");
+      }
+      if (!hasResources(player.resources, BUILDING_COSTS.knight)) {
+        throw new Error("Insufficient resources to promote Knight");
+      }
+      if (!canPromoteKnightAtVertex(currentState, player, action.vertexId, false)) {
+        throw new Error(`Cannot promote Knight at ${action.vertexId}`);
+      }
+
+      const existingKnight = currentState.knights[action.vertexId]!;
+      const nextLevel = (existingKnight.level + 1) as KnightLevel;
+      const levelName = nextLevel === 3 ? "Mighty" : "Strong";
+
+      const promotedState: CatanState = {
+        ...currentState,
+        bank: addResourcesPure(currentState.bank, BUILDING_COSTS.knight),
+        knights: {
+          ...currentState.knights,
+          [action.vertexId]: {
+            ...existingKnight,
+            level: nextLevel,
+            promotedThisTurn: true,
+          },
+        },
+        players: updatePlayerById(currentState.players, playerId, (p) =>
+          takeKnightFromSupplyPure(
+            returnKnightToSupplyPure(
+              {
+                ...p,
+                resources: subtractResourcesPure(
+                  p.resources,
+                  BUILDING_COSTS.knight
+                ),
+              },
+              existingKnight.level
+            ),
+            nextLevel
+          )
+        ),
+      };
+
+      const logged = appendCatanEvent(
+        promotedState,
+        [],
+        "KNIGHT_PROMOTED",
+        `${player.name} promoted a Knight to ${levelName} (Lv ${nextLevel}).`,
+        playerId,
+        { vertexId: action.vertexId, level: nextLevel }
+      );
+      return { state: logged.state, events: logged.emitted };
+    }
+
+    case "ACTIVATE_KNIGHT": {
+      assertCanBuildInCurrentPhase(currentState, playerId);
+      if (!currentState.config.enableCitiesAndKnights) {
+        throw new Error("Cities & Knights is not enabled");
+      }
+      if (!hasResources(player.resources, BUILDING_COSTS.activateKnight)) {
+        throw new Error("Insufficient grain to activate Knight");
+      }
+      const legal = getLegalActivateKnightVertices(currentState, playerId);
+      if (!legal.includes(action.vertexId)) {
+        throw new Error(`Cannot activate Knight at ${action.vertexId}`);
+      }
+
+      const existingKnight = currentState.knights[action.vertexId]!;
+      const activatedState: CatanState = {
+        ...currentState,
+        bank: addResourcesPure(currentState.bank, BUILDING_COSTS.activateKnight),
+        knights: {
+          ...currentState.knights,
+          [action.vertexId]: {
+            ...existingKnight,
+            active: true,
+            activatedThisTurn: true,
+          },
+        },
+        players: updatePlayerById(currentState.players, playerId, (p) => ({
+          ...p,
+          resources: subtractResourcesPure(
+            p.resources,
+            BUILDING_COSTS.activateKnight
+          ),
+        })),
+      };
+
+      const logged = appendCatanEvent(
+        activatedState,
+        [],
+        "KNIGHT_ACTIVATED",
+        `${player.name} activated a Level ${existingKnight.level} Knight.`,
+        playerId,
+        { vertexId: action.vertexId }
+      );
+      return { state: logged.state, events: logged.emitted };
+    }
+
+    case "MOVE_KNIGHT": {
+      if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
+        throw new Error("Can only move a Knight during your main phase");
+      }
+      const legalMoves = getLegalMoveKnightActions(currentState, playerId);
+      const isLegal = legalMoves.some(
+        (m) =>
+          m.fromVertexId === action.fromVertexId &&
+          m.toVertexId === action.toVertexId
+      );
+      if (!isLegal) {
+        throw new Error(
+          `Illegal Knight move from ${action.fromVertexId} to ${action.toVertexId}`
+        );
+      }
+
+      const movingKnight = currentState.knights[action.fromVertexId]!;
+      const stateWithoutMover: CatanState = {
+        ...currentState,
+        knights: omitRecordKey(currentState.knights, action.fromVertexId),
+      };
+
+      const hasDisplacedTarget = Boolean(
+        stateWithoutMover.knights[action.toVertexId]
+      );
+      const displacement = hasDisplacedTarget
+        ? displaceKnightAtVertexPure(stateWithoutMover, action.toVertexId)
+        : {
+            knights: stateWithoutMover.knights,
+            players: stateWithoutMover.players,
+            relocatedTo: null as VertexId | null,
+          };
+
+      const movedState: CatanState = {
+        ...currentState,
+        knights: {
+          ...displacement.knights,
+          [action.toVertexId]: {
+            ...movingKnight,
+            active: false,
+            actedThisTurn: true,
+          },
+        },
+        players: displacement.players,
+      };
+
+      const displaceNote = hasDisplacedTarget
+        ? " and displaced an opposing Knight!"
+        : ".";
+      const logged = appendCatanEvent(
+        movedState,
+        [],
+        "KNIGHT_MOVED",
+        `${player.name} marched a Knight${displaceNote}`,
+        playerId,
+        {
+          fromVertexId: action.fromVertexId,
+          toVertexId: action.toVertexId,
+          displaced: hasDisplacedTarget,
+        }
+      );
+      const checked = checkAndAssignWinnerPure(logged.state, playerId);
+      return { state: checked.state, events: logged.emitted };
+    }
+
+    case "CHASE_ROBBER_WITH_KNIGHT": {
+      if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
+        throw new Error("Can only chase the Robber during your main phase");
+      }
+      const targetKind = action.targetKind ?? "robber";
+      const legalChases = getLegalChaseRobberActions(
+        currentState,
+        playerId,
+        getLegalRobberHexes(currentState, playerId),
+        getLegalPirateHexes(currentState)
+      );
+      const isLegal = legalChases.some(
+        (c) =>
+          c.vertexId === action.vertexId &&
+          c.hexId === action.hexId &&
+          c.targetKind === targetKind
+      );
+      if (!isLegal) {
+        throw new Error("Illegal Knight chase action");
+      }
+
+      const knight = currentState.knights[action.vertexId]!;
+      const hNode = currentState.topology.hexes[action.hexId]!;
+
+      if (targetKind === "pirate") {
+        const candidates = Array.from(
+          new Set(
+            hNode.sideEdgeIds
+              .map((eId) => currentState.edges[eId])
+              .filter(
+                (route): route is NonNullable<typeof route> =>
+                  Boolean(
+                    route && route.type === "ship" && route.ownerId !== playerId
+                  )
+              )
+              .map((route) => currentState.players.find((p) => p.id === route.ownerId)!)
+              .filter((victim) => getPlayerResourceCount(victim) > 0)
+              .map((victim) => victim.id)
+          )
+        );
+        const chasedState: CatanState = {
+          ...currentState,
+          pirateHexId: action.hexId,
+          phaseAfterRobber: "MAIN_PHASE",
+          knights: {
+            ...currentState.knights,
+            [action.vertexId]: {
+              ...knight,
+              active: false,
+              actedThisTurn: true,
+            },
+          },
+        };
+        const logged = appendCatanEvent(
+          chasedState,
+          [],
+          "PIRATE_CHASED",
+          `${player.name}'s Knight drove the Pirate Fleet to (${hNode.q},${hNode.r})!`,
+          playerId,
+          { vertexId: action.vertexId, hexId: action.hexId }
+        );
+        const resolved = resolvePostRobberOrPirateStealPure(
+          logged.state,
+          playerId,
+          candidates,
+          logged.emitted
+        );
+        return { state: resolved.state, events: resolved.emitted };
+      }
+
+      const candidates = Array.from(
+        new Set(
+          hNode.cornerVertexIds
+            .map((vId) => currentState.buildings[vId])
+            .filter(
+              (b): b is NonNullable<typeof b> =>
+                Boolean(b && b.ownerId !== playerId)
+            )
+            .map((b) => currentState.players.find((p) => p.id === b.ownerId)!)
+            .filter((victim) => getPlayerResourceCount(victim) > 0)
+            .map((victim) => victim.id)
+        )
+      );
+      const chasedState: CatanState = {
+        ...currentState,
+        robberHexId: action.hexId,
+        phaseAfterRobber: "MAIN_PHASE",
+        knights: {
+          ...currentState.knights,
+          [action.vertexId]: {
+            ...knight,
+            active: false,
+            actedThisTurn: true,
+          },
+        },
+      };
+      const logged = appendCatanEvent(
+        chasedState,
+        [],
+        "ROBBER_CHASED",
+        `${player.name}'s Knight chased the Robber to (${hNode.q},${hNode.r})!`,
+        playerId,
+        { vertexId: action.vertexId, hexId: action.hexId }
+      );
+      const resolved = resolvePostRobberOrPirateStealPure(
+        logged.state,
+        playerId,
+        candidates,
+        logged.emitted
+      );
+      return { state: resolved.state, events: resolved.emitted };
+    }
+
+    case "PLAY_PROGRESS_CARD": {
+      if (!currentState.config.enableCitiesAndKnights) {
+        throw new Error("Cities & Knights is not enabled");
+      }
+      if (activePlayer.id !== playerId) {
+        throw new Error("Not your turn");
+      }
+      const cardInHand = player.progressCards.find((c) => c.id === action.cardId);
+      if (!cardInHand) {
+        throw new Error(`Progress card ${action.cardId} not in hand`);
+      }
+
+      if (currentState.phase === "PRE_ROLL") {
+        if (cardInHand.type !== "alchemist") {
+          throw new Error("Only Alchemist can be played before rolling the dice");
+        }
+        const die1 = action.params?.die1;
+        const die2 = action.params?.die2;
+        if (
+          typeof die1 !== "number" ||
+          typeof die2 !== "number" ||
+          !Number.isInteger(die1) ||
+          !Number.isInteger(die2) ||
+          die1 < 1 ||
+          die1 > 6 ||
+          die2 < 1 ||
+          die2 > 6
+        ) {
+          throw new Error("Alchemist requires valid die1 and die2 (1-6)");
+        }
+
+        const consumed = consumePlayerProgressCardPure(
+          currentState,
+          playerId,
+          action.cardId
+        );
+        const [eventFace, nextRngState] = rollEventDiePure(
+          consumed.state.rngState
+        );
+        const total = die1 + die2;
+        const rolledState: CatanState = {
+          ...consumed.state,
+          rngState: nextRngState,
+          lastRoll: { die1, die2, total, eventFace },
+          pendingRollResolution: { die1, die2, total },
+        };
+        const loggedAlch = appendCatanEvent(
+          rolledState,
+          [],
+          "PROGRESS_CARD_PLAYED",
+          `${player.name} played Alchemist and chose dice ${die1} + ${die2} = ${total}!`,
+          playerId,
+          { cardType: "alchemist", die1, die2 }
+        );
+        const loggedRoll = appendCatanEvent(
+          loggedAlch.state,
+          loggedAlch.emitted,
+          "DICE_ROLLED",
+          `${player.name} rolled ${die1} + ${die2} = ${total} [${eventFace.toUpperCase()}].`,
+          playerId,
+          { die1, die2, total, eventFace }
+        );
+        const eventResolved = resolveEventDieRollPure(
+          loggedRoll.state,
+          eventFace,
+          die2,
+          loggedRoll.emitted
+        );
+        const finalized = continuePostEventDieRollPure(
+          eventResolved.state,
+          eventResolved.emitted
+        );
+        return { state: finalized.state, events: finalized.emitted };
+      }
+
+      if (currentState.phase !== "MAIN_PHASE") {
+        throw new Error(
+          `Cannot play Progress Card during ${currentState.phase}`
+        );
+      }
+      if (currentState.activeTradeOffer) {
+        throw new Error("Resolve the active domestic trade offer first");
+      }
+
+      const consumed = consumePlayerProgressCardPure(
+        currentState,
+        playerId,
+        action.cardId
+      );
+      const applied = applyMainPhaseProgressCardPure(
+        consumed.state,
+        playerId,
+        consumed.card,
+        action.params,
+        computePlayerVictoryPoints,
+        (s, pid) => getLegalRoadEdges(s, pid, null),
+        getLegalRobberHexes
+      );
+
+      const awardedState = recalculateAwardsPure(applied.state);
+      if (
+        awardedState.phase === "MAIN_PHASE" ||
+        awardedState.phase === "ROAD_BUILDING_DEV"
+      ) {
+        const checked = checkAndAssignWinnerPure(awardedState, playerId);
+        return { state: checked.state, events: applied.emitted };
+      }
+      return { state: awardedState, events: applied.emitted };
     }
 
     case "BUY_DEV_CARD": {
@@ -2708,21 +4121,23 @@ export function applyCatanAction(
       if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
         throw new Error("Can only trade during your main phase");
       }
-      const ratios = getPlayerTradeRatios(currentState, playerId);
+      const goodRatios = getPlayerGoodTradeRatios(currentState, playerId);
 
       const { giveBundle, receiveBundle } = (() => {
         if (action.giveMap || action.receiveMap) {
-          const srcGive = action.giveMap ?? { [action.give]: action.giveAmount };
-          const srcRecv = action.receiveMap ?? {
+          const srcGive: Partial<TradeGoodMap> = action.giveMap ?? {
+            [action.give]: action.giveAmount,
+          };
+          const srcRecv: Partial<TradeGoodMap> = action.receiveMap ?? {
             [action.receive]: action.receiveAmount ?? 1,
           };
-          return RESOURCES.reduce<{
-            giveBundle: ResourceMap;
-            receiveBundle: ResourceMap;
+          return TRADE_GOODS.reduce<{
+            giveBundle: TradeGoodMap;
+            receiveBundle: TradeGoodMap;
           }>(
-            (acc, r) => {
-              const g = srcGive[r] ?? 0;
-              const w = srcRecv[r] ?? 0;
+            (acc, gType) => {
+              const g = srcGive[gType] ?? 0;
+              const w = srcRecv[gType] ?? 0;
               if (
                 !Number.isInteger(g) ||
                 g < 0 ||
@@ -2733,12 +4148,21 @@ export function applyCatanAction(
                   "Maritime trade quantities must be non-negative integers"
                 );
               }
+              if (
+                !currentState.config.enableCitiesAndKnights &&
+                isCommodityType(gType) &&
+                (g > 0 || w > 0)
+              ) {
+                throw new Error(
+                  "Commodities are only available in Cities & Knights"
+                );
+              }
               return {
-                giveBundle: { ...acc.giveBundle, [r]: g },
-                receiveBundle: { ...acc.receiveBundle, [r]: w },
+                giveBundle: { ...acc.giveBundle, [gType]: g },
+                receiveBundle: { ...acc.receiveBundle, [gType]: w },
               };
             },
-            { giveBundle: emptyResources(), receiveBundle: emptyResources() }
+            { giveBundle: emptyTradeGoodMap(), receiveBundle: emptyTradeGoodMap() }
           );
         }
 
@@ -2751,40 +4175,46 @@ export function applyCatanAction(
         ) {
           throw new Error("Maritime trade quantities must be positive integers");
         }
+        if (
+          !currentState.config.enableCitiesAndKnights &&
+          (isCommodityType(action.give) || isCommodityType(action.receive))
+        ) {
+          throw new Error("Commodities are only available in Cities & Knights");
+        }
         return {
-          giveBundle: { ...emptyResources(), [action.give]: action.giveAmount },
-          receiveBundle: { ...emptyResources(), [action.receive]: recvAmt },
+          giveBundle: { ...emptyTradeGoodMap(), [action.give]: action.giveAmount },
+          receiveBundle: { ...emptyTradeGoodMap(), [action.receive]: recvAmt },
         };
       })();
 
-      const validated = RESOURCES.reduce<{
+      const validated = TRADE_GOODS.reduce<{
         totalCredits: number;
         totalReceive: number;
         giveParts: string[];
         recvParts: string[];
       }>(
-        (acc, r) => {
-          const g = giveBundle[r];
-          const w = receiveBundle[r];
+        (acc, gType) => {
+          const g = giveBundle[gType];
+          const w = receiveBundle[gType];
           if (g > 0 && w > 0) {
-            throw new Error("Cannot trade a resource for itself");
+            throw new Error("Cannot trade a resource or commodity for itself");
           }
           const nextGive = (() => {
             if (g <= 0) {
               return { credits: acc.totalCredits, parts: acc.giveParts };
             }
-            const expectedRatio = ratios[r];
+            const expectedRatio = goodRatios[gType];
             if (g % expectedRatio !== 0) {
               throw new Error(
-                `Expected ${r} trade amount to be a multiple of ${expectedRatio} (${expectedRatio}:1)`
+                `Expected ${gType} trade amount to be a multiple of ${expectedRatio} (${expectedRatio}:1)`
               );
             }
-            if (player.resources[r] < g) {
-              throw new Error(`Not enough ${r} for maritime trade`);
+            if (getPlayerGoodCount(player, gType) < g) {
+              throw new Error(`Not enough ${gType} for maritime trade`);
             }
             return {
               credits: acc.totalCredits + g / expectedRatio,
-              parts: [...acc.giveParts, `${g} ${r}`],
+              parts: [...acc.giveParts, `${g} ${gType}`],
             };
           })();
 
@@ -2792,12 +4222,12 @@ export function applyCatanAction(
             if (w <= 0) {
               return { recv: acc.totalReceive, parts: acc.recvParts };
             }
-            if (currentState.bank[r] < w) {
-              throw new Error(`Bank does not have ${w} ${r}`);
+            if (getBankGoodCount(currentState, gType) < w) {
+              throw new Error(`Bank does not have ${w} ${gType}`);
             }
             return {
               recv: acc.totalReceive + w,
-              parts: [...acc.recvParts, `${w} ${r}`],
+              parts: [...acc.recvParts, `${w} ${gType}`],
             };
           })();
 
@@ -2820,25 +4250,50 @@ export function applyCatanAction(
         );
       }
 
+      const giveResDelta = RESOURCES.reduce<ResourceMap>(
+        (acc, r) => ({ ...acc, [r]: giveBundle[r] }),
+        emptyResources()
+      );
+      const recvResDelta = RESOURCES.reduce<ResourceMap>(
+        (acc, r) => ({ ...acc, [r]: receiveBundle[r] }),
+        emptyResources()
+      );
+      const giveCommDelta = COMMODITIES.reduce<CommodityMap>(
+        (acc, c) => ({ ...acc, [c]: giveBundle[c] }),
+        emptyCommodities()
+      );
+      const recvCommDelta = COMMODITIES.reduce<CommodityMap>(
+        (acc, c) => ({ ...acc, [c]: receiveBundle[c] }),
+        emptyCommodities()
+      );
+
       const tradedState: CatanState = {
         ...currentState,
         bank: subtractResourcesPure(
-          addResourcesPure(currentState.bank, giveBundle),
-          receiveBundle
+          addResourcesPure(currentState.bank, giveResDelta),
+          recvResDelta
+        ),
+        commodityBank: subtractCommoditiesPure(
+          addCommoditiesPure(currentState.commodityBank, giveCommDelta),
+          recvCommDelta
         ),
         players: updatePlayerById(currentState.players, playerId, (p) => ({
           ...p,
           resources: addResourcesPure(
-            subtractResourcesPure(p.resources, giveBundle),
-            receiveBundle
+            subtractResourcesPure(p.resources, giveResDelta),
+            recvResDelta
+          ),
+          commodities: addCommoditiesPure(
+            subtractCommoditiesPure(p.commodities, giveCommDelta),
+            recvCommDelta
           ),
         })),
       };
 
-      const singleGiveRes = RESOURCES.filter((r) => giveBundle[r] > 0);
+      const singleGiveGood = TRADE_GOODS.filter((g) => giveBundle[g] > 0);
       const rateSuffix =
-        singleGiveRes.length === 1
-          ? ` (${ratios[singleGiveRes[0]!]}:1)`
+        singleGiveGood.length === 1
+          ? ` (${goodRatios[singleGiveGood[0]!]}:1)`
           : "";
 
       const logged = appendCatanEvent(
@@ -2856,13 +4311,24 @@ export function applyCatanAction(
       if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
         throw new Error("Can only offer domestic trade on your main phase");
       }
+      const giveCommTotal = totalCommodityCount(action.giveCommodities);
+      const wantCommTotal = totalCommodityCount(action.wantCommodities);
       if (
-        totalResourceCount(action.give) <= 0 ||
-        totalResourceCount(action.want) <= 0
+        !currentState.config.enableCitiesAndKnights &&
+        (giveCommTotal > 0 || wantCommTotal > 0)
       ) {
-        throw new Error("Domestic trade must give and want at least 1 resource");
+        throw new Error("Commodities are only available in Cities & Knights");
       }
-      if (!hasResources(player.resources, action.give)) {
+      if (
+        totalResourceCount(action.give) + giveCommTotal <= 0 ||
+        totalResourceCount(action.want) + wantCommTotal <= 0
+      ) {
+        throw new Error("Domestic trade must give and want at least 1 card");
+      }
+      if (
+        !hasResources(player.resources, action.give) ||
+        !hasCommodities(player.commodities, action.giveCommodities)
+      ) {
         throw new Error("You do not have the offered resources");
       }
 
@@ -2873,6 +4339,12 @@ export function applyCatanAction(
         toPlayerId: action.toPlayerId,
         give: action.give,
         want: action.want,
+        ...(giveCommTotal > 0
+          ? { giveCommodities: action.giveCommodities }
+          : {}),
+        ...(wantCommTotal > 0
+          ? { wantCommodities: action.wantCommodities }
+          : {}),
         acceptedBy: [] as string[],
         declinedBy: [] as string[],
       };
@@ -2886,7 +4358,7 @@ export function applyCatanAction(
         baseOffer
       );
 
-      // Automatically decline for any targeted player who does not hold the requested resources
+      // Automatically decline for any targeted player who does not hold the requested resources/commodities
       const otherPlayers = loggedOffer.state.players.filter(
         (p) => p.id !== playerId
       );
@@ -2895,7 +4367,11 @@ export function applyCatanAction(
           ? otherPlayers.filter((p) => p.id === action.toPlayerId)
           : otherPlayers;
       const autoDeclinedBy = targetedPlayers
-        .filter((p) => !hasResources(p.resources, action.want))
+        .filter(
+          (p) =>
+            !hasResources(p.resources, action.want) ||
+            !hasCommodities(p.commodities, action.wantCommodities)
+        )
         .map((p) => p.id);
 
       const allDeclined =
@@ -2947,10 +4423,16 @@ export function applyCatanAction(
       const proposer = currentState.players.find(
         (p) => p.id === offer.fromPlayerId
       )!;
-      if (!hasResources(proposer.resources, offer.give)) {
+      if (
+        !hasResources(proposer.resources, offer.give) ||
+        !hasCommodities(proposer.commodities, offer.giveCommodities)
+      ) {
         throw new Error("Proposer no longer has offered resources");
       }
-      if (!hasResources(player.resources, offer.want)) {
+      if (
+        !hasResources(player.resources, offer.want) ||
+        !hasCommodities(player.commodities, offer.wantCommodities)
+      ) {
         throw new Error("You do not have the requested resources");
       }
 
@@ -3045,10 +4527,16 @@ export function applyCatanAction(
       if (!partner) {
         throw new Error("Selected trade partner not found");
       }
-      if (!hasResources(player.resources, offer.give)) {
+      if (
+        !hasResources(player.resources, offer.give) ||
+        !hasCommodities(player.commodities, offer.giveCommodities)
+      ) {
         throw new Error("You no longer have the offered resources");
       }
-      if (!hasResources(partner.resources, offer.want)) {
+      if (
+        !hasResources(partner.resources, offer.want) ||
+        !hasCommodities(partner.commodities, offer.wantCommodities)
+      ) {
         throw new Error("Selected partner no longer has the requested resources");
       }
 
@@ -3060,6 +4548,10 @@ export function applyCatanAction(
               subtractResourcesPure(p.resources, offer.give),
               offer.want
             ),
+            commodities: addCommoditiesPure(
+              subtractCommoditiesPure(p.commodities, offer.giveCommodities),
+              offer.wantCommodities
+            ),
           };
         }
         if (p.id === partner.id) {
@@ -3068,6 +4560,10 @@ export function applyCatanAction(
             resources: subtractResourcesPure(
               addResourcesPure(p.resources, offer.give),
               offer.want
+            ),
+            commodities: subtractCommoditiesPure(
+              addCommoditiesPure(p.commodities, offer.giveCommodities),
+              offer.wantCommodities
             ),
           };
         }
@@ -3194,6 +4690,11 @@ const IRREVERSIBLE_CATAN_ACTIONS = new Set<CatanAction["type"]>([
   "BUY_DEV_CARD",
   "STEAL_FROM_PLAYER",
   "PLAY_MONOPOLY",
+  "PLAY_PROGRESS_CARD",
+  "CHASE_ROBBER_WITH_KNIGHT",
+  "SELECT_PILLAGED_CITY",
+  "SELECT_PROGRESS_DECK",
+  "DISCARD_PROGRESS_CARD",
   "OFFER_DOMESTIC_TRADE",
   "ACCEPT_DOMESTIC_TRADE",
   "DECLINE_DOMESTIC_TRADE",
@@ -3206,7 +4707,7 @@ const IRREVERSIBLE_CATAN_ACTIONS = new Set<CatanAction["type"]>([
 /**
  * Returns whether `action` can be fairly undone by the acting player within their own turn.
  * Disallows undoing dice rolls, dev-card draws, random steals, fog reveals, Monopoly hand reveals,
- * or interpersonal trade steps.
+ * Progress Card plays, or interpersonal trade steps.
  */
 export function isCatanActionUndoable(
   prevState: CatanState,
@@ -3226,7 +4727,10 @@ export function isCatanActionUndoable(
   if (
     prevState.rngState !== nextState.rngState ||
     prevState.devCardDeck.length !== nextState.devCardDeck.length ||
-    prevState.fogPool.length !== nextState.fogPool.length
+    prevState.fogPool.length !== nextState.fogPool.length ||
+    IMPROVEMENT_DISCIPLINES.some(
+      (d) => prevState.progressDecks[d].length !== nextState.progressDecks[d].length
+    )
   ) {
     return false;
   }
@@ -3237,18 +4741,26 @@ export function isCatanActionUndoable(
  * Verifies domain invariants on `state` to catch any state corruption or rule bug immediately.
  */
 export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
-  const isExpanded =
-    state.players.length >= 5 || state.config.scenarioId === "big_island_5_6";
+  const isExpanded = isExpanded56State(state);
   const expectedTotalPerResource = isExpanded ? 24 : 19;
+  const expectedTotalPerCommodity = isExpanded ? 18 : 12;
   const hasRedactedHands = state.players.some((p) => p.handRedacted);
 
-  // 1. Non-negative bank & player resources + total conservation per resource
+  // 1. Non-negative bank & player resources/commodities + total conservation
   const resourceViolations: string[] = hasRedactedHands
     ? (() => {
         const bankNegViolations = RESOURCES.filter((r) => state.bank[r] < 0).map(
           (r) => `Bank has negative ${r}: ${state.bank[r]}`
         );
+        const commNegViolations = state.config.enableCitiesAndKnights
+          ? COMMODITIES.filter((c) => state.commodityBank[c] < 0).map(
+              (c) => `Commodity bank has negative ${c}: ${state.commodityBank[c]}`
+            )
+          : [];
         const bankSum = RESOURCES.reduce<number>((s, r) => s + state.bank[r], 0);
+        const commBankSum = state.config.enableCitiesAndKnights
+          ? COMMODITIES.reduce<number>((s, c) => s + state.commodityBank[c], 0)
+          : 0;
         const playerNegViolations = state.players
           .map((p) => ({ id: p.id, count: getPlayerResourceCount(p) }))
           .filter((x) => x.count < 0)
@@ -3257,41 +4769,74 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
           (s, p) => s + getPlayerResourceCount(p),
           0
         );
-        const expectedGrandTotal = expectedTotalPerResource * RESOURCES.length;
+        const expectedGrandTotal =
+          expectedTotalPerResource * RESOURCES.length +
+          (state.config.enableCitiesAndKnights
+            ? expectedTotalPerCommodity * COMMODITIES.length
+            : 0);
         const conservationViolations =
-          bankSum + playerCardSum !== expectedGrandTotal
+          bankSum + commBankSum + playerCardSum !== expectedGrandTotal
             ? [
-                `Aggregate resource conservation violated: bank(${bankSum}) + players(${playerCardSum}) !== ${expectedGrandTotal}`,
+                `Aggregate card conservation violated: bank(${bankSum + commBankSum}) + players(${playerCardSum}) !== ${expectedGrandTotal}`,
               ]
             : [];
         return [
           ...bankNegViolations,
+          ...commNegViolations,
           ...playerNegViolations,
           ...conservationViolations,
         ];
       })()
-    : RESOURCES.flatMap((r) => {
-        const bankNeg =
-          state.bank[r] < 0 ? [`Bank has negative ${r}: ${state.bank[r]}`] : [];
-        const playerNeg = state.players
-          .filter((p) => p.resources[r] < 0)
-          .map((p) => `Player ${p.id} has negative ${r}: ${p.resources[r]}`);
-        const playerSum = state.players.reduce<number>(
-          (s, p) => s + p.resources[r],
-          0
-        );
-        const conservation =
-          state.bank[r] + playerSum !== expectedTotalPerResource
-            ? [
-                `Resource conservation violated for ${r}: bank(${state.bank[r]}) + players(${playerSum}) !== ${expectedTotalPerResource}`,
-              ]
-            : [];
-        return [...bankNeg, ...playerNeg, ...conservation];
-      });
+    : [
+        ...RESOURCES.flatMap((r) => {
+          const bankNeg =
+            state.bank[r] < 0 ? [`Bank has negative ${r}: ${state.bank[r]}`] : [];
+          const playerNeg = state.players
+            .filter((p) => p.resources[r] < 0)
+            .map((p) => `Player ${p.id} has negative ${r}: ${p.resources[r]}`);
+          const playerSum = state.players.reduce<number>(
+            (s, p) => s + p.resources[r],
+            0
+          );
+          const conservation =
+            state.bank[r] + playerSum !== expectedTotalPerResource
+              ? [
+                  `Resource conservation violated for ${r}: bank(${state.bank[r]}) + players(${playerSum}) !== ${expectedTotalPerResource}`,
+                ]
+              : [];
+          return [...bankNeg, ...playerNeg, ...conservation];
+        }),
+        ...(state.config.enableCitiesAndKnights
+          ? COMMODITIES.flatMap((c) => {
+              const bankNeg =
+                state.commodityBank[c] < 0
+                  ? [
+                      `Commodity bank has negative ${c}: ${state.commodityBank[c]}`,
+                    ]
+                  : [];
+              const playerNeg = state.players
+                .filter((p) => p.commodities[c] < 0)
+                .map(
+                  (p) => `Player ${p.id} has negative ${c}: ${p.commodities[c]}`
+                );
+              const playerSum = state.players.reduce<number>(
+                (s, p) => s + p.commodities[c],
+                0
+              );
+              const conservation =
+                state.commodityBank[c] + playerSum !== expectedTotalPerCommodity
+                  ? [
+                      `Commodity conservation violated for ${c}: bank(${state.commodityBank[c]}) + players(${playerSum}) !== ${expectedTotalPerCommodity}`,
+                    ]
+                  : [];
+              return [...bankNeg, ...playerNeg, ...conservation];
+            })
+          : []),
+      ];
 
-  // 2. Distance Rule on all buildings
-  const distanceViolations: string[] = Object.entries(state.buildings).flatMap(
-    ([vId, b]) => {
+  // 2. Distance Rule on all buildings + Knight/Building mutual exclusion
+  const distanceViolations: string[] = [
+    ...Object.entries(state.buildings).flatMap(([vId, b]) => {
       const vNode = state.topology.vertices[vId];
       if (!vNode) {
         return [`Building placed on non-existent vertex ${vId}`];
@@ -3302,13 +4847,22 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
           (adjVId) =>
             `Distance rule violated: adjacent buildings at ${vId} (${b.ownerId}) and ${adjVId} (${state.buildings[adjVId]!.ownerId})`
         );
-    }
-  );
+    }),
+    ...Object.keys(state.knights)
+      .filter((vId) => Boolean(state.buildings[vId]))
+      .map((vId) => `Vertex ${vId} has both a building and a knight`),
+  ];
 
-  // 3. Piece supply counts match board pieces
+  // 3. Piece supply counts match board pieces (including borrowedCityPiece & Knights)
   const pieceViolations: string[] = state.players.flatMap((p) => {
-    const settlementsOnBoard = Object.values(state.buildings).filter(
-      (b) => b.ownerId === p.id && b.type === "settlement"
+    const regularSettlementsOnBoard = Object.values(state.buildings).filter(
+      (b) => b.ownerId === p.id && b.type === "settlement" && !b.borrowedCityPiece
+    ).length;
+    const borrowedCitySettlementsOnBoard = Object.values(state.buildings).filter(
+      (b) =>
+        b.ownerId === p.id &&
+        b.type === "settlement" &&
+        Boolean(b.borrowedCityPiece)
     ).length;
     const citiesOnBoard = Object.values(state.buildings).filter(
       (b) => b.ownerId === p.id && b.type === "city"
@@ -3319,16 +4873,25 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
     const shipsOnBoard = Object.values(state.edges).filter(
       (e) => e.ownerId === p.id && e.type === "ship"
     ).length;
+    const basicKnightsOnBoard = Object.values(state.knights).filter(
+      (k) => k.ownerId === p.id && k.level === 1
+    ).length;
+    const strongKnightsOnBoard = Object.values(state.knights).filter(
+      (k) => k.ownerId === p.id && k.level === 2
+    ).length;
+    const mightyKnightsOnBoard = Object.values(state.knights).filter(
+      (k) => k.ownerId === p.id && k.level === 3
+    ).length;
 
     return [
-      ...(settlementsOnBoard + p.settlementsRemaining !== 5
+      ...(regularSettlementsOnBoard + p.settlementsRemaining !== 5
         ? [
-            `Player ${p.id} settlement count mismatch: ${settlementsOnBoard} + ${p.settlementsRemaining} !== 5`,
+            `Player ${p.id} settlement count mismatch: ${regularSettlementsOnBoard} + ${p.settlementsRemaining} !== 5`,
           ]
         : []),
-      ...(citiesOnBoard + p.citiesRemaining !== 4
+      ...(citiesOnBoard + borrowedCitySettlementsOnBoard + p.citiesRemaining !== 4
         ? [
-            `Player ${p.id} city count mismatch: ${citiesOnBoard} + ${p.citiesRemaining} !== 4`,
+            `Player ${p.id} city count mismatch: ${citiesOnBoard} + borrowed(${borrowedCitySettlementsOnBoard}) + ${p.citiesRemaining} !== 4`,
           ]
         : []),
       ...(roadsOnBoard + p.roadsRemaining !== 15
@@ -3341,13 +4904,68 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
             `Player ${p.id} ship count mismatch: ${shipsOnBoard} + ${p.shipsRemaining} !== 15`,
           ]
         : []),
+      ...(state.config.enableCitiesAndKnights &&
+      basicKnightsOnBoard + p.basicKnightsRemaining !== 2
+        ? [
+            `Player ${p.id} basic knight mismatch: ${basicKnightsOnBoard} + ${p.basicKnightsRemaining} !== 2`,
+          ]
+        : []),
+      ...(state.config.enableCitiesAndKnights &&
+      strongKnightsOnBoard + p.strongKnightsRemaining !== 2
+        ? [
+            `Player ${p.id} strong knight mismatch: ${strongKnightsOnBoard} + ${p.strongKnightsRemaining} !== 2`,
+          ]
+        : []),
+      ...(state.config.enableCitiesAndKnights &&
+      mightyKnightsOnBoard + p.mightyKnightsRemaining !== 2
+        ? [
+            `Player ${p.id} mighty knight mismatch: ${mightyKnightsOnBoard} + ${p.mightyKnightsRemaining} !== 2`,
+          ]
+        : []),
     ];
   });
+
+  // 4. Cities & Knights Metropolis & Progress Deck conservation
+  const ckViolations: string[] = state.config.enableCitiesAndKnights
+    ? [
+        ...IMPROVEMENT_DISCIPLINES.flatMap((d) => {
+          const m = state.metropolises[d];
+          if (!m.ownerId || !m.vertexId) return [];
+          const b = state.buildings[m.vertexId];
+          if (!b || b.ownerId !== m.ownerId || b.type !== "city" || b.metropolis !== d) {
+            return [
+              `Metropolis ${d} state (${m.ownerId}@${m.vertexId}) does not match board building`,
+            ];
+          }
+          return [];
+        }),
+        ...(!hasRedactedHands
+          ? IMPROVEMENT_DISCIPLINES.flatMap((d) => {
+              const inDeck = state.progressDecks[d].length;
+              const inHands = state.players.reduce<number>(
+                (sum, p) =>
+                  sum +
+                  p.progressCards.filter((c) => c.discipline === d).length +
+                  p.publicProgressVpCards.filter(
+                    (t) => PROGRESS_CARD_CATALOG[t].discipline === d
+                  ).length,
+                0
+              );
+              return inDeck + inHands !== 18
+                ? [
+                    `Progress deck ${d} conservation violated: deck(${inDeck}) + hands/public(${inHands}) !== 18`,
+                  ]
+                : [];
+            })
+          : []),
+      ]
+    : [];
 
   const violations = [
     ...resourceViolations,
     ...distanceViolations,
     ...pieceViolations,
+    ...ckViolations,
   ];
 
   return {

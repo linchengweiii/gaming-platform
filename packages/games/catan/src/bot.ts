@@ -3,6 +3,22 @@ import {
   computeLongestSimpleEdgePath,
 } from "@gaming-platform/core";
 import {
+  canPlayerUpgradeDiscipline,
+  emptyCommodities,
+  getBankGoodCount,
+  getBarbarianStrength,
+  getEffectiveCityCost,
+  getPlayerActiveKnightStrength,
+  getPlayerGoodCount,
+  getPlayerGoodTradeRatios,
+  getPlayerVulnerableCities,
+  getTotalActiveKnightStrength,
+  hasCommodities,
+  isCommodityType,
+  isResourceType,
+  totalCommodityCount,
+} from "./cities-and-knights.ts";
+import {
   computePlayerVictoryPoints,
   emptyResources,
   getCatanLegalActions,
@@ -13,18 +29,29 @@ import {
   getPlayerSafeHandLimit,
   getPlayerTradeRatios,
   hasResources,
+  isExpanded56State,
   totalResourceCount,
 } from "./rules.ts";
 import {
+  BARBARIAN_TRACK_STEPS,
   BUILDING_COSTS,
+  COMMODITIES,
   type CatanAction,
   type CatanPlayerState,
   type CatanState,
+  type CommodityMap,
+  type CommodityType,
+  DISCIPLINE_TO_COMMODITY,
+  IMPROVEMENT_DISCIPLINES,
+  type ImprovementDiscipline,
   NUMBER_TOKEN_PIPS,
   RESOURCES,
   type ResourceMap,
   type ResourceType,
+  TERRAIN_TO_COMMODITY,
   TERRAIN_TO_RESOURCE,
+  TRADE_GOODS,
+  type TradeGoodType,
 } from "./types.ts";
 
 /**
@@ -271,6 +298,18 @@ function estimatePublicPlayerThreatVp(
     awardThreat += 0.7;
   }
 
+  if (state.config.enableCitiesAndKnights) {
+    const progressCount = p.handRedacted
+      ? p.hiddenProgressCardCount ?? 0
+      : p.progressCards.length;
+    const metroRaceBonus = IMPROVEMENT_DISCIPLINES.some(
+      (d) => p.cityImprovements[d] === 3 && state.metropolises[d].ownerId === null
+    )
+      ? 0.9
+      : 0;
+    return visible + progressCount * 0.25 + awardThreat + metroRaceBonus;
+  }
+
   return visible + unplayedCount * 0.34 + awardThreat;
 }
 
@@ -423,6 +462,13 @@ function simulateRouteLengthWithEdge(
       blockedVertices.add(vId);
     }
   }
+  if (state.config.enableCitiesAndKnights) {
+    for (const [vId, k] of Object.entries(state.knights)) {
+      if (k.ownerId !== playerId) {
+        blockedVertices.add(vId);
+      }
+    }
+  }
 
   const getType = (eId: string): "road" | "ship" | null => {
     if (eId === addedEdgeId) return addedKind;
@@ -465,6 +511,13 @@ function simulateOpponentRouteLengthAfterBlock(
   for (const [vId, b] of Object.entries(state.buildings)) {
     if (b.ownerId !== oppId) {
       blockedVertices.add(vId);
+    }
+  }
+  if (state.config.enableCitiesAndKnights) {
+    for (const [vId, k] of Object.entries(state.knights)) {
+      if (k.ownerId !== oppId) {
+        blockedVertices.add(vId);
+      }
     }
   }
 
@@ -656,6 +709,24 @@ export function evaluateVertexScore(
       startResources.ore >= 1
     ) {
       score += weights.setupSecondStartHandWeight * 1.1;
+    }
+  }
+
+  // Cities & Knights: 2nd setup building is a City! Weight commodity production (Forest->Paper, Mountains->Coin, Pasture->Cloth) heavily!
+  if (state.config.enableCitiesAndKnights && state.phase === "SETUP_SETTLEMENT_2") {
+    for (const hId of vNode.adjacentHexIds) {
+      const tile = state.hexes[hId];
+      if (!tile?.numberToken) continue;
+      const pips = NUMBER_TOKEN_PIPS[tile.numberToken] ?? 0;
+      const comm = TERRAIN_TO_COMMODITY[tile.terrain];
+      if (comm === "paper") {
+        // Science -> Aqueduct (Lv 3) is the strongest C&K engine!
+        score += pips * 2.25;
+      } else if (comm === "coin") {
+        score += pips * 1.95;
+      } else if (comm === "cloth") {
+        score += pips * 1.75;
+      }
     }
   }
 
@@ -935,6 +1006,77 @@ function evaluateHandStrategicValue(
  * - `normal`: fast greedy discard from largest resource stacks
  * - `smart` / `master`: exact DFS hand-preservation solver maximizing post-discard build potential!
  */
+function chooseCkDiscardWithCommodities(
+  state: CatanState,
+  player: CatanPlayerState,
+  needed: number
+): CatanAction {
+  const scarcity = computeBoardScarcity(state);
+  const remRes: ResourceMap = { ...player.resources };
+  const remComm: CommodityMap = { ...player.commodities };
+  const dropRes: Partial<ResourceMap> = {};
+  const dropComm: Partial<CommodityMap> = {};
+
+  const scoreDropPenalty = (good: TradeGoodType): number => {
+    if (isCommodityType(good)) {
+      const disc: ImprovementDiscipline =
+        good === "paper" ? "science" : good === "cloth" ? "trade" : "politics";
+      const curLvl = player.cityImprovements[disc];
+      if (curLvl >= 5) return 0.5;
+      const nextReq = Math.max(
+        1,
+        curLvl + 1 - (player.activeTurnDiscounts.crane ? 1 : 0)
+      );
+      const held = remComm[good];
+      // Surplus above next upgrade cost is cheap to drop; cards needed for upgrade are precious!
+      if (held > nextReq) return 1.4;
+      const metroAvailable =
+        (curLvl === 3 && state.metropolises[disc].ownerId === null) ||
+        (curLvl === 4 && state.metropolises[disc].level < 5);
+      const discBias = disc === "science" ? 2.5 : disc === "trade" ? 1.8 : 1.5;
+      return 6.5 + discBias + (metroAvailable ? 4.5 : 0) - Math.max(0, nextReq - held);
+    }
+    const held = remRes[good];
+    const base =
+      good === "ore"
+        ? 4.8
+        : good === "grain"
+          ? 4.6
+          : good === "wool"
+            ? 3.4
+            : 2.8;
+    return (base * scarcity[good]) / Math.max(1, held * 0.65);
+  };
+
+  for (let step = 0; step < needed; step++) {
+    let bestGood: TradeGoodType | null = null;
+    let lowestPenalty = Infinity;
+    for (const g of TRADE_GOODS) {
+      const avail = isCommodityType(g) ? remComm[g] : remRes[g];
+      if (avail <= 0) continue;
+      const pen = scoreDropPenalty(g);
+      if (pen < lowestPenalty) {
+        lowestPenalty = pen;
+        bestGood = g;
+      }
+    }
+    if (!bestGood) break;
+    if (isCommodityType(bestGood)) {
+      remComm[bestGood] -= 1;
+      dropComm[bestGood] = (dropComm[bestGood] ?? 0) + 1;
+    } else {
+      remRes[bestGood] -= 1;
+      dropRes[bestGood] = (dropRes[bestGood] ?? 0) + 1;
+    }
+  }
+
+  return {
+    type: "DISCARD_CARDS",
+    resources: dropRes,
+    ...(totalCommodityCount(dropComm) > 0 ? { commodities: dropComm } : {}),
+  };
+}
+
 function chooseOptimalDiscardAction(
   state: CatanState,
   player: CatanPlayerState,
@@ -945,6 +1087,13 @@ function chooseOptimalDiscardAction(
   const diff = player.botDifficulty ?? "smart";
   if (diff === "easy") {
     return fallbackLegal[0]!;
+  }
+
+  if (
+    state.config.enableCitiesAndKnights &&
+    totalCommodityCount(player.commodities) > 0
+  ) {
+    return chooseCkDiscardWithCommodities(state, player, needed);
   }
 
   if (diff === "normal") {
@@ -1327,7 +1476,21 @@ function shouldBotAcceptDomesticTrade(
 ): boolean {
   const offer = state.activeTradeOffer;
   if (!offer) return false;
-  if (!hasResources(responder.resources, offer.want)) return false;
+  if (
+    !hasResources(responder.resources, offer.want) ||
+    !hasCommodities(responder.commodities, offer.wantCommodities)
+  ) {
+    return false;
+  }
+  if (
+    state.config.enableCitiesAndKnights &&
+    totalCommodityCount(offer.wantCommodities) > 0
+  ) {
+    // Never trade away scarce commodities off-turn unless easy difficulty
+    if ((responder.botDifficulty ?? "smart") !== "easy") {
+      return false;
+    }
+  }
 
   const proposer = state.players.find((p) => p.id === offer.fromPlayerId);
   if (!proposer) return false;
@@ -1678,8 +1841,7 @@ function findStrategicDomesticTradeOffer(
   const ratios = getPlayerTradeRatios(state, player.id);
 
   // Public bank-deduction supply held across all opponents (`19 - bank[r] - myHand[r]`)
-  const isExpandedSupply =
-    state.players.length >= 5 || state.config.scenarioId === "big_island_5_6";
+  const isExpandedSupply = isExpanded56State(state);
   const maxSupplyPerRes = isExpandedSupply ? 24 : 19;
   const oppPublicSupply: Record<ResourceType, number> = emptyResources();
   for (const r of RESOURCES) {
@@ -2131,8 +2293,7 @@ function findImmediateWinningAction(
       a.type === "PLAY_MONOPOLY"
   );
   if (monoActions.length > 0) {
-    const isExpanded =
-      state.players.length >= 5 || state.config.scenarioId === "big_island_5_6";
+    const isExpanded = isExpanded56State(state);
     const totalSupplyPerRes = isExpanded ? 24 : 19;
     for (const act of monoActions) {
       const oppCount = Math.max(
@@ -2377,6 +2538,639 @@ function chooseMasterFirstSettlementWithSnakeRollout(
   ).act;
 }
 
+function chooseCkPillagedCityAction(
+  state: CatanState,
+  legalActions: CatanAction[]
+): CatanAction {
+  const pillageActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "SELECT_PILLAGED_CITY" }> =>
+      a.type === "SELECT_PILLAGED_CITY"
+  );
+  if (pillageActs.length <= 1) return legalActions[0]!;
+
+  // Sacrifice the city with the lowest total resource + commodity pip value
+  return pillageActs.reduce<{ act: CatanAction; val: number }>(
+    (worst, act) => {
+      const vNode = state.topology.vertices[act.vertexId];
+      const val = (vNode?.adjacentHexIds ?? []).reduce<number>((sum, hId) => {
+        const tile = state.hexes[hId];
+        if (!tile?.numberToken) return sum;
+        const pips = NUMBER_TOKEN_PIPS[tile.numberToken] ?? 0;
+        const comm = TERRAIN_TO_COMMODITY[tile.terrain];
+        return sum + pips * (comm ? 2.2 : 1.0);
+      }, 0);
+      return val < worst.val ? { act, val } : worst;
+    },
+    { act: pillageActs[0]!, val: Infinity }
+  ).act;
+}
+
+function chooseCkProgressSelectionAction(
+  state: CatanState,
+  player: CatanPlayerState,
+  legalActions: CatanAction[]
+): CatanAction {
+  const deckPicks = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "SELECT_PROGRESS_DECK" }> =>
+      a.type === "SELECT_PROGRESS_DECK"
+  );
+  if (deckPicks.length > 0) {
+    const prefOrder: ImprovementDiscipline[] = ["science", "trade", "politics"];
+    for (const d of prefOrder) {
+      const match = deckPicks.find((a) => a.discipline === d);
+      if (match) return match;
+    }
+    return deckPicks[0]!;
+  }
+
+  const discardPicks = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "DISCARD_PROGRESS_CARD" }> =>
+      a.type === "DISCARD_PROGRESS_CARD"
+  );
+  if (discardPicks.length > 0) {
+    const keepValue = (cardId: string): number => {
+      const c = player.progressCards.find((x) => x.id === cardId);
+      if (!c) return 0;
+      switch (c.type) {
+        case "merchant":
+        case "mining":
+        case "irrigation":
+        case "resource_monopoly":
+        case "trade_monopoly":
+        case "alchemist":
+        case "road_building":
+        case "medicine":
+        case "crane":
+        case "smith":
+        case "warlord":
+          return 10;
+        case "engineer":
+        case "spy":
+        case "bishop":
+        case "master_merchant":
+        case "wedding":
+          return 7;
+        default:
+          return 3;
+      }
+    };
+    return discardPicks.reduce<{ act: CatanAction; val: number }>(
+      (lowest, act) => {
+        const v = keepValue(act.cardId);
+        return v < lowest.val ? { act, val: v } : lowest;
+      },
+      { act: discardPicks[0]!, val: Infinity }
+    ).act;
+  }
+
+  return legalActions[0]!;
+}
+
+function chooseCkAlchemistPreRollAction(
+  state: CatanState,
+  player: CatanPlayerState,
+  legalActions: CatanAction[]
+): CatanAction | null {
+  const alchActs = legalActions.filter(
+    (
+      a
+    ): a is Extract<CatanAction, { type: "PLAY_PROGRESS_CARD" }> =>
+      a.type === "PLAY_PROGRESS_CARD" &&
+      player.progressCards.find((c) => c.id === a.cardId)?.type === "alchemist"
+  );
+  if (alchActs.length === 0) return null;
+
+  const evalRollTotal = (total: number): { myGain: number; oppGain: number } => {
+    if (total === 7) return { myGain: 0, oppGain: 0 };
+    return state.topology.hexOrder.reduce<{ myGain: number; oppGain: number }>(
+      (acc, hId) => {
+        if (hId === state.robberHexId) return acc;
+        const tile = state.hexes[hId];
+        if (!tile || tile.numberToken !== total) return acc;
+        const res = TERRAIN_TO_RESOURCE[tile.terrain];
+        const comm = TERRAIN_TO_COMMODITY[tile.terrain];
+        if (!res && tile.terrain !== "gold") return acc;
+        const hNode = state.topology.hexes[hId]!;
+        return hNode.cornerVertexIds.reduce<{ myGain: number; oppGain: number }>(
+          (inner, vId) => {
+            const b = state.buildings[vId];
+            if (!b) return inner;
+            const yieldVal =
+              b.type === "city" ? (comm ? 2.8 : 2.0) : 1.0;
+            if (b.ownerId === player.id) {
+              return { myGain: inner.myGain + yieldVal, oppGain: inner.oppGain };
+            }
+            return { myGain: inner.myGain, oppGain: inner.oppGain + yieldVal };
+          },
+          acc
+        );
+      },
+      { myGain: 0, oppGain: 0 }
+    );
+  };
+
+  let bestAct: CatanAction | null = null;
+  let bestScore = 2.5;
+  for (const act of alchActs) {
+    const d1 = act.params?.die1 ?? 0;
+    const d2 = act.params?.die2 ?? 0;
+    const total = d1 + d2;
+    if (total === 7) continue;
+    const { myGain, oppGain } = evalRollTotal(total);
+    if (myGain <= 0) continue;
+    // Red die `d2` triggers Progress Cards on `d2 <= level + 1`; pick low `d2` if we have upgrades or high `d2 = 6` to deny opponents!
+    const myMaxImp = Math.max(
+      player.cityImprovements.trade,
+      player.cityImprovements.politics,
+      player.cityImprovements.science
+    );
+    const redBonus =
+      myMaxImp >= 1 && d2 <= myMaxImp + 1 ? 0.8 : myMaxImp === 0 && d2 === 6 ? 0.5 : 0;
+    const score = myGain * 3.2 - oppGain * 0.45 + redBonus;
+    if (score > bestScore) {
+      bestScore = score;
+      bestAct = act;
+    }
+  }
+  return bestAct;
+}
+
+function chooseCkPriorityMainAction(
+  state: CatanState,
+  player: CatanPlayerState,
+  legalActions: CatanAction[],
+  currentVp: number,
+  targetVp: number
+): CatanAction | null {
+  const playerId = player.id;
+  const difficulty = player.botDifficulty ?? "smart";
+
+  const upgradeActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "UPGRADE_CITY_IMPROVEMENT" }> =>
+      a.type === "UPGRADE_CITY_IMPROVEMENT"
+  );
+  const progressActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "PLAY_PROGRESS_CARD" }> =>
+      a.type === "PLAY_PROGRESS_CARD"
+  );
+  const activateKnightActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "ACTIVATE_KNIGHT" }> =>
+      a.type === "ACTIVATE_KNIGHT"
+  );
+  const buildKnightActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "BUILD_KNIGHT" }> =>
+      a.type === "BUILD_KNIGHT"
+  );
+  const promoteKnightActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "PROMOTE_KNIGHT" }> =>
+      a.type === "PROMOTE_KNIGHT"
+  );
+  const chaseActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "CHASE_ROBBER_WITH_KNIGHT" }> =>
+      a.type === "CHASE_ROBBER_WITH_KNIGHT"
+  );
+  const moveKnightActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "MOVE_KNIGHT" }> =>
+      a.type === "MOVE_KNIGHT"
+  );
+
+  const findCardType = (cardId: string) =>
+    player.progressCards.find((c) => c.id === cardId)?.type;
+
+  // 1. Immediate C&K Lethal Checks (Metropolis +2 VP, Merchant +1 VP, Knight Road-Break +2 VP)
+  for (const up of upgradeActs) {
+    const check = canPlayerUpgradeDiscipline(state, player, up.discipline);
+    const alreadyOwnMetro = state.metropolises[up.discipline].ownerId === playerId;
+    if (check.claimsMetropolis && !alreadyOwnMetro && currentVp + 2 >= targetVp) {
+      return up;
+    }
+  }
+  if (state.merchantOwnerId !== playerId && currentVp + 1 >= targetVp) {
+    const merchAct = progressActs.find(
+      (a) => findCardType(a.cardId) === "merchant"
+    );
+    if (merchAct) return merchAct;
+  }
+
+  // 2. Free Discount Progress Cards BEFORE spending commodities/resources (`crane`, `medicine`, `engineer`)
+  const craneAct = progressActs.find((a) => findCardType(a.cardId) === "crane");
+  if (craneAct) {
+    const craneUnlocksOrSaves = IMPROVEMENT_DISCIPLINES.some((d) => {
+      const lvl = player.cityImprovements[d];
+      if (lvl >= 5) return false;
+      const comm = DISCIPLINE_TO_COMMODITY[d];
+      const hasCity = Object.values(state.buildings).some(
+        (b) => b.ownerId === playerId && b.type === "city"
+      );
+      return hasCity && player.commodities[comm] >= Math.max(1, lvl);
+    });
+    if (craneUnlocksOrSaves) return craneAct;
+  }
+
+  const medicineAct = progressActs.find(
+    (a) => findCardType(a.cardId) === "medicine"
+  );
+  if (medicineAct) {
+    const hasSettlement = Object.values(state.buildings).some(
+      (b) => b.ownerId === playerId && b.type === "settlement"
+    );
+    if (
+      hasSettlement &&
+      (player.citiesRemaining > 0 ||
+        Object.values(state.buildings).some(
+          (b) =>
+            b.ownerId === playerId &&
+            b.type === "settlement" &&
+            b.borrowedCityPiece
+        )) &&
+      player.resources.ore >= 2 &&
+      player.resources.grain >= 1
+    ) {
+      return medicineAct;
+    }
+  }
+
+  const engineerAct = progressActs.find(
+    (a) => findCardType(a.cardId) === "engineer"
+  );
+  if (engineerAct) return engineerAct;
+
+  // 3. Urgent Barbarian Defense & Solo Defender (+1 VP) Contest
+  const barbStr = getBarbarianStrength(state);
+  const totalDefStr = getTotalActiveKnightStrength(state);
+  const myActiveStr = getPlayerActiveKnightStrength(state, playerId);
+  const myVulnCities = getPlayerVulnerableCities(state, playerId);
+  const stepsLeft = BARBARIAN_TRACK_STEPS - state.barbarianPosition;
+
+  const warlordAct = progressActs.find(
+    (a) => findCardType(a.cardId) === "warlord"
+  );
+  const smithActs = progressActs.filter(
+    (a) => findCardType(a.cardId) === "smith"
+  );
+  if (smithActs.length > 0) {
+    // Free 2-knight promotion is always huge tempo!
+    return smithActs[0]!;
+  }
+  if (warlordAct) {
+    const myInactiveCount = Object.values(state.knights).filter(
+      (k) => k.ownerId === playerId && !k.active
+    ).length;
+    if (myInactiveCount >= 1) return warlordAct;
+  }
+
+  const minContributorStr = state.players.reduce<number>((minVal, p) => {
+    const vuln = getPlayerVulnerableCities(state, p.id);
+    if (vuln.length === 0) return minVal;
+    return Math.min(minVal, getPlayerActiveKnightStrength(state, p.id));
+  }, Infinity);
+
+  const cityInDanger =
+    myVulnCities.length > 0 &&
+    totalDefStr < barbStr &&
+    myActiveStr <= minContributorStr;
+  const maxOppActiveStr = Math.max(
+    0,
+    ...state.players
+      .filter((p) => p.id !== playerId)
+      .map((p) => getPlayerActiveKnightStrength(state, p.id))
+  );
+  const canClaimSoloDefenderSoon =
+    barbStr > 0 &&
+    stepsLeft <= 3 &&
+    totalDefStr + 2 >= barbStr &&
+    myActiveStr <= maxOppActiveStr &&
+    myActiveStr + 2 > maxOppActiveStr;
+
+  if (cityInDanger && (stepsLeft <= 4 || difficulty === "master")) {
+    if (activateKnightActs.length > 0) {
+      // Activate highest-level inactive knight first!
+      return [...activateKnightActs].sort(
+        (a, b) =>
+          (state.knights[b.vertexId]?.level ?? 1) -
+          (state.knights[a.vertexId]?.level ?? 1)
+      )[0]!;
+    }
+    if (
+      promoteKnightActs.length > 0 &&
+      Object.values(state.knights).some(
+        (k) => k.ownerId === playerId && k.active
+      )
+    ) {
+      return promoteKnightActs[0]!;
+    }
+    if (buildKnightActs.length > 0) {
+      return buildKnightActs[0]!;
+    }
+  }
+
+  if (canClaimSoloDefenderSoon && activateKnightActs.length > 0) {
+    return [...activateKnightActs].sort(
+      (a, b) =>
+        (state.knights[b.vertexId]?.level ?? 1) -
+        (state.knights[a.vertexId]?.level ?? 1)
+    )[0]!;
+  }
+
+  // 4. City Improvements & Metropolis Race!
+  if (upgradeActs.length > 0) {
+    const scoredUpgrades = upgradeActs
+      .map((act) => {
+        const check = canPlayerUpgradeDiscipline(state, player, act.discipline);
+        let score = 22 + check.nextLevel * 3;
+        if (check.claimsMetropolis) score += 55;
+        if (act.discipline === "science" && check.nextLevel <= 3) score += 16;
+        if (act.discipline === "trade" && check.nextLevel <= 3) score += 11;
+        if (act.discipline === "politics" && check.nextLevel === 3) score += 8;
+        if (player.activeTurnDiscounts.crane) score += 14;
+        return { act, score };
+      })
+      .sort((a, b) => b.score - a.score);
+    // Claim Metropolises, Aqueduct (Science Lv 3), or Crane-discounted upgrades immediately!
+    if (scoredUpgrades[0]!.score >= 38 || difficulty !== "easy") {
+      return scoredUpgrades[0]!.act;
+    }
+  }
+
+  // 5. High-Impact Progress Cards in Main Phase
+  if (progressActs.length > 0) {
+    let bestProg: CatanAction | null = null;
+    let bestProgScore = 8;
+
+    for (const act of progressActs) {
+      const cType = findCardType(act.cardId);
+      if (!cType) continue;
+      let s = 0;
+      switch (cType) {
+        case "mining":
+        case "irrigation":
+          s = 34;
+          break;
+        case "merchant": {
+          const hId = act.params?.hexId;
+          const pips = hId && state.hexes[hId]?.numberToken
+            ? NUMBER_TOKEN_PIPS[state.hexes[hId]!.numberToken!] ?? 0
+            : 0;
+          s = (state.merchantOwnerId !== playerId ? 28 : 12) + pips * 2;
+          break;
+        }
+        case "resource_monopoly": {
+          const res = act.params?.resource;
+          if (res) {
+            const isExp = isExpanded56State(state);
+            const oppTotal = Math.max(
+              0,
+              (isExp ? 24 : 19) - state.bank[res] - player.resources[res]
+            );
+            s = oppTotal >= 2 ? 16 + oppTotal * 3.5 : 0;
+          }
+          break;
+        }
+        case "trade_monopoly": {
+          const comm = act.params?.commodity;
+          if (comm) {
+            const isExp = isExpanded56State(state);
+            const oppTotal = Math.max(
+              0,
+              (isExp ? 18 : 12) -
+                state.commodityBank[comm] -
+                player.commodities[comm]
+            );
+            s = oppTotal >= 1 ? 18 + oppTotal * 6 : 0;
+          }
+          break;
+        }
+        case "road_building":
+          s = 25;
+          break;
+        case "spy":
+        case "master_merchant":
+        case "wedding":
+          s = 24;
+          break;
+        case "bishop": {
+          const hId = act.params?.hexId;
+          const hNode = hId ? state.topology.hexes[hId] : undefined;
+          const touchesSelf = Boolean(
+            hNode?.cornerVertexIds.some(
+              (vId) => state.buildings[vId]?.ownerId === playerId
+            )
+          );
+          const oppTouchCount = (hNode?.cornerVertexIds ?? []).filter((vId) => {
+            const b = state.buildings[vId];
+            return b && b.ownerId !== playerId;
+          }).length;
+          s = touchesSelf ? -20 : 14 + oppTouchCount * 6;
+          break;
+        }
+        case "saboteur": {
+          const hurtCount = state.players.filter(
+            (opp) =>
+              opp.id !== playerId &&
+              computePlayerVictoryPoints(state, opp.id, true) >=
+                computePlayerVictoryPoints(state, playerId, true) &&
+              getPlayerResourceCount(opp) >= 4
+          ).length;
+          s = hurtCount > 0 ? 15 + hurtCount * 6 : 0;
+          break;
+        }
+        case "deserter":
+          s = 26;
+          break;
+        case "intrigue":
+          s = 19;
+          break;
+        case "diplomat": {
+          const eId = act.params?.edgeId;
+          const isOpp = eId && state.edges[eId]?.ownerId !== playerId;
+          s = isOpp ? 18 : 0;
+          break;
+        }
+        case "inventor": {
+          const h1 = act.params?.hexId1;
+          const h2 = act.params?.hexId2;
+          if (h1 && h2) {
+            const p1 = NUMBER_TOKEN_PIPS[state.hexes[h1]?.numberToken ?? 0] ?? 0;
+            const p2 = NUMBER_TOKEN_PIPS[state.hexes[h2]?.numberToken ?? 0] ?? 0;
+            const own1 = (state.topology.hexes[h1]?.cornerVertexIds ?? []).some(
+              (vId) => state.buildings[vId]?.ownerId === playerId
+            );
+            const own2 = (state.topology.hexes[h2]?.cornerVertexIds ?? []).some(
+              (vId) => state.buildings[vId]?.ownerId === playerId
+            );
+            if (own1 && !own2 && p2 > p1) s = 14 + (p2 - p1) * 4;
+            else if (own2 && !own1 && p1 > p2) s = 14 + (p1 - p2) * 4;
+          }
+          break;
+        }
+        case "merchant_fleet": {
+          const g = act.params?.good;
+          if (g && getPlayerGoodCount(player, g) >= 2) {
+            const curRatio = getPlayerGoodTradeRatios(state, playerId)[g];
+            if (curRatio > 2) s = 13;
+          }
+          break;
+        }
+        case "commercial_harbor":
+          s = player.progressCards.length >= 3 ? 11 : 0;
+          break;
+        default:
+          s = 0;
+      }
+      if (s > bestProgScore) {
+        bestProgScore = s;
+        bestProg = act;
+      }
+    }
+    if (bestProg) return bestProg;
+  }
+
+  // 6. Tactical Knight Actions: Chase Robber off our hex, or displace / road-break opponent!
+  if (chaseActs.length > 0 && (!cityInDanger || stepsLeft >= 3)) {
+    const robberTouchesMe = (
+      state.topology.hexes[state.robberHexId]?.cornerVertexIds ?? []
+    ).some((vId) => state.buildings[vId]?.ownerId === playerId);
+    if (robberTouchesMe) {
+      const goodChase = chaseActs.find((act) => {
+        const hNode = state.topology.hexes[act.hexId];
+        return (
+          hNode &&
+          !hNode.cornerVertexIds.some(
+            (vId) => state.buildings[vId]?.ownerId === playerId
+          ) &&
+          hNode.cornerVertexIds.some((vId) => Boolean(state.buildings[vId]))
+        );
+      });
+      if (goodChase) return goodChase;
+    }
+  }
+
+  if (moveKnightActs.length > 0 && (!cityInDanger || stepsLeft >= 3)) {
+    const displacingMove = moveKnightActs.find((m) =>
+      Boolean(state.knights[m.toVertexId])
+    );
+    if (displacingMove) return displacingMove;
+  }
+
+  return null;
+}
+
+function chooseCkPostBuildAction(
+  state: CatanState,
+  player: CatanPlayerState,
+  legalActions: CatanAction[]
+): CatanAction | null {
+  const playerId = player.id;
+  const activateActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "ACTIVATE_KNIGHT" }> =>
+      a.type === "ACTIVATE_KNIGHT"
+  );
+  const buildKnightActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "BUILD_KNIGHT" }> =>
+      a.type === "BUILD_KNIGHT"
+  );
+  const promoteActs = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "PROMOTE_KNIGHT" }> =>
+      a.type === "PROMOTE_KNIGHT"
+  );
+  const maritimeTrades = legalActions.filter(
+    (a): a is Extract<CatanAction, { type: "MARITIME_TRADE" }> =>
+      a.type === "MARITIME_TRADE"
+  );
+
+  // Activate existing inactive knights whenever we have spare grain or cities on board!
+  if (activateActs.length > 0 && player.resources.grain >= 1) {
+    return [...activateActs].sort(
+      (a, b) =>
+        (state.knights[b.vertexId]?.level ?? 1) -
+        (state.knights[a.vertexId]?.level ?? 1)
+    )[0]!;
+  }
+
+  const myKnightsOnBoard = Object.values(state.knights).filter(
+    (k) => k.ownerId === playerId
+  ).length;
+  const myCitiesOnBoard = Object.values(state.buildings).filter(
+    (b) => b.ownerId === playerId && b.type === "city"
+  ).length;
+
+  // Maintain at least 1 knight per city (and recruit on contested road intersections!)
+  if (buildKnightActs.length > 0 && myKnightsOnBoard < Math.max(1, myCitiesOnBoard)) {
+    const blockingSpot = buildKnightActs.find((act) => {
+      const vNode = state.topology.vertices[act.vertexId];
+      const oppEdges = (vNode?.incidentEdgeIds ?? []).filter((eId) => {
+        const o = state.edges[eId]?.ownerId;
+        return o && o !== playerId;
+      });
+      return oppEdges.length >= 2;
+    });
+    return blockingSpot ?? buildKnightActs[0]!;
+  }
+
+  if (promoteActs.length > 0 && myCitiesOnBoard >= 1 && player.resources.ore >= 2) {
+    return promoteActs[0]!;
+  }
+
+  // Commodity-aware Maritime Trade: trade surplus goods for 1 missing commodity to unlock a City Improvement / Metropolis!
+  if (maritimeTrades.length > 0 && myCitiesOnBoard >= 1) {
+    for (const d of ["science", "trade", "politics"] as const) {
+      const lvl = player.cityImprovements[d];
+      if (lvl >= 5) continue;
+      const comm = DISCIPLINE_TO_COMMODITY[d];
+      const needed = Math.max(
+        1,
+        lvl + 1 - (player.activeTurnDiscounts.crane ? 1 : 0)
+      );
+      if (
+        player.commodities[comm] === needed - 1 &&
+        state.commodityBank[comm] >= 1
+      ) {
+        const tradeForComm = maritimeTrades.find((t) => {
+          if (t.receive !== comm) return false;
+          if (isCommodityType(t.give)) {
+            const otherDisc: ImprovementDiscipline =
+              t.give === "paper"
+                ? "science"
+                : t.give === "cloth"
+                  ? "trade"
+                  : "politics";
+            return (
+              player.cityImprovements[otherDisc] >= 5 ||
+              player.commodities[t.give] >
+                player.cityImprovements[otherDisc] + 1
+            );
+          }
+          return player.resources[t.give] >= t.giveAmount + 1;
+        });
+        if (tradeForComm) return tradeForComm;
+      }
+    }
+
+    // Or convert surplus max-level / Trading-House (2:1) commodities into scarce Ore/Grain/Brick!
+    const commToResTrades = maritimeTrades.filter(
+      (t) => isCommodityType(t.give) && isResourceType(t.receive)
+    );
+    for (const t of commToResTrades) {
+      const giveComm = t.give as CommodityType;
+      const recvRes = t.receive as ResourceType;
+      const disc: ImprovementDiscipline =
+        giveComm === "paper"
+          ? "science"
+          : giveComm === "cloth"
+            ? "trade"
+            : "politics";
+      const curLvl = player.cityImprovements[disc];
+      const hasExcess =
+        curLvl >= 5 || player.commodities[giveComm] >= curLvl + 1 + t.giveAmount;
+      if (hasExcess && player.resources[recvRes] === 0) {
+        return t;
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Heuristic & Tactical Lookahead AI bot supporting 4 distinct strength tiers:
  * `"easy"` | `"normal"` | `"smart"` | `"master"`.
@@ -2528,6 +3322,14 @@ export function chooseCatanBotAction(
     return bestAction;
   }
 
+  // 3a. Cities & Knights asynchronous phases
+  if (state.phase === "BARBARIAN_PILLAGE_SELECTION") {
+    return chooseCkPillagedCityAction(state, legalActions);
+  }
+  if (state.phase === "PROGRESS_CARD_SELECTION") {
+    return chooseCkProgressSelectionAction(state, player, legalActions);
+  }
+
   // 3. Discard on 7
   if (state.phase === "DISCARD_ON_SEVEN") {
     const needed = state.pendingDiscards[playerId] ?? 0;
@@ -2577,6 +3379,10 @@ export function chooseCatanBotAction(
   // 5. Pre-Roll: Play Knight BEFORE rolling ONLY if our producing hex/ship is blocked OR claiming Largest Army wins immediately!
   // Rolling first when unblocked is strictly superior: avoids stealing into 8+ cards before a 7-roll, and preserves Knights if a 7 is rolled!
   if (state.phase === "PRE_ROLL") {
+    if (state.config.enableCitiesAndKnights && difficulty !== "easy") {
+      const alchAct = chooseCkAlchemistPreRollAction(state, player, legalActions);
+      if (alchAct) return alchAct;
+    }
     const playKnight = legalActions.find((a) => a.type === "PLAY_KNIGHT");
     if (playKnight && difficulty !== "easy") {
       const robberHNode = state.topology.hexes[state.robberHexId];
@@ -2858,6 +3664,18 @@ export function chooseCatanBotAction(
     if (winNow) return winNow;
   }
 
+  // 9a-ck. Cities & Knights high-priority defense, Metropolises, City Improvements, & Progress Cards
+  if (state.config.enableCitiesAndKnights) {
+    const ckPriority = chooseCkPriorityMainAction(
+      state,
+      player,
+      legalActions,
+      currentVp,
+      targetVp
+    );
+    if (ckPriority) return ckPriority;
+  }
+
   // 9a-2. Master Pre-Action Free Fog Harvester via 0-cost `MOVE_SHIP`!
   if (difficulty === "master" && state.phase === "MAIN_PHASE") {
     const fogShipMove = legalActions.find(
@@ -3040,8 +3858,7 @@ export function chooseCatanBotAction(
 
     // 1) Score Monopoly using 100% public bank deduction
     if (monoActions.length > 0) {
-      const isExpanded =
-        state.players.length >= 5 || state.config.scenarioId === "big_island_5_6";
+      const isExpanded = isExpanded56State(state);
       const totalSupplyPerRes = isExpanded ? 24 : 19;
       for (const act of monoActions) {
         const inOpponentHands = Math.max(
@@ -3265,8 +4082,7 @@ export function chooseCatanBotAction(
         return sorted[0]!;
       }
 
-      const isExpanded =
-        state.players.length >= 5 || state.config.scenarioId === "big_island_5_6";
+      const isExpanded = isExpanded56State(state);
       const totalSupplyPerRes = isExpanded ? 24 : 19;
 
       let bestMono: CatanAction | null = null;
@@ -3325,9 +4141,21 @@ export function chooseCatanBotAction(
   }
 
   // 9e. Smart Maritime / Port Trade
+  if (state.config.enableCitiesAndKnights) {
+    const ckPostBuild = chooseCkPostBuildAction(state, player, legalActions);
+    if (ckPostBuild) return ckPostBuild;
+  }
+
   const maritimeTrades = legalActions.filter(
-    (a): a is Extract<CatanAction, { type: "MARITIME_TRADE" }> =>
-      a.type === "MARITIME_TRADE"
+    (
+      a
+    ): a is Extract<CatanAction, { type: "MARITIME_TRADE" }> & {
+      give: ResourceType;
+      receive: ResourceType;
+    } =>
+      a.type === "MARITIME_TRADE" &&
+      isResourceType(a.give) &&
+      isResourceType(a.receive)
   );
   if (maritimeTrades.length > 0) {
     if (difficulty === "easy") {
@@ -3544,7 +4372,9 @@ export function chooseCatanBotAction(
   }
 
   const safeLimit = getPlayerSafeHandLimit(state, playerId);
-  const myTotalCards = totalResourceCount(player.resources);
+  const myTotalCards = state.config.enableCitiesAndKnights
+    ? getPlayerResourceCount(player)
+    : totalResourceCount(player.resources);
   const overSafeLimit = myTotalCards > safeLimit;
 
   // Master priority: if a high-EV Road/Ship claims Longest Route (+2 VP), opens a Foreign Island (+2 VP),

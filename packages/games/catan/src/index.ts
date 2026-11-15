@@ -1,5 +1,6 @@
 import type { GameEngine, GameEvent, PlayerDescriptor } from "@gaming-platform/core";
 import { chooseCatanBotAction } from "./bot.ts";
+import { emptyCommodities } from "./cities-and-knights.ts";
 import {
   applyCatanAction,
   checkCatanInvariants,
@@ -19,15 +20,28 @@ import type {
 
 export * from "./types.ts";
 export * from "./board.ts";
+export * from "./cities-and-knights.ts";
 export * from "./rules.ts";
 export * from "./bot.ts";
 
 /**
  * Pure selector returning the player ID who acts next in `state` (handles asynchronous
- * DISCARD_ON_SEVEN, GOLD_RESOURCE_SELECTION, active domestic trade responses, and SPECIAL_BUILDING).
+ * BARBARIAN_PILLAGE_SELECTION, PROGRESS_CARD_SELECTION, DISCARD_ON_SEVEN,
+ * GOLD_RESOURCE_SELECTION, active domestic trade responses, and SPECIAL_BUILDING).
  */
 export function getNextActingPlayerId(state: CatanState): string | null {
   if (state.phase === "GAME_OVER") return null;
+
+  if (state.phase === "BARBARIAN_PILLAGE_SELECTION") {
+    return state.pendingPillageSelections[0] ?? null;
+  }
+
+  if (state.phase === "PROGRESS_CARD_SELECTION") {
+    if (state.pendingDefenderDeckPicks.length > 0) {
+      return state.pendingDefenderDeckPicks[0] ?? null;
+    }
+    return state.pendingProgressDiscards[0] ?? null;
+  }
 
   if (state.phase === "DISCARD_ON_SEVEN") {
     return Object.keys(state.pendingDiscards)[0] ?? null;
@@ -75,8 +89,11 @@ function redactPlayerForViewer(
   return {
     ...player,
     hiddenResourceCount: getPlayerResourceCount(player),
+    hiddenProgressCardCount: player.progressCards.length,
     handRedacted: true,
     resources: emptyResources(),
+    commodities: emptyCommodities(),
+    progressCards: [],
     devCards: player.devCards.map((c) =>
       c.played ? c : { ...c, type: "knight" }
     ),
@@ -93,6 +110,11 @@ export function getCatanPlayerViewPure(
   return {
     ...state,
     devCardDeck: state.devCardDeck.map(() => "knight"),
+    progressDecks: {
+      trade: state.progressDecks.trade.map(() => "merchant"),
+      politics: state.progressDecks.politics.map(() => "spy"),
+      science: state.progressDecks.science.map(() => "mining"),
+    },
     fogPool: state.fogPool.map(() => ({
       terrain: "fog",
       numberToken: null,

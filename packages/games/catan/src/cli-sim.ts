@@ -23,17 +23,42 @@ import {
 } from "@gaming-platform/azul";
 
 const SCENARIOS_TO_RUN: ReadonlyArray<{
+  label?: string;
   scenarioId: ScenarioId;
   playerCount: number;
+  enableCitiesAndKnights?: boolean;
   enableHarbormaster?: boolean;
   enableCityWalls?: boolean;
   enableFriendlyRobber?: boolean;
 }> = [
   { scenarioId: "standard", playerCount: 4 },
+  { scenarioId: "cities_and_knights", playerCount: 4 },
+  { scenarioId: "cities_and_knights_5_6", playerCount: 6 },
   { scenarioId: "big_island_5_6", playerCount: 6, enableCityWalls: true },
+  {
+    label: "5–6P Big Island + Cities & Knights",
+    scenarioId: "big_island_5_6",
+    playerCount: 5,
+    enableCitiesAndKnights: true,
+  },
   { scenarioId: "seafarers_new_shores", playerCount: 4, enableHarbormaster: true },
+  { scenarioId: "seafarers_new_shores_5_6", playerCount: 6, enableHarbormaster: true },
+  {
+    label: "Seafarers: New Shores + Cities & Knights",
+    scenarioId: "seafarers_new_shores",
+    playerCount: 4,
+    enableCitiesAndKnights: true,
+  },
   { scenarioId: "seafarers_four_islands", playerCount: 4 },
+  { scenarioId: "seafarers_six_islands_5_6", playerCount: 6 },
+  {
+    label: "Seafarers: Six Islands (5–6P) + Cities & Knights",
+    scenarioId: "seafarers_six_islands_5_6",
+    playerCount: 6,
+    enableCitiesAndKnights: true,
+  },
   { scenarioId: "seafarers_fog_islands", playerCount: 4, enableFriendlyRobber: true },
+  { scenarioId: "seafarers_fog_islands_5_6", playerCount: 6, enableFriendlyRobber: true },
 ];
 
 function makeBotPlayers(count: number): PlayerDescriptor[] {
@@ -84,11 +109,16 @@ SCENARIOS_TO_RUN.forEach((spec) => {
     players,
     {
       scenarioId: spec.scenarioId,
+      ...(typeof spec.enableCitiesAndKnights === "boolean"
+        ? { enableCitiesAndKnights: spec.enableCitiesAndKnights }
+        : {}),
       enableHarbormaster: spec.enableHarbormaster ?? false,
-      enableCityWalls: spec.enableCityWalls ?? false,
+      ...(typeof spec.enableCityWalls === "boolean"
+        ? { enableCityWalls: spec.enableCityWalls }
+        : {}),
       enableFriendlyRobber: spec.enableFriendlyRobber ?? false,
     },
-    `sim-${spec.scenarioId}-seed-101`
+    `sim-${spec.label ?? spec.scenarioId}-seed-101`
   );
 
   const { finalState, steps } = runSessionUntilFinishedPure(
@@ -107,7 +137,7 @@ SCENARIOS_TO_RUN.forEach((spec) => {
     .join(" | ");
 
   console.log(
-    `✔ [${SCENARIO_CATALOG[spec.scenarioId].name}] Winner: ${winner?.name ?? "None"} in ${finalState.turn} turns (${steps} actions) -> ${standings}`
+    `✔ [${spec.label ?? SCENARIO_CATALOG[spec.scenarioId].name}] Winner: ${winner?.name ?? "None"} in ${finalState.turn} turns (${steps} actions) -> ${standings}`
   );
 });
 

@@ -5,30 +5,63 @@ import {
   createMatchSession,
 } from "@gaming-platform/core";
 import {
+  BARBARIAN_TRACK_STEPS,
   BUILDING_COSTS,
+  COMMODITIES,
   type CatanAction,
   CatanEngine,
   type CatanState,
+  type CommodityMap,
+  type CommodityType,
+  IMPROVEMENT_DISCIPLINES,
+  type ImprovementDiscipline,
   PLAYER_COLORS,
+  PROGRESS_CARD_CATALOG,
   RESOURCES,
   type ResourceMap,
   type ResourceType,
   SCENARIO_CATALOG,
   type ScenarioId,
+  TERRAIN_TO_COMMODITY,
   TERRAIN_TO_RESOURCE,
+  TRADE_GOODS,
+  type TradeGoodMap,
+  type TradeGoodType,
+  canPlayerUpgradeDiscipline,
   computePlayerVictoryPoints,
+  emptyCommodities,
   emptyResources,
+  getBarbarianStrength,
+  getBankGoodCount,
+  getDiplomatRemovableRoadEdges,
+  getEffectiveCityCost,
+  getLegalActivateKnightVertices,
+  getLegalBuildKnightVertices,
+  getLegalChaseRobberActions,
+  getLegalMoveKnightActions,
   getLegalMoveShipActions,
   getLegalPirateHexes,
+  getLegalPromoteKnightVertices,
   getLegalRoadEdges,
   getLegalRobberHexes,
   getLegalSettlementVertices,
   getLegalShipEdges,
   getNextActingPlayerId,
+  getPlayerActiveKnightStrength,
+  getPlayerGoodCount,
+  getPlayerGoodTradeRatios,
   getPlayerResourceCount,
   getPlayerSafeHandLimit,
   getPlayerTradeRatios,
+  getPlayerVulnerableCities,
+  getTotalActiveKnightStrength,
+  hasCommodities,
   hasResources,
+  isCommodityType,
+  isExpanded56Scenario,
+  toExpanded56ScenarioId,
+  toStandard34ScenarioId,
+  totalCommodityCount,
   totalResourceCount,
 } from "@gaming-platform/catan";
 import {
@@ -47,15 +80,22 @@ import {
   getAzulActingPlayerId,
 } from "@gaming-platform/azul";
 import {
+  COMMODITY_META,
+  DISCIPLINE_META,
   RESOURCE_META,
+  TRADE_GOOD_META,
   getBoardSpotPercentPosition,
   renderActionPieceIconSvg,
   renderCatanBoardSvg,
   renderCatanVisualHandTray,
+  renderCommodityGlyphSvg,
   renderDieSvg,
+  renderEventDieSvg,
   renderMiniResourceCardSvg,
+  renderMiniTradeGoodCardSvg,
   renderResourceGlyphSvg,
   renderRollDiceButtonGraphicSvg,
+  renderTradeGoodGlyphSvg,
 } from "./catan-graphics.ts";
 import {
   renderSplendorActionDock,
@@ -94,6 +134,13 @@ export type BuildMode =
   | "city"
   | "wall"
   | "move_ship"
+  | "knight"
+  | "promote_knight"
+  | "activate_knight"
+  | "move_knight"
+  | "chase_robber"
+  | "city_upgrades"
+  | "progress_card"
   | "maritime_trade"
   | "domestic_trade"
   | "year_of_plenty"
@@ -106,9 +153,11 @@ export interface BoardSpotSelection {
 
 export interface ClientRoomConfig {
   scenarioId: ScenarioId;
+  enable56PlayerExtension?: boolean;
   enableHarbormaster: boolean;
   enableCityWalls: boolean;
   enableFriendlyRobber: boolean;
+  enableCitiesAndKnights: boolean;
 }
 
 export interface ClientRoom {
@@ -149,9 +198,11 @@ export interface CreateLocalRoomOptions {
   readonly botDifficulty?: BotDifficulty;
   readonly startingPlayerMode?: string;
   readonly scenarioId?: ScenarioId;
+  readonly enable56PlayerExtension?: boolean;
   readonly enableHarbormaster?: boolean;
   readonly enableCityWalls?: boolean;
   readonly enableFriendlyRobber?: boolean;
+  readonly enableCitiesAndKnights?: boolean;
   readonly autoStart?: boolean;
 }
 
@@ -185,14 +236,28 @@ export interface AppModel {
   readonly setupEdgeKind: "road" | "ship";
   readonly robberOrPirateMode: "robber" | "pirate";
   readonly selectedMoveFromEdgeId: string | null;
+  readonly selectedMoveKnightFromVertexId: string | null;
+  readonly selectedChaseKnightVertexId: string | null;
   readonly discardSelection: ResourceMap;
+  readonly discardCommodities: CommodityMap;
   readonly tradeGiveRes: ResourceType;
   readonly tradeReceiveRes: ResourceType;
   readonly maritimeGive: ResourceMap;
   readonly maritimeWant: ResourceMap;
+  readonly maritimeCommGive: CommodityMap;
+  readonly maritimeCommWant: CommodityMap;
   readonly domesticGive: ResourceMap;
   readonly domesticWant: ResourceMap;
+  readonly domesticCommGive: CommodityMap;
+  readonly domesticCommWant: CommodityMap;
   readonly domesticTargetPlayerId: string;
+  readonly selectedMetropolisVertexId: string | null;
+  readonly selectedProgressCardId: string | null;
+  readonly alchemistDie1: number;
+  readonly alchemistDie2: number;
+  readonly inventorHex1: string | null;
+  readonly smithVertex1: string | null;
+  readonly deserterTargetPlayerId: string | null;
   readonly yopRes1: ResourceType;
   readonly yopRes2: ResourceType;
   readonly monoRes: ResourceType;
@@ -509,7 +574,8 @@ export function rebuildRoomSeatsPure(room: Readonly<ClientRoom>): ClientRoom {
   const bounds = getRoomBoundsPure(room);
   const adjustedBotCountForBigIsland =
     room.gameId === "catan" &&
-    room.config.scenarioId === "big_island_5_6" &&
+    (isExpanded56Scenario(room.config.scenarioId) ||
+      Boolean(room.config.enable56PlayerExtension)) &&
     room.humanPlayers.length + room.botCount < 5
       ? Math.max(room.botCount, 5 - room.humanPlayers.length)
       : room.botCount;
@@ -645,12 +711,25 @@ export function createLocalRoomPure(
     startingPlayerMode: opts.startingPlayerMode ?? "random",
     autoStepBots: true,
     players: [],
-    config: {
-      scenarioId: opts.scenarioId ?? "standard",
-      enableHarbormaster: opts.enableHarbormaster ?? false,
-      enableCityWalls: opts.enableCityWalls ?? false,
-      enableFriendlyRobber: opts.enableFriendlyRobber ?? false,
-    },
+    config: (() => {
+      const scId = opts.scenarioId ?? "standard";
+      const isCkPreset = Boolean(SCENARIO_CATALOG[scId]?.enableCitiesAndKnights);
+      const is56Preset = isExpanded56Scenario(scId);
+      return {
+        scenarioId: scId,
+        ...(opts.enable56PlayerExtension !== undefined
+          ? { enable56PlayerExtension: opts.enable56PlayerExtension }
+          : is56Preset
+            ? { enable56PlayerExtension: true }
+            : {}),
+        enableHarbormaster: opts.enableHarbormaster ?? false,
+        enableCityWalls:
+          opts.enableCityWalls ??
+          Boolean(opts.enableCitiesAndKnights || isCkPreset),
+        enableFriendlyRobber: opts.enableFriendlyRobber ?? false,
+        enableCitiesAndKnights: opts.enableCitiesAndKnights ?? isCkPreset,
+      };
+    })(),
     seed: `arena-${roomId}-${nowMs % 10000}`,
     matchCounter: 0,
     session: null,
@@ -758,12 +837,29 @@ export function upsertRoomFromSummaryPure(
     autoStepBots:
       summary.autoStepBots !== undefined ? Boolean(summary.autoStepBots) : true,
     players,
-    config: {
-      scenarioId: (cfg.scenarioId as ScenarioId) ?? "standard",
-      enableHarbormaster: Boolean(cfg.enableHarbormaster),
-      enableCityWalls: Boolean(cfg.enableCityWalls),
-      enableFriendlyRobber: Boolean(cfg.enableFriendlyRobber),
-    },
+    config: (() => {
+      const scId = (cfg.scenarioId as ScenarioId) ?? "standard";
+      const isCkPreset = Boolean(SCENARIO_CATALOG[scId]?.enableCitiesAndKnights);
+      const is56Preset = isExpanded56Scenario(scId);
+      return {
+        scenarioId: scId,
+        ...(cfg.enable56PlayerExtension !== undefined || is56Preset
+          ? {
+              enable56PlayerExtension: Boolean(
+                cfg.enable56PlayerExtension || is56Preset
+              ),
+            }
+          : {}),
+        enableHarbormaster: Boolean(cfg.enableHarbormaster),
+        enableCityWalls: Boolean(
+          cfg.enableCityWalls || cfg.enableCitiesAndKnights || isCkPreset
+        ),
+        enableFriendlyRobber: Boolean(cfg.enableFriendlyRobber),
+        enableCitiesAndKnights: Boolean(
+          cfg.enableCitiesAndKnights || isCkPreset
+        ),
+      };
+    })(),
     seed: existing?.seed ?? summary.roomId,
     matchCounter: existing?.matchCounter ?? 0,
     session: existing?.session ?? null,
@@ -824,12 +920,24 @@ export function resetSubModesPure(model: Readonly<AppModel>): AppModel {
     buildMode: null,
     selectedBoardSpot: null,
     selectedMoveFromEdgeId: null,
+    selectedMoveKnightFromVertexId: null,
+    selectedChaseKnightVertexId: null,
     discardSelection: emptyResources(),
+    discardCommodities: emptyCommodities(),
     maritimeGive: emptyResources(),
     maritimeWant: emptyResources(),
+    maritimeCommGive: emptyCommodities(),
+    maritimeCommWant: emptyCommodities(),
     domesticGive: emptyResources(),
     domesticWant: emptyResources(),
+    domesticCommGive: emptyCommodities(),
+    domesticCommWant: emptyCommodities(),
     domesticTargetPlayerId: "all",
+    selectedMetropolisVertexId: null,
+    selectedProgressCardId: null,
+    inventorHex1: null,
+    smithVertex1: null,
+    deserterTargetPlayerId: null,
     splendorDraftGems: {},
     azulSelectedDraft: null,
   };
@@ -840,45 +948,57 @@ export function switchTradeModePure(
   nextMode: "maritime_trade" | "domestic_trade" | null
 ): AppModel {
   const syncedWants = (() => {
+    const marTotal =
+      totalResourceCount(model.maritimeWant) +
+      totalCommodityCount(model.maritimeCommWant);
+    const domTotal =
+      totalResourceCount(model.domesticWant) +
+      totalCommodityCount(model.domesticCommWant);
     if (model.buildMode === "domestic_trade" && nextMode === "maritime_trade") {
       return {
         maritimeWant: { ...model.domesticWant },
         domesticWant: { ...model.domesticWant },
+        maritimeCommWant: { ...model.domesticCommWant },
+        domesticCommWant: { ...model.domesticCommWant },
       };
     }
     if (model.buildMode === "maritime_trade" && nextMode === "domestic_trade") {
       return {
         maritimeWant: { ...model.maritimeWant },
         domesticWant: { ...model.maritimeWant },
+        maritimeCommWant: { ...model.maritimeCommWant },
+        domesticCommWant: { ...model.maritimeCommWant },
       };
     }
     if (nextMode === "maritime_trade") {
-      if (
-        totalResourceCount(model.maritimeWant) === 0 &&
-        totalResourceCount(model.domesticWant) > 0
-      ) {
+      if (marTotal === 0 && domTotal > 0) {
         return {
           maritimeWant: { ...model.domesticWant },
           domesticWant: { ...model.domesticWant },
+          maritimeCommWant: { ...model.domesticCommWant },
+          domesticCommWant: { ...model.domesticCommWant },
         };
       }
       return {
         maritimeWant: { ...model.maritimeWant },
         domesticWant: { ...model.maritimeWant },
+        maritimeCommWant: { ...model.maritimeCommWant },
+        domesticCommWant: { ...model.maritimeCommWant },
       };
     }
-    if (
-      totalResourceCount(model.domesticWant) === 0 &&
-      totalResourceCount(model.maritimeWant) > 0
-    ) {
+    if (domTotal === 0 && marTotal > 0) {
       return {
         maritimeWant: { ...model.maritimeWant },
         domesticWant: { ...model.maritimeWant },
+        maritimeCommWant: { ...model.maritimeCommWant },
+        domesticCommWant: { ...model.maritimeCommWant },
       };
     }
     return {
       maritimeWant: { ...model.domesticWant },
       domesticWant: { ...model.domesticWant },
+      maritimeCommWant: { ...model.domesticCommWant },
+      domesticCommWant: { ...model.domesticCommWant },
     };
   })();
 
@@ -898,13 +1018,33 @@ export function switchTradeModePure(
     emptyResources()
   );
 
+  const nextMaritimeCommGive = COMMODITIES.reduce<CommodityMap>(
+    (acc, c) => ({
+      ...acc,
+      [c]: syncedWants.maritimeCommWant[c] > 0 ? 0 : model.maritimeCommGive[c],
+    }),
+    emptyCommodities()
+  );
+
+  const nextDomesticCommGive = COMMODITIES.reduce<CommodityMap>(
+    (acc, c) => ({
+      ...acc,
+      [c]: syncedWants.domesticCommWant[c] > 0 ? 0 : model.domesticCommGive[c],
+    }),
+    emptyCommodities()
+  );
+
   return {
     ...model,
     selectedBoardSpot: null,
     maritimeWant: syncedWants.maritimeWant,
     domesticWant: syncedWants.domesticWant,
+    maritimeCommWant: syncedWants.maritimeCommWant,
+    domesticCommWant: syncedWants.domesticCommWant,
     maritimeGive: nextMaritimeGive,
     domesticGive: nextDomesticGive,
+    maritimeCommGive: nextMaritimeCommGive,
+    domesticCommGive: nextDomesticCommGive,
     buildMode: nextMode,
   };
 }
@@ -927,6 +1067,30 @@ export function setSharedTradeWantPure(
       clamped > 0
         ? { ...model.domesticGive, [resource]: 0 }
         : { ...model.domesticGive },
+  };
+}
+
+export function setSharedTradeGoodWantPure(
+  model: Readonly<AppModel>,
+  good: TradeGoodType,
+  amount: number
+): AppModel {
+  if (!isCommodityType(good)) {
+    return setSharedTradeWantPure(model, good, amount);
+  }
+  const clamped = Math.max(0, amount);
+  return {
+    ...model,
+    maritimeCommWant: { ...model.maritimeCommWant, [good]: clamped },
+    domesticCommWant: { ...model.domesticCommWant, [good]: clamped },
+    maritimeCommGive:
+      clamped > 0
+        ? { ...model.maritimeCommGive, [good]: 0 }
+        : { ...model.maritimeCommGive },
+    domesticCommGive:
+      clamped > 0
+        ? { ...model.domesticCommGive, [good]: 0 }
+        : { ...model.domesticCommGive },
   };
 }
 
@@ -1077,14 +1241,28 @@ export function createInitialAppModelPure(
     setupEdgeKind: "road",
     robberOrPirateMode: "robber",
     selectedMoveFromEdgeId: null,
+    selectedMoveKnightFromVertexId: null,
+    selectedChaseKnightVertexId: null,
     discardSelection: emptyResources(),
+    discardCommodities: emptyCommodities(),
     tradeGiveRes: "brick",
     tradeReceiveRes: "ore",
     maritimeGive: emptyResources(),
     maritimeWant: emptyResources(),
+    maritimeCommGive: emptyCommodities(),
+    maritimeCommWant: emptyCommodities(),
     domesticGive: emptyResources(),
     domesticWant: emptyResources(),
+    domesticCommGive: emptyCommodities(),
+    domesticCommWant: emptyCommodities(),
     domesticTargetPlayerId: "all",
+    selectedMetropolisVertexId: null,
+    selectedProgressCardId: null,
+    alchemistDie1: 4,
+    alchemistDie2: 3,
+    inventorHex1: null,
+    smithVertex1: null,
+    deserterTargetPlayerId: null,
     yopRes1: "grain",
     yopRes2: "ore",
     monoRes: "ore",
@@ -1375,9 +1553,15 @@ export function startOfflineRoomMatchPure(
     rebuilt.gameId === "catan"
       ? {
           scenarioId: rebuilt.config.scenarioId,
+          enable56PlayerExtension: Boolean(
+            rebuilt.config.enable56PlayerExtension ||
+              rebuilt.players.length >= 5 ||
+              isExpanded56Scenario(rebuilt.config.scenarioId)
+          ),
           enableHarbormaster: rebuilt.config.enableHarbormaster,
           enableCityWalls: rebuilt.config.enableCityWalls,
           enableFriendlyRobber: rebuilt.config.enableFriendlyRobber,
+          enableCitiesAndKnights: rebuilt.config.enableCitiesAndKnights,
           startingPlayerIndex: startSpec.startingPlayerIndex,
           randomizeStartingPlayer: startSpec.randomizeStartingPlayer,
         }
@@ -1728,7 +1912,7 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
                 <span class="game-select-card__title">Settlers of Catan</span>
                 <span class="ga-chip">2–6 players</span>
               </div>
-              <span class="game-select-card__desc">Base island, 5–6 player extension, Seafarers scenarios, Harbormaster, and City walls.</span>
+              <span class="game-select-card__desc">Base island, 5–6 player extension, Seafarers, Cities &amp; Knights, and Harbormaster.</span>
             </button>
 
             <button type="button" class="game-select-card ${
@@ -2064,12 +2248,30 @@ export function getRoomSetupSummaryDataPure(
   }
 
   const sc = SCENARIO_CATALOG[room.config.scenarioId];
-  const targetVp = state?.config?.targetVictoryPoints ?? sc.defaultTargetVp;
+  const isCk = Boolean(
+    sc.enableCitiesAndKnights || room.config.enableCitiesAndKnights
+  );
+  const is56Active = Boolean(
+    room.players.length >= 5 ||
+      room.config.enable56PlayerExtension ||
+      isExpanded56Scenario(room.config.scenarioId)
+  );
+  const targetVp =
+    state?.config?.targetVictoryPoints ??
+    (isCk && !sc.enableCitiesAndKnights
+      ? Math.max(13, sc.defaultTargetVp + (sc.enableSeafarers ? 2 : 3))
+      : sc.defaultTargetVp);
   const expansionChips = [
+    is56Active ? "5–6P Extension (expanded map & bank)" : "",
+    isCk
+      ? "Cities & Knights (Metropolises, Knights & Progress)"
+      : "",
     sc.enableSeafarers ? "Seafarers ships and islands" : "",
-    sc.enableSpecialBuildingPhase ? "Special building phase" : "",
+    sc.enableSpecialBuildingPhase || is56Active ? "Special building phase" : "",
     room.config.enableHarbormaster ? "Harbormaster (+2 VP)" : "",
-    room.config.enableCityWalls ? "City walls (+2 safe hand)" : "",
+    room.config.enableCityWalls || isCk
+      ? "City walls (+2 safe hand)"
+      : "",
     room.config.enableFriendlyRobber ? "Friendly robber" : "",
   ].filter(Boolean);
   const ruleChips: string[] = [
@@ -2332,6 +2534,33 @@ export function renderRoomSetupViewPure(
           ${
             room.gameId === "catan"
               ? `
+            <label class="ga-check-row" for="setup-chk-extension56">
+              <span>5–6 player extension (expanded map, bank &amp; special building)</span>
+              <input type="checkbox" id="setup-chk-extension56" ${
+                room.players.length >= 5 ||
+                room.config.enable56PlayerExtension ||
+                isExpanded56Scenario(room.config.scenarioId)
+                  ? "checked"
+                  : ""
+              } ${room.players.length >= 5 ? "disabled" : ""} />
+            </label>
+            <label class="ga-check-row" for="setup-chk-citiesknights">
+              <span>Cities &amp; Knights (commodities, knights, metropolises &amp; progress cards)</span>
+              <input type="checkbox" id="setup-chk-citiesknights" ${
+                room.config.enableCitiesAndKnights ||
+                Boolean(
+                  SCENARIO_CATALOG[room.config.scenarioId].enableCitiesAndKnights
+                )
+                  ? "checked"
+                  : ""
+              } ${
+                Boolean(
+                  SCENARIO_CATALOG[room.config.scenarioId].enableCitiesAndKnights
+                )
+                  ? "disabled"
+                  : ""
+              } />
+            </label>
             <label class="ga-check-row" for="setup-chk-harbormaster">
               <span>Harbormaster (+2 VP at 3 harbor points)</span>
               <input type="checkbox" id="setup-chk-harbormaster" ${
@@ -2341,7 +2570,20 @@ export function renderRoomSetupViewPure(
             <label class="ga-check-row" for="setup-chk-citywalls">
               <span>City walls (+2 safe hand limit on 7)</span>
               <input type="checkbox" id="setup-chk-citywalls" ${
-                room.config.enableCityWalls ? "checked" : ""
+                room.config.enableCityWalls ||
+                room.config.enableCitiesAndKnights ||
+                Boolean(
+                  SCENARIO_CATALOG[room.config.scenarioId].enableCitiesAndKnights
+                )
+                  ? "checked"
+                  : ""
+              } ${
+                room.config.enableCitiesAndKnights ||
+                Boolean(
+                  SCENARIO_CATALOG[room.config.scenarioId].enableCitiesAndKnights
+                )
+                  ? "disabled"
+                  : ""
               } />
             </label>
             <label class="ga-check-row" for="setup-chk-friendlyrobber">
@@ -2581,6 +2823,113 @@ export function renderResourceColumnHeadersPure(
     `;
 }
 
+export function renderTradeGoodColumnHeadersPure(
+  player?: Pick<CatanState["players"][number], "resources" | "commodities">,
+  bankState?: Pick<CatanState, "bank" | "commodityBank">,
+  tradeRatios?: Record<TradeGoodType, number>
+): string {
+  return `
+      <div class="ga-res-matrix__row-label">Goods</div>
+      ${TRADE_GOODS.map((g) => {
+        const meta = TRADE_GOOD_META[g];
+        const ratio = tradeRatios?.[g];
+        const haveVal = player ? getPlayerGoodCount(player, g) : undefined;
+        const bankVal = bankState ? getBankGoodCount(bankState, g) : undefined;
+        return `
+        <div class="ga-res-col-head">
+          <div class="ga-res-col-head__top">
+            <span>${meta.label}</span>
+            ${
+              haveVal !== undefined
+                ? `<span class="ga-res-col-head__have">×${haveVal}</span>`
+                : bankVal !== undefined
+                  ? `<span class="ga-res-col-head__have">${bankVal}</span>`
+                  : ""
+            }
+          </div>
+          <div class="ga-res-col-head__card-wrap">
+            ${renderMiniTradeGoodCardSvg(g, 42, 26)}
+            ${
+              ratio !== undefined
+                ? `<span class="ga-res-col-head__rate ${
+                    ratio < 4 ? "is-port" : ""
+                  }" title="${ratio}:1 trade rate">${ratio}:1</span>`
+                : ""
+            }
+          </div>
+        </div>
+      `;
+      }).join("")}
+    `;
+}
+
+export function hasTradeGoodsForOfferPure(
+  player: Pick<CatanState["players"][number], "resources" | "commodities">,
+  offer: {
+    readonly want: Partial<ResourceMap>;
+    readonly wantCommodities?: Partial<CommodityMap>;
+  }
+): boolean {
+  return (
+    hasResources(player.resources, offer.want) &&
+    hasCommodities(player.commodities, offer.wantCommodities)
+  );
+}
+
+export function renderCatanBarbarianHudPure(state: CatanState): string {
+  if (!state.config.enableCitiesAndKnights) {
+    return "";
+  }
+  const defStrength = getTotalActiveKnightStrength(state);
+  const barbStrength = getBarbarianStrength(state);
+  const isSafe = defStrength >= barbStrength;
+  const stepDots = Array.from({ length: BARBARIAN_TRACK_STEPS + 1 }, (_, i) => {
+    const isHere = i === state.barbarianPosition;
+    const isAttack = i === BARBARIAN_TRACK_STEPS;
+    return `<span class="barb-track-dot ${isHere ? "is-ship" : ""} ${
+      isAttack ? "is-target" : ""
+    }"></span>`;
+  }).join("");
+
+  const metroPills = IMPROVEMENT_DISCIPLINES.map((disc) => {
+    const m = state.metropolises[disc];
+    const dMeta = DISCIPLINE_META[disc];
+    const owner = m.ownerId
+      ? state.players.find((p) => p.id === m.ownerId)
+      : undefined;
+    return `<span class="ck-metro-pill" style="--metro-accent: ${dMeta.accent};" title="${
+      dMeta.label
+    } Metropolis (+2 VP): ${
+      owner ? `${owner.name} (Lv ${m.level})` : "Unclaimed (reach Lv 4)"
+    }">
+      ${
+        owner
+          ? `<span class="player-dot" style="background: ${owner.color}; width: 6px; height: 6px;"></span>`
+          : ""
+      }
+      <span>${dMeta.shortCode}</span>
+    </span>`;
+  }).join("");
+
+  return `
+    <div class="map-barbarian-hud">
+      <div class="map-barbarian-hud__top">
+        <span class="map-barbarian-hud__title">Fleet ${state.barbarianPosition}/${BARBARIAN_TRACK_STEPS}</span>
+        <span class="ga-chip ${
+          isSafe ? "ga-chip--ok" : "ga-chip--danger"
+        } ga-num" style="height: 19px; padding: 0 6px; font-size: 10.5px;">
+          ⚔ ${defStrength} vs 🏰 ${barbStrength}
+        </span>
+      </div>
+      <div class="barb-track-bar" aria-hidden="true">${stepDots}</div>
+      <div class="map-barbarian-hud__metros">
+        <span class="t-label muted" style="font-size: 10.5px;">Metropolises</span>
+        <div style="display: inline-flex; gap: 4px;">${metroPills}</div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderCatanMapDiceHudPure(state: CatanState): string {
   if (!state.lastRoll) {
     return `
@@ -2593,16 +2942,18 @@ export function renderCatanMapDiceHudPure(state: CatanState): string {
       `;
   }
 
-  const { die1, die2, total } = state.lastRoll;
+  const { die1, die2, total, eventFace } = state.lastRoll;
   const isSeven = total === 7;
   const rollStats = isSeven
     ? {
         producedByRes: {} as Partial<Record<ResourceType, number>>,
+        producedByComm: {} as Partial<Record<CommodityType, number>>,
         goldHexes: 0,
         blockedHexes: 0,
       }
     : state.topology.hexOrder.reduce<{
         readonly producedByRes: Partial<Record<ResourceType, number>>;
+        readonly producedByComm: Partial<Record<CommodityType, number>>;
         readonly goldHexes: number;
         readonly blockedHexes: number;
       }>(
@@ -2617,23 +2968,45 @@ export function renderCatanMapDiceHudPure(state: CatanState): string {
           }
           const res = TERRAIN_TO_RESOURCE[tile.terrain];
           if (!res) return acc;
+          const comm = state.config.enableCitiesAndKnights
+            ? TERRAIN_TO_COMMODITY[tile.terrain]
+            : null;
+          const hasAdjacentCity =
+            Boolean(comm) &&
+            state.topology.hexes[hId]!.cornerVertexIds.some(
+              (vId) => state.buildings[vId]?.type === "city"
+            );
           return {
             ...acc,
             producedByRes: {
               ...acc.producedByRes,
               [res]: (acc.producedByRes[res] ?? 0) + 1,
             },
+            producedByComm:
+              comm && hasAdjacentCity
+                ? {
+                    ...acc.producedByComm,
+                    [comm]: (acc.producedByComm[comm] ?? 0) + 1,
+                  }
+                : acc.producedByComm,
           };
         },
-        { producedByRes: {}, goldHexes: 0, blockedHexes: 0 }
+        { producedByRes: {}, producedByComm: {}, goldHexes: 0, blockedHexes: 0 }
       );
 
   const prodEntries = RESOURCES.filter(
     (r) => (rollStats.producedByRes[r] ?? 0) > 0
   );
+  const commEntries = state.config.enableCitiesAndKnights
+    ? COMMODITIES.filter((c) => (rollStats.producedByComm[c] ?? 0) > 0)
+    : [];
+  const sevenLabel =
+    state.config.enableCitiesAndKnights && state.barbarianAttacksCount < 1
+      ? "7 rolled · robber dormant until 1st attack"
+      : "7 rolled · robber active";
   const yieldsHtml = isSeven
-    ? `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#ef4444", 18)} 7 rolled · robber active</span>`
-    : prodEntries.length > 0 || rollStats.goldHexes > 0
+    ? `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#ef4444", 18)} ${sevenLabel}</span>`
+    : prodEntries.length > 0 || commEntries.length > 0 || rollStats.goldHexes > 0
       ? [
           ...prodEntries.map(
             (r) =>
@@ -2642,6 +3015,10 @@ export function renderCatanMapDiceHudPure(state: CatanState): string {
                   ? ` ×${rollStats.producedByRes[r]}`
                   : ""
               }</span>`
+          ),
+          ...commEntries.map(
+            (c) =>
+              `<span class="map-yield-chip" title="${COMMODITY_META[c].label} commodity produced">${renderMiniTradeGoodCardSvg(c, 36, 23)}</span>`
           ),
           rollStats.goldHexes > 0
             ? `<span class="map-yield-chip">${renderActionPieceIconSvg("year_of_plenty", "#facc15", 18)} Gold ×${rollStats.goldHexes}</span>`
@@ -2653,11 +3030,16 @@ export function renderCatanMapDiceHudPure(state: CatanState): string {
         ? `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#f87171", 16)} Blocked by robber</span>`
         : `<span class="t-label muted">No matching island hex</span>`;
 
+  const eventDieHtml =
+    state.config.enableCitiesAndKnights && eventFace
+      ? `\n          ${renderEventDieSvg(eventFace, 34)}`
+      : "";
+
   return `
       <div class="map-dice-hud ${isSeven ? "map-dice-hud--seven" : "map-dice-hud--rolled"}">
         <div class="map-dice-hud__row">
           ${renderDieSvg(die1, 34)}
-          ${renderDieSvg(die2, 34)}
+          ${renderDieSvg(die2, 34)}${eventDieHtml}
           <span class="map-dice-hud__total ${isSeven ? "map-dice-hud__total--seven" : ""}">= ${total}</span>
         </div>
         <div class="map-dice-hud__yields">
@@ -2842,6 +3224,9 @@ export function renderCatanSpotPopoverPure(
         return { valid: false, titleHtml: "", actionItems: [], hintHtml: "" };
       }
       const existing = state.buildings[spot.id];
+      const existingKnight = state.config.enableCitiesAndKnights
+        ? state.knights[spot.id]
+        : undefined;
       const harbor = state.harbors.find((h) => {
         const he = state.topology.edges[h.edgeId];
         return he && (he.v1 === spot.id || he.v2 === spot.id);
@@ -2851,11 +3236,36 @@ export function renderCatanSpotPopoverPure(
           ? "3:1 Harbor spot"
           : `2:1 ${RESOURCE_META[harbor.type].label} port`
         : existing
-          ? existing.type === "city"
-            ? "Fortified city"
-            : "Settlement"
-          : "Island intersection";
-      const titleHtml = `${renderActionPieceIconSvg(existing?.type === "city" ? "city" : "settlement", existing ? state.players.find((p) => p.id === existing.ownerId)?.color ?? pColor : pColor, 18)} <span>${spotTitle}</span>`;
+          ? existing.metropolis
+            ? `${DISCIPLINE_META[existing.metropolis].label} Metropolis`
+            : existing.type === "city"
+              ? "Fortified city"
+              : "Settlement"
+          : existingKnight
+            ? `${
+                existingKnight.level === 3
+                  ? "Mighty"
+                  : existingKnight.level === 2
+                    ? "Strong"
+                    : "Basic"
+              } knight (${existingKnight.active ? "active" : "inactive"})`
+            : "Island intersection";
+      const titleHtml = `${renderActionPieceIconSvg(
+        existing?.metropolis
+          ? "metropolis"
+          : existingKnight
+            ? "knight_piece"
+            : existing?.type === "city"
+              ? "city"
+              : "settlement",
+        existing
+          ? state.players.find((p) => p.id === existing.ownerId)?.color ?? pColor
+          : existingKnight
+            ? state.players.find((p) => p.id === existingKnight.ownerId)?.color ??
+              pColor
+            : pColor,
+        18
+      )} <span>${spotTitle}</span>`;
 
       const canSetupSettleHere = legalActions.some(
         (a) => a.type === "PLACE_SETUP_SETTLEMENT" && a.vertexId === spot.id
@@ -2869,10 +3279,61 @@ export function renderCatanSpotPopoverPure(
       const canWallHere = legalActions.some(
         (a) => a.type === "BUILD_CITY_WALL" && a.vertexId === spot.id
       );
+      const canPillageHere =
+        state.config.enableCitiesAndKnights &&
+        legalActions.some(
+          (a) => a.type === "SELECT_PILLAGED_CITY" && a.vertexId === spot.id
+        );
+      const canBuildKnightHere =
+        state.config.enableCitiesAndKnights &&
+        legalActions.some(
+          (a) => a.type === "BUILD_KNIGHT" && a.vertexId === spot.id
+        );
+      const canPromoteKnightHere =
+        state.config.enableCitiesAndKnights &&
+        legalActions.some(
+          (a) => a.type === "PROMOTE_KNIGHT" && a.vertexId === spot.id
+        );
+      const canActivateKnightHere =
+        state.config.enableCitiesAndKnights &&
+        legalActions.some(
+          (a) => a.type === "ACTIVATE_KNIGHT" && a.vertexId === spot.id
+        );
+      const canMoveKnightFromHere =
+        state.config.enableCitiesAndKnights &&
+        legalActions.some(
+          (a) => a.type === "MOVE_KNIGHT" && a.fromVertexId === spot.id
+        );
+      const canMoveKnightToHere =
+        state.config.enableCitiesAndKnights &&
+        model.selectedMoveKnightFromVertexId
+          ? legalActions.some(
+              (a) =>
+                a.type === "MOVE_KNIGHT" &&
+                a.fromVertexId === model.selectedMoveKnightFromVertexId &&
+                a.toVertexId === spot.id
+            )
+          : false;
+      const canChaseFromHere =
+        state.config.enableCitiesAndKnights &&
+        legalActions.some(
+          (a) => a.type === "CHASE_ROBBER_WITH_KNIGHT" && a.vertexId === spot.id
+        );
+      const effectiveCityCost = state.config.enableCitiesAndKnights
+        ? getEffectiveCityCost(actingPlayer)
+        : BUILDING_COSTS.city;
+      const setupPieceLabel =
+        state.config.enableCitiesAndKnights &&
+        state.phase === "SETUP_SETTLEMENT_2"
+          ? "Place starting city"
+          : "Place starting settlement";
 
       const actionItems = [
         canSetupSettleHere
-          ? `<button type="button" data-spot-action="setup_settlement" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("settlement", pColor, 18)} <span>Place starting settlement</span></button>`
+          ? `<button type="button" data-spot-action="setup_settlement" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg(state.config.enableCitiesAndKnights && state.phase === "SETUP_SETTLEMENT_2" ? "city" : "settlement", pColor, 18)} <span>${setupPieceLabel}</span></button>`
+          : "",
+        canPillageHere
+          ? `<button type="button" data-spot-action="pillage_city" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("robber", "#ef4444", 18)} <span>Downgrade this city</span></button>`
           : "",
         canSettleHere
           ? `<button type="button" data-spot-action="build_settlement" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
@@ -2883,7 +3344,7 @@ export function renderCatanSpotPopoverPure(
         canCityHere
           ? `<button type="button" data-spot-action="build_city" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
             <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("city", pColor, 18)} Upgrade city</span>
-            ${renderCostPipStripPure(BUILDING_COSTS.city)}
+            ${renderCostPipStripPure(effectiveCityCost)}
           </button>`
           : "",
         canWallHere
@@ -2891,6 +3352,33 @@ export function renderCatanSpotPopoverPure(
             <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("wall", pColor, 18)} Build city wall</span>
             ${renderCostPipStripPure(BUILDING_COSTS.cityWall)}
           </button>`
+          : "",
+        canBuildKnightHere
+          ? `<button type="button" data-spot-action="build_knight" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("knight_piece", pColor, 18)} Recruit knight</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.knight)}
+          </button>`
+          : "",
+        canActivateKnightHere
+          ? `<button type="button" data-spot-action="activate_knight" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("activate_knight", pColor, 18)} Activate knight</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.activateKnight)}
+          </button>`
+          : "",
+        canPromoteKnightHere
+          ? `<button type="button" data-spot-action="promote_knight" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("promote_knight", pColor, 18)} Promote knight</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.knight)}
+          </button>`
+          : "",
+        canMoveKnightToHere
+          ? `<button type="button" data-spot-action="complete_move_knight" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_knight", pColor, 18)} <span>March knight here</span></button>`
+          : "",
+        canMoveKnightFromHere
+          ? `<button type="button" data-spot-action="start_move_knight" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_knight", pColor, 18)} <span>Move this knight</span></button>`
+          : "",
+        canChaseFromHere
+          ? `<button type="button" data-spot-action="start_chase_robber" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("chase_robber", pColor, 18)} <span>Chase robber</span></button>`
           : "",
       ].filter(Boolean);
 
@@ -2974,6 +3462,17 @@ export function renderCatanSpotPopoverPure(
       (a) => a.type === "MOVE_PIRATE" && a.hexId === spot.id
     );
     const canPlayKnight = legalActions.some((a) => a.type === "PLAY_KNIGHT");
+    const chaseCandidate = state.config.enableCitiesAndKnights
+      ? legalActions.find(
+          (
+            a
+          ): a is Extract<CatanAction, { type: "CHASE_ROBBER_WITH_KNIGHT" }> =>
+            a.type === "CHASE_ROBBER_WITH_KNIGHT" &&
+            a.hexId === spot.id &&
+            (!model.selectedChaseKnightVertexId ||
+              a.vertexId === model.selectedChaseKnightVertexId)
+        )
+      : undefined;
 
     const actionItems = [
       canRobHere
@@ -2981,6 +3480,9 @@ export function renderCatanSpotPopoverPure(
         : "",
       canPirateHere
         ? `<button type="button" data-spot-action="move_pirate" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("pirate", pColor, 18)} <span>Move pirate here</span></button>`
+        : "",
+      chaseCandidate
+        ? `<button type="button" data-spot-action="complete_chase_robber" data-spot-id="${spot.id}" data-chase-vertex="${chaseCandidate.vertexId}" data-chase-target="${chaseCandidate.targetKind ?? "robber"}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("chase_robber", pColor, 18)} <span>Chase ${chaseCandidate.targetKind ?? "robber"} here</span></button>`
         : "",
       canPlayKnight &&
       ((tile.terrain !== "sea" && state.robberHexId !== spot.id) ||
@@ -3084,17 +3586,41 @@ export function renderActiveTradeOfferCardPure(
         </div>`
     : "";
 
-  return `
-      <div class="ga-trade-head">
-        <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-          <span class="player-dot" style="background: ${fromP.color}"></span>
-          <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(fromP.name)} trade offer</strong>
-          ${responderChipsHtml}
-        </div>
-        <span class="t-label muted">${statusLabel}</span>
-      </div>
+  const tradeOfferMatrixHtml = state.config.enableCitiesAndKnights
+    ? `<div class="ga-res-matrix ga-res-matrix--ck">
+        ${renderTradeGoodColumnHeadersPure(
+          canRespond ? actingPlayer : canManage ? fromP : undefined
+        )}
 
-      <div class="ga-res-matrix">
+        <div class="ga-res-matrix__row-label">
+          <span class="ga-res-row-dot ga-res-row-dot--give"></span>Gives
+        </div>
+        ${TRADE_GOODS.map((g) => {
+          const amt = isCommodityType(g)
+            ? offer.giveCommodities?.[g] ?? 0
+            : offer.give[g] ?? 0;
+          return `
+            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-give" : ""}" style="justify-content: center;">
+              <span class="ga-res-step-val">${amt > 0 ? `+${amt}` : "—"}</span>
+            </div>
+          `;
+        }).join("")}
+
+        <div class="ga-res-matrix__row-label">
+          <span class="ga-res-row-dot ga-res-row-dot--want"></span>Wants
+        </div>
+        ${TRADE_GOODS.map((g) => {
+          const amt = isCommodityType(g)
+            ? offer.wantCommodities?.[g] ?? 0
+            : offer.want[g] ?? 0;
+          return `
+            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-want" : ""}" style="justify-content: center;">
+              <span class="ga-res-step-val">${amt > 0 ? `−${amt}` : "—"}</span>
+            </div>
+          `;
+        }).join("")}
+      </div>`
+    : `<div class="ga-res-matrix">
         ${renderResourceColumnHeadersPure(
           canRespond
             ? actingPlayer.resources
@@ -3126,7 +3652,23 @@ export function renderActiveTradeOfferCardPure(
             </div>
           `;
         }).join("")}
+      </div>`;
+
+  const canAffordOfferWant = state.config.enableCitiesAndKnights
+    ? hasTradeGoodsForOfferPure(actingPlayer, offer)
+    : hasResources(actingPlayer.resources, offer.want);
+
+  return `
+      <div class="ga-trade-head">
+        <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+          <span class="player-dot" style="background: ${fromP.color}"></span>
+          <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(fromP.name)} trade offer</strong>
+          ${responderChipsHtml}
+        </div>
+        <span class="t-label muted">${statusLabel}</span>
       </div>
+
+      ${tradeOfferMatrixHtml}
 
       <div class="ga-trade-preview">
         <span class="t-label muted">Inspect the map above while deciding on this trade</span>
@@ -3136,7 +3678,7 @@ export function renderActiveTradeOfferCardPure(
               ? `
                 <button type="button" data-decline-trade="${actingPlayer.id}" class="btn btn--secondary btn--sm">Decline</button>
                 <button type="button" data-accept-trade="${actingPlayer.id}" class="btn btn--primary btn--sm action-btn-graphic" ${
-                  !hasResources(actingPlayer.resources, offer.want)
+                  !canAffordOfferWant
                     ? "disabled"
                     : ""
                 }>${renderActionPieceIconSvg("domestic_trade", actingPlayer.color, 16)} <span>Accept</span></button>
@@ -3177,6 +3719,9 @@ export function renderCatanMapDecisionPopupPure(
 
   if (state.phase === "PRE_ROLL") {
     const canKnight = legalActions.some((a) => a.type === "PLAY_KNIGHT");
+    const alchemistCard = state.config.enableCitiesAndKnights
+      ? actingPlayer.progressCards.find((c) => c.type === "alchemist")
+      : undefined;
     return `
         <div class="map-decision-popup map-decision-popup--compact">
           <button type="button" id="btn-roll-dice" class="btn btn--primary btn-roll-graphic">
@@ -3188,6 +3733,13 @@ export function renderCatanMapDecisionPopupPure(
               ? `<button type="button" id="btn-play-knight" class="btn btn--secondary action-btn-graphic">
                    ${renderActionPieceIconSvg("knight", actingPlayer.color, 18)}
                    <span>Play knight</span>
+                 </button>`
+              : ""
+          }${
+            alchemistCard
+              ? `<button type="button" data-play-progress-card="${alchemistCard.id}" class="btn btn--secondary action-btn-graphic">
+                   ${renderActionPieceIconSvg("progress_card", DISCIPLINE_META.science.accent, 18)}
+                   <span>Alchemist</span>
                  </button>`
               : ""
           }
@@ -3239,6 +3791,15 @@ export function renderCatanActionDockPure(
     state.phase === "SETUP_SETTLEMENT_1" ||
     state.phase === "SETUP_SETTLEMENT_2"
   ) {
+    if (
+      state.config.enableCitiesAndKnights &&
+      state.phase === "SETUP_SETTLEMENT_2"
+    ) {
+      return `<div class="action-buttons">
+        ${renderActionPieceIconSvg("city", pColor, 22)}
+        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click any pulsing intersection on the map to place a starting city.</span>
+      </div>`;
+    }
     return `<div class="action-buttons">
         ${renderActionPieceIconSvg("settlement", pColor, 22)}
         <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click any pulsing intersection on the map to place a starting settlement.</span>
@@ -3250,9 +3811,13 @@ export function renderCatanActionDockPure(
     const canShip =
       state.config.enableSeafarers &&
       getLegalShipEdges(state, actingPlayer.id, anchor).length > 0;
+    const anchorKind =
+      state.config.enableCitiesAndKnights && state.phase === "SETUP_ROAD_2"
+        ? "city"
+        : "settlement";
     return `<div class="action-buttons">
         ${renderActionPieceIconSvg(model.setupEdgeKind, pColor, 22)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click a pulsing edge next to your settlement to place a starting ${model.setupEdgeKind}.</span>
+        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click a pulsing edge next to your ${anchorKind} to place a starting ${model.setupEdgeKind}.</span>
         ${
           canShip
             ? `<button type="button" id="btn-toggle-setup-edge" class="btn btn--secondary btn--sm is-selected action-btn-graphic">
@@ -3264,11 +3829,152 @@ export function renderCatanActionDockPure(
       </div>`;
   }
 
+  if (state.phase === "BARBARIAN_PILLAGE_SELECTION") {
+    if (model.autoPlayBots) {
+      return `<div class="action-buttons"><span class="action-prompt"><strong>Barbarian raid:</strong> Resolving city downgrade...</span></div>`;
+    }
+    const vulnerableCities = getPlayerVulnerableCities(state, actingPlayer.id);
+    return `
+        <div class="sub-modal sub-modal--trade">
+          <div class="ga-trade-head">
+            <span class="action-prompt"><strong>Barbarians breached Catan · ${escapeAttr(actingPlayer.name)}:</strong> Choose 1 city to downgrade to a settlement</span>
+            <span class="ga-chip ga-chip--danger ga-num">${vulnerableCities.length} vulnerable</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            ${vulnerableCities
+              .map((vId, idx) => {
+                const vNode = state.topology.vertices[vId];
+                const adjRes = (vNode?.adjacentHexIds ?? [])
+                  .map((hId) => {
+                    const t = state.hexes[hId];
+                    const r = t ? TERRAIN_TO_RESOURCE[t.terrain] : null;
+                    return r && t?.numberToken
+                      ? `${RESOURCE_META[r].label} #${t.numberToken}`
+                      : null;
+                  })
+                  .filter(Boolean)
+                  .join(" · ");
+                return `<button type="button" data-pillage-city="${vId}" class="btn btn--secondary btn--sm action-btn-graphic">
+                  ${renderActionPieceIconSvg("city", "#ef4444", 16)}
+                  <span>City #${idx + 1}${adjRes ? ` (${adjRes})` : ""}</span>
+                </button>`;
+              })
+              .join("")}
+          </div>
+        </div>
+        <div class="action-buttons">
+          ${renderActionPieceIconSvg("robber", "#ef4444", 20)}
+          <span class="action-prompt"><strong>Barbarian raid:</strong> Click a pulsing city on the map or pick below.</span>
+        </div>`;
+  }
+
+  if (state.phase === "PROGRESS_CARD_SELECTION") {
+    if (model.autoPlayBots) {
+      return `<div class="action-buttons"><span class="action-prompt"><strong>Progress cards:</strong> Resolving selection...</span></div>`;
+    }
+    const isDefenderPick = state.pendingDefenderDeckPicks.includes(
+      actingPlayer.id
+    );
+    if (isDefenderPick) {
+      return `
+        <div class="sub-modal sub-modal--trade">
+          <div class="ga-trade-head">
+            <span class="action-prompt"><strong>Tied Defender of Catan · ${escapeAttr(actingPlayer.name)}:</strong> Draw 1 free Progress Card</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+            ${IMPROVEMENT_DISCIPLINES.map((disc) => {
+              const dMeta = DISCIPLINE_META[disc];
+              const left = state.progressDecks[disc].length;
+              return `<button type="button" data-select-progress-deck="${disc}" class="btn btn--secondary btn--sm action-btn-graphic" style="justify-content: space-between;" ${
+                left <= 0 ? "disabled" : ""
+              }>
+                <span style="display: inline-flex; align-items: center; gap: 6px;">
+                  ${renderActionPieceIconSvg("progress_card", dMeta.accent, 16)}
+                  <span>${dMeta.label}</span>
+                </span>
+                <span class="ga-chip ga-num">${left} left</span>
+              </button>`;
+            }).join("")}
+          </div>
+        </div>
+        <div class="action-buttons">
+          ${renderActionPieceIconSvg("progress_card", pColor, 20)}
+          <span class="action-prompt"><strong>Defender reward:</strong> Choose Trade, Politics, or Science deck below.</span>
+        </div>`;
+    }
+
+    return `
+      <div class="sub-modal sub-modal--trade">
+        <div class="ga-trade-head">
+          <span class="action-prompt"><strong>Progress hand limit (max 4) · ${escapeAttr(actingPlayer.name)}:</strong> Discard 1 Progress Card</span>
+          <span class="ga-chip ga-chip--warn ga-num">${actingPlayer.progressCards.length}/4 held</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          ${actingPlayer.progressCards
+            .map((card) => {
+              const cat = PROGRESS_CARD_CATALOG[card.type];
+              const dMeta = DISCIPLINE_META[card.discipline];
+              return `<button type="button" data-discard-progress-card="${card.id}" class="btn btn--secondary btn--sm action-btn-graphic">
+                ${renderActionPieceIconSvg("progress_card", dMeta.accent, 16)}
+                <span>Discard ${cat.title}</span>
+              </button>`;
+            })
+            .join("")}
+        </div>
+      </div>
+      <div class="action-buttons">
+        ${renderActionPieceIconSvg("progress_card", pColor, 20)}
+        <span class="action-prompt"><strong>Hand limit:</strong> Choose 1 Progress Card to return to the bottom of its deck.</span>
+      </div>`;
+  }
+
   if (state.phase === "DISCARD_ON_SEVEN") {
     if (model.autoPlayBots) {
       return `<div class="action-buttons"><span class="action-prompt"><strong>Roll of 7:</strong> Resolving discards...</span></div>`;
     }
     const req = state.pendingDiscards[actingPlayer.id] ?? 0;
+    if (state.config.enableCitiesAndKnights) {
+      const currentSelected =
+        totalResourceCount(model.discardSelection) +
+        totalCommodityCount(model.discardCommodities);
+      return `
+        <div class="sub-modal sub-modal--trade sub-modal--discard">
+          <div class="ga-trade-head">
+            <span class="action-prompt"><strong>Discard · ${escapeAttr(actingPlayer.name)}:</strong> Discard ${req} cards</span>
+            <span class="ga-chip ${currentSelected === req ? "ga-chip--ok" : "ga-chip--warn"} ga-num">${currentSelected}/${req} selected</span>
+          </div>
+          <div class="ga-res-matrix ga-res-matrix--ck">
+            ${renderTradeGoodColumnHeadersPure(actingPlayer)}
+            <div class="ga-res-matrix__row-label">
+              <span class="ga-res-row-dot ga-res-row-dot--give"></span>Discard
+            </div>
+            ${TRADE_GOODS.map((g) => {
+              const sel = isCommodityType(g)
+                ? model.discardCommodities[g]
+                : model.discardSelection[g];
+              const have = getPlayerGoodCount(actingPlayer, g);
+              return `
+                <div class="ga-res-cell ${sel > 0 ? "ga-res-cell--active-give" : ""}">
+                  <button type="button" data-discard-good-sub="${g}" class="ga-res-step-btn" ${sel <= 0 ? "disabled" : ""}>−</button>
+                  <span class="ga-res-step-val">${sel}</span>
+                  <button type="button" data-discard-good-add="${g}" class="ga-res-step-btn" ${sel >= have || currentSelected >= req ? "disabled" : ""}>+</button>
+                </div>
+              `;
+            }).join("")}
+          </div>
+          <div class="ga-trade-preview">
+            <button type="button" id="btn-discard-reset" class="btn btn--secondary btn--sm">Reset</button>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btn-discard-auto" class="btn btn--secondary btn--sm">Auto-pick ${req}</button>
+              <button type="button" id="btn-discard-submit" class="btn btn--primary btn--sm" ${currentSelected !== req ? "disabled" : ""}>Confirm discard</button>
+            </div>
+          </div>
+        </div>
+        <div class="action-buttons">
+          ${renderActionPieceIconSvg("robber", pColor, 20)}
+          <span class="action-prompt"><strong>Discard required:</strong> Select ${req} resource or commodity cards below while keeping the map in view.</span>
+        </div>`;
+    }
     const currentSelected = totalResourceCount(model.discardSelection);
     return `
         <div class="sub-modal sub-modal--trade sub-modal--discard">
@@ -3379,6 +4085,62 @@ export function renderCatanActionDockPure(
           <button type="button" id="btn-roll-dice" class="btn btn--primary btn--sm action-btn-graphic">${renderRollDiceButtonGraphicSvg(24)} <span>Roll dice</span></button>
         </div>`;
     }
+    if (
+      state.config.enableCitiesAndKnights &&
+      model.buildMode === "progress_card" &&
+      model.selectedProgressCardId
+    ) {
+      const alchCard = actingPlayer.progressCards.find(
+        (c) => c.id === model.selectedProgressCardId && c.type === "alchemist"
+      );
+      if (alchCard) {
+        const dFaces = [1, 2, 3, 4, 5, 6];
+        return `
+          <div class="sub-modal sub-modal--trade">
+            <div class="ga-trade-head">
+              <div style="display: inline-flex; align-items: center; gap: 7px;">
+                ${renderActionPieceIconSvg("progress_card", DISCIPLINE_META.science.accent, 18)}
+                <strong style="font-size: var(--t-small); font-weight: 500;">Alchemist — choose exact White & Red dice before Event Die roll</strong>
+              </div>
+              <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+              <div style="display: inline-flex; align-items: center; gap: 4px;">
+                <span class="t-label muted">White:</span>
+                ${dFaces
+                  .map(
+                    (f) =>
+                      `<button type="button" data-alch-die1="${f}" class="btn btn--sm ${
+                        model.alchemistDie1 === f
+                          ? "btn--primary"
+                          : "btn--secondary"
+                      } ga-num">${f}</button>`
+                  )
+                  .join("")}
+              </div>
+              <div style="display: inline-flex; align-items: center; gap: 4px;">
+                <span class="t-label muted">Red (caliper):</span>
+                ${dFaces
+                  .map(
+                    (f) =>
+                      `<button type="button" data-alch-die2="${f}" class="btn btn--sm ${
+                        model.alchemistDie2 === f
+                          ? "btn--primary"
+                          : "btn--secondary"
+                      } ga-num">${f}</button>`
+                  )
+                  .join("")}
+              </div>
+              <button type="button" id="btn-exec-alchemist" class="btn btn--primary btn--sm ga-num" style="margin-left: auto;">
+                Roll ${model.alchemistDie1} + ${model.alchemistDie2} = ${model.alchemistDie1 + model.alchemistDie2}
+              </button>
+            </div>
+          </div>
+          <div class="action-buttons">
+            <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Set your Alchemist dice below or close to roll normally.</span>
+          </div>`;
+      }
+    }
     return `<div class="action-buttons">
         <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Roll the dice directly on the map above to start your turn (or click any map hex to inspect).</span>
       </div>`;
@@ -3446,6 +4208,148 @@ export function renderCatanActionDockPure(
 
   const subModalHtml = ((): string => {
     if (model.buildMode === "maritime_trade") {
+      if (state.config.enableCitiesAndKnights) {
+        const goodRatios = getPlayerGoodTradeRatios(state, actingPlayer.id);
+        const getMarGive = (g: TradeGoodType): number =>
+          isCommodityType(g) ? model.maritimeCommGive[g] : model.maritimeGive[g];
+        const getMarWant = (g: TradeGoodType): number =>
+          isCommodityType(g) ? model.maritimeCommWant[g] : model.maritimeWant[g];
+
+        const giveCredits = TRADE_GOODS.reduce(
+          (sum, g) => sum + Math.floor(getMarGive(g) / goodRatios[g]),
+          0
+        );
+        const receiveCount =
+          totalResourceCount(model.maritimeWant) +
+          totalCommodityCount(model.maritimeCommWant);
+        const canExec =
+          giveCredits > 0 &&
+          giveCredits === receiveCount &&
+          TRADE_GOODS.every((g) => {
+            const gv = getMarGive(g);
+            const wv = getMarWant(g);
+            return (
+              !(gv > 0 && wv > 0) &&
+              gv % goodRatios[g] === 0 &&
+              getPlayerGoodCount(actingPlayer, g) >= gv &&
+              getBankGoodCount(state, g) >= wv
+            );
+          });
+
+        const giveCardsPreview = TRADE_GOODS.filter((g) => getMarGive(g) > 0)
+          .map(
+            (g) =>
+              `<span class="map-yield-chip">−${getMarGive(g)} ${renderMiniTradeGoodCardSvg(g, 32, 20)}</span>`
+          )
+          .join("");
+        const wantCardsPreview = TRADE_GOODS.filter((g) => getMarWant(g) > 0)
+          .map(
+            (g) =>
+              `<span class="map-yield-chip">+${getMarWant(g)} ${renderMiniTradeGoodCardSvg(g, 32, 20)}</span>`
+          )
+          .join("");
+
+        const statusHint =
+          giveCredits === 0 && receiveCount === 0
+            ? "Offer resource or commodity bundles (+4, +3, or +2)"
+            : giveCredits > receiveCount
+              ? `Add ${giveCredits - receiveCount} more requested card${
+                  giveCredits - receiveCount === 1 ? "" : "s"
+                }`
+              : receiveCount > giveCredits
+                ? `Add ${receiveCount - giveCredits} more bundle${
+                    receiveCount - giveCredits === 1 ? "" : "s"
+                  }`
+                : `${giveCredits} bank trade${giveCredits === 1 ? "" : "s"} ready`;
+
+        return `<div class="sub-modal sub-modal--trade">
+          <div class="ga-trade-head">
+            ${renderTradeModeTabs()}
+            <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
+              <span class="ga-chip ${
+                canExec
+                  ? "ga-chip--ok"
+                  : giveCredits > 0 || receiveCount > 0
+                    ? "ga-chip--warn"
+                    : ""
+              } ga-num">${escapeAttr(statusHint)}</span>
+              <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+            </div>
+          </div>
+
+          <div class="ga-res-matrix ga-res-matrix--ck">
+            ${renderTradeGoodColumnHeadersPure(
+              actingPlayer,
+              undefined,
+              goodRatios
+            )}
+
+            <div class="ga-res-matrix__row-label">
+              <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
+            </div>
+            ${TRADE_GOODS.map((g) => {
+              const ratio = goodRatios[g];
+              const val = getMarGive(g);
+              const canAddBundle =
+                getPlayerGoodCount(actingPlayer, g) >= val + ratio;
+              return `
+                <div class="ga-res-cell ${
+                  val > 0 ? "ga-res-cell--active-give" : ""
+                }">
+                  <button type="button" data-ck-maritime-give-dec="${g}" class="ga-res-step-btn" ${
+                    val <= 0 ? "disabled" : ""
+                  }>−</button>
+                  <span class="ga-res-step-val">${val}</span>
+                  <button type="button" data-ck-maritime-give="${g}" class="ga-res-step-btn" title="Offer ${ratio} ${
+                    TRADE_GOOD_META[g].label
+                  } (${ratio}:1 rate)" ${!canAddBundle ? "disabled" : ""}>+</button>
+                </div>
+              `;
+            }).join("")}
+
+            <div class="ga-res-matrix__row-label">
+              <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
+            </div>
+            ${TRADE_GOODS.map((g) => {
+              const val = getMarWant(g);
+              const bankAvail = getBankGoodCount(state, g);
+              return `
+                <div class="ga-res-cell ${
+                  val > 0 ? "ga-res-cell--active-want" : ""
+                }">
+                  <button type="button" data-ck-maritime-receive-dec="${g}" class="ga-res-step-btn" ${
+                    val <= 0 ? "disabled" : ""
+                  }>−</button>
+                  <span class="ga-res-step-val">${val}</span>
+                  <button type="button" data-ck-maritime-receive="${g}" class="ga-res-step-btn" ${
+                    val >= bankAvail ? "disabled" : ""
+                  }>+</button>
+                </div>
+              `;
+            }).join("")}
+          </div>
+
+          <div class="ga-trade-preview">
+            <div class="ga-trade-bundle">
+              ${
+                giveCardsPreview || wantCardsPreview
+                  ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
+                  : `<span class="t-label muted">Trade resources & commodities (Trading House Lv 3 unlocks 2:1 commodities)</span>`
+              }
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btn-maritime-reset" class="btn btn--secondary btn--sm">Reset</button>
+              <button type="button" id="btn-exec-maritime" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
+                !canExec ? "disabled" : ""
+              }>
+                ${renderActionPieceIconSvg("maritime_trade", pColor, 16)}
+                <span>Trade with bank</span>
+              </button>
+            </div>
+          </div>
+        </div>`;
+      }
+
       const ratios = getPlayerTradeRatios(state, actingPlayer.id);
       const giveCredits = RESOURCES.reduce(
         (sum, r) => sum + Math.floor(model.maritimeGive[r] / ratios[r]),
@@ -3583,6 +4487,106 @@ export function renderCatanActionDockPure(
     }
 
     if (model.buildMode === "domestic_trade") {
+      if (state.config.enableCitiesAndKnights) {
+        const goodRatios = getPlayerGoodTradeRatios(state, actingPlayer.id);
+        const getDomGive = (g: TradeGoodType): number =>
+          isCommodityType(g) ? model.domesticCommGive[g] : model.domesticGive[g];
+        const getDomWant = (g: TradeGoodType): number =>
+          isCommodityType(g) ? model.domesticCommWant[g] : model.domesticWant[g];
+
+        const giveTotal =
+          totalResourceCount(model.domesticGive) +
+          totalCommodityCount(model.domesticCommGive);
+        const wantTotal =
+          totalResourceCount(model.domesticWant) +
+          totalCommodityCount(model.domesticCommWant);
+        const canPropose =
+          giveTotal > 0 &&
+          wantTotal > 0 &&
+          TRADE_GOODS.every((g) => !(getDomGive(g) > 0 && getDomWant(g) > 0)) &&
+          hasResources(actingPlayer.resources, model.domesticGive) &&
+          hasCommodities(actingPlayer.commodities, model.domesticCommGive);
+
+        const giveCardsPreview = TRADE_GOODS.filter((g) => getDomGive(g) > 0)
+          .map(
+            (g) =>
+              `<span class="map-yield-chip">−${getDomGive(g)} ${renderMiniTradeGoodCardSvg(g, 32, 20)}</span>`
+          )
+          .join("");
+        const wantCardsPreview = TRADE_GOODS.filter((g) => getDomWant(g) > 0)
+          .map(
+            (g) =>
+              `<span class="map-yield-chip">+${getDomWant(g)} ${renderMiniTradeGoodCardSvg(g, 32, 20)}</span>`
+          )
+          .join("");
+
+        return `<div class="sub-modal sub-modal--trade">
+          <div class="ga-trade-head">
+            ${renderTradeModeTabs()}
+            <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
+              <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">Open to all players · resources & commodities</span>
+              <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+            </div>
+          </div>
+
+          <div class="ga-res-matrix ga-res-matrix--ck">
+            ${renderTradeGoodColumnHeadersPure(
+              actingPlayer,
+              undefined,
+              goodRatios
+            )}
+
+            <div class="ga-res-matrix__row-label">
+              <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
+            </div>
+            ${TRADE_GOODS.map((g) => {
+              const val = getDomGive(g);
+              const max = getPlayerGoodCount(actingPlayer, g);
+              return `
+                <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-give" : ""}">
+                  <button type="button" data-ck-dom-give-dec="${g}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
+                  <span class="ga-res-step-val">${val}</span>
+                  <button type="button" data-ck-dom-give="${g}" class="ga-res-step-btn" ${val >= max ? "disabled" : ""}>+</button>
+                </div>
+              `;
+            }).join("")}
+
+            <div class="ga-res-matrix__row-label">
+              <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
+            </div>
+            ${TRADE_GOODS.map((g) => {
+              const val = getDomWant(g);
+              return `
+                <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-want" : ""}">
+                  <button type="button" data-ck-dom-want-dec="${g}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
+                  <span class="ga-res-step-val">${val}</span>
+                  <button type="button" data-ck-dom-want="${g}" class="ga-res-step-btn">+</button>
+                </div>
+              `;
+            }).join("")}
+          </div>
+
+          <div class="ga-trade-preview">
+            <div class="ga-trade-bundle">
+              ${
+                giveCardsPreview || wantCardsPreview
+                  ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
+                  : `<span class="t-label muted">Use + and − in each column to trade resources or commodities</span>`
+              }
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btn-dom-reset" class="btn btn--secondary btn--sm">Reset</button>
+              <button type="button" id="btn-dom-propose" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
+                !canPropose ? "disabled" : ""
+              }>
+                ${renderActionPieceIconSvg("domestic_trade", pColor, 16)}
+                <span>Send trade offer</span>
+              </button>
+            </div>
+          </div>
+        </div>`;
+      }
+
       const ratios = getPlayerTradeRatios(state, actingPlayer.id);
       const canPropose =
         totalResourceCount(model.domesticGive) > 0 &&
@@ -3676,6 +4680,232 @@ export function renderCatanActionDockPure(
       </div>`;
     }
 
+    if (
+      state.config.enableCitiesAndKnights &&
+      model.buildMode === "city_upgrades"
+    ) {
+      return `<div class="sub-modal sub-modal--trade">
+        <div class="ga-trade-head">
+          <div style="display: inline-flex; align-items: center; gap: 7px;">
+            ${renderActionPieceIconSvg("city_upgrade", "#fbbf24", 18)}
+            <strong style="font-size: var(--t-small); font-weight: 500;">City improvements${
+              actingPlayer.activeTurnDiscounts.crane
+                ? " · Crane discount (−1 commodity)"
+                : ""
+            }</strong>
+          </div>
+          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+        </div>
+        <div class="ck-upgrades-grid">
+          ${IMPROVEMENT_DISCIPLINES.map((disc) => {
+            const dMeta = DISCIPLINE_META[disc];
+            const cur = actingPlayer.cityImprovements[disc];
+            const check = canPlayerUpgradeDiscipline(state, actingPlayer, disc);
+            const perkLabel =
+              disc === "trade"
+                ? "Lv 3 Trading House (2:1)"
+                : disc === "politics"
+                  ? "Lv 3 Fortress (Mighty Knights)"
+                  : "Lv 3 Aqueduct (free card)";
+            const metro = state.metropolises[disc];
+            const metroHolder = metro.ownerId
+              ? state.players.find((p) => p.id === metro.ownerId)?.name
+              : null;
+            const selectedMetroVId =
+              model.selectedMetropolisVertexId &&
+              check.eligibleMetropolisVertices.includes(
+                model.selectedMetropolisVertexId
+              )
+                ? model.selectedMetropolisVertexId
+                : check.eligibleMetropolisVertices[0] ?? null;
+
+            return `<div class="ck-upgrade-col" style="--disc-accent: ${dMeta.accent}; --disc-border: ${dMeta.border};">
+              <div class="ck-upgrade-col__top">
+                <strong style="color: ${dMeta.accent}; font-size: 12px;">${dMeta.label}</strong>
+                <span class="ga-chip ga-num">Lv ${cur}/5</span>
+              </div>
+              <div class="ck-upgrade-col__perk ${cur >= 3 ? "is-unlocked" : ""}">
+                ${perkLabel}${metroHolder ? ` · Metro: ${escapeAttr(metroHolder)}` : ""}
+              </div>
+              ${
+                check.claimsMetropolis &&
+                check.eligibleMetropolisVertices.length > 1
+                  ? `<div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                      ${check.eligibleMetropolisVertices
+                        .map(
+                          (vId, idx) =>
+                            `<button type="button" data-select-metro-city="${vId}" class="ga-chip ${
+                              selectedMetroVId === vId ? "ga-chip--warn" : ""
+                            }" style="cursor: pointer;">City #${idx + 1}</button>`
+                        )
+                        .join("")}
+                    </div>`
+                  : ""
+              }
+              <div class="ck-upgrade-col__foot">
+                ${
+                  cur >= 5
+                    ? `<span class="ga-chip ga-chip--ok" style="width: 100%; justify-content: center;">Max level 5</span>`
+                    : `<span class="t-label ga-num" style="display: inline-flex; align-items: center; gap: 4px;">
+                        ${renderCommodityGlyphSvg(check.costCommodity, 13)}
+                        ${actingPlayer.commodities[check.costCommodity]}/${check.costAmount}
+                      </span>
+                      <button type="button" data-upgrade-discipline="${disc}" data-metro-vertex="${selectedMetroVId ?? ""}" class="btn btn--primary btn--sm" ${
+                        !check.allowed ? "disabled" : ""
+                      }>
+                        ${
+                          check.claimsMetropolis
+                            ? `Crown Lv ${check.nextLevel}`
+                            : `Lv ${check.nextLevel}`
+                        }
+                      </button>`
+                }
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>`;
+    }
+
+    if (
+      state.config.enableCitiesAndKnights &&
+      model.buildMode === "progress_card" &&
+      model.selectedProgressCardId
+    ) {
+      const card = actingPlayer.progressCards.find(
+        (c) => c.id === model.selectedProgressCardId
+      );
+      if (card) {
+        const cat = PROGRESS_CARD_CATALOG[card.type];
+        const dMeta = DISCIPLINE_META[card.discipline];
+        const matchingActions = legalActions.filter(
+          (
+            a
+          ): a is Extract<CatanAction, { type: "PLAY_PROGRESS_CARD" }> =>
+            a.type === "PLAY_PROGRESS_CARD" && a.cardId === card.id
+        );
+
+        const controlsHtml = ((): string => {
+          if (
+            card.type === "resource_monopoly" ||
+            card.type === "commercial_harbor"
+          ) {
+            const availRes = RESOURCES.filter((r) =>
+              matchingActions.some((a) => a.params?.resource === r)
+            );
+            return `<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${availRes
+                .map(
+                  (r) =>
+                    `<button type="button" data-prog-res="${r}" class="btn btn--secondary btn--sm action-btn-graphic">
+                      ${renderMiniResourceCardSvg(r, 32, 20)}
+                      <span>${RESOURCE_META[r].label}</span>
+                    </button>`
+                )
+                .join("")}
+            </div>`;
+          }
+          if (card.type === "trade_monopoly") {
+            return `<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${COMMODITIES.map(
+                (c) =>
+                  `<button type="button" data-prog-comm="${c}" class="btn btn--secondary btn--sm action-btn-graphic">
+                    ${renderMiniTradeGoodCardSvg(c, 32, 20)}
+                    <span>${COMMODITY_META[c].label}</span>
+                  </button>`
+              ).join("")}
+            </div>`;
+          }
+          if (card.type === "merchant_fleet") {
+            return `<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${TRADE_GOODS.map(
+                (g) =>
+                  `<button type="button" data-prog-good="${g}" class="btn btn--secondary btn--sm action-btn-graphic">
+                    ${renderMiniTradeGoodCardSvg(g, 30, 19)}
+                    <span>2:1 ${TRADE_GOOD_META[g].label}</span>
+                  </button>`
+              ).join("")}
+            </div>`;
+          }
+          if (
+            card.type === "spy" ||
+            card.type === "master_merchant" ||
+            card.type === "deserter"
+          ) {
+            const opps = state.players.filter((opp) =>
+              matchingActions.some((a) => a.params?.targetPlayerId === opp.id)
+            );
+            return `<div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${opps
+                .map(
+                  (opp) =>
+                    `<button type="button" data-prog-opp="${opp.id}" class="btn btn--secondary btn--sm action-btn-graphic">
+                      <span class="player-dot" style="background: ${opp.color}"></span>
+                      <span>Target ${escapeAttr(opp.name)}</span>
+                    </button>`
+                )
+                .join("")}
+            </div>`;
+          }
+          if (card.type === "inventor") {
+            return `<div class="t-small muted">
+              ${
+                model.inventorHex1
+                  ? `1st tile selected (<strong>#${state.hexes[model.inventorHex1]?.numberToken}</strong>) — now click a 2nd highlighted tile on the map to swap numbers.`
+                  : "Click any 2 highlighted number tiles on the map above (excluding 2, 6, 8, 12) to swap their tokens."
+              }
+            </div>`;
+          }
+          if (card.type === "smith") {
+            const promotable = getLegalPromoteKnightVertices(
+              state,
+              actingPlayer.id,
+              true
+            );
+            return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+              <span class="t-small muted">${
+                model.smithVertex1
+                  ? "1st knight selected — click a 2nd knight on the map or confirm 1 promotion:"
+                  : "Click up to 2 highlighted knights on the map to promote for free."
+              }</span>
+              ${
+                model.smithVertex1 || promotable.length === 1
+                  ? `<button type="button" id="btn-exec-smith-single" class="btn btn--primary btn--sm">Promote selected knight</button>`
+                  : ""
+              }
+            </div>`;
+          }
+          return `<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+            <span class="t-small muted">Click a highlighted target on the map above, or choose directly:</span>
+            ${matchingActions
+              .slice(0, 6)
+              .map((act, idx) => {
+                const label = act.params?.hexId
+                  ? `${state.hexes[act.params.hexId]?.terrain ?? "Hex"} #${state.hexes[act.params.hexId]?.numberToken ?? ""}`
+                  : act.params?.vertexId
+                    ? `Spot #${idx + 1}`
+                    : act.params?.edgeId
+                      ? `Road #${idx + 1}`
+                      : `Option #${idx + 1}`;
+                return `<button type="button" data-prog-action-idx="${idx}" class="btn btn--secondary btn--sm">${escapeAttr(label.trim())}</button>`;
+              })
+              .join("")}
+          </div>`;
+        })();
+
+        return `<div class="sub-modal sub-modal--trade">
+          <div class="ga-trade-head">
+            <div style="display: inline-flex; align-items: center; gap: 7px;">
+              ${renderActionPieceIconSvg("progress_card", dMeta.accent, 18)}
+              <strong style="font-size: var(--t-small); font-weight: 500;">${cat.title} — ${escapeAttr(cat.description)}</strong>
+            </div>
+            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+          </div>
+          ${controlsHtml}
+        </div>`;
+      }
+    }
+
     if (model.buildMode === "year_of_plenty") {
       return `<div class="sub-modal">
         <div class="ga-trade-head">
@@ -3761,6 +4991,150 @@ export function renderCatanActionDockPure(
 
     return "";
   })();
+
+  if (state.config.enableCitiesAndKnights) {
+    const canBuildKnight = legalActions.some((a) => a.type === "BUILD_KNIGHT");
+    const canActivateKnight = legalActions.some(
+      (a) => a.type === "ACTIVATE_KNIGHT"
+    );
+    const canPromoteKnight = legalActions.some(
+      (a) => a.type === "PROMOTE_KNIGHT"
+    );
+    const canMoveKnight = legalActions.some((a) => a.type === "MOVE_KNIGHT");
+    const canChaseRobber = legalActions.some(
+      (a) => a.type === "CHASE_ROBBER_WITH_KNIGHT"
+    );
+    const canUpgradeAny = legalActions.some(
+      (a) => a.type === "UPGRADE_CITY_IMPROVEMENT"
+    );
+    const cityCost = getEffectiveCityCost(actingPlayer);
+
+    return `
+      ${subModalHtml}
+      <div class="action-buttons">
+        <button type="button" id="btn-mode-road" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "road" ? "is-selected" : ""
+        }" ${!canRoad ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("road", pColor, 18)}
+          <span>Road</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.road)}
+        </button>
+        ${
+          state.config.enableSeafarers
+            ? `<button type="button" id="btn-mode-ship" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "ship" ? "is-selected" : ""
+              }" ${!canShip ? "disabled" : ""}>
+                ${renderActionPieceIconSvg("ship", pColor, 18)}
+                <span>Ship</span>
+                ${renderCostPipStripPure(BUILDING_COSTS.ship)}
+              </button>
+              <button type="button" id="btn-mode-moveship" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "move_ship" ? "is-selected" : ""
+              }" ${!canMoveShip ? "disabled" : ""}>
+                ${renderActionPieceIconSvg("move_ship", pColor, 18)}
+                <span>Move ship</span>
+              </button>`
+            : ""
+        }
+        <button type="button" id="btn-mode-settlement" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "settlement" ? "is-selected" : ""
+        }" ${!canSettlement ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("settlement", pColor, 18)}
+          <span>Settlement</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.settlement)}
+        </button>
+        <button type="button" id="btn-mode-city" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "city" ? "is-selected" : ""
+        }" ${!canCity ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("city", pColor, 18)}
+          <span>City</span>
+          ${renderCostPipStripPure(cityCost)}
+        </button>
+        <button type="button" id="btn-mode-wall" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "wall" ? "is-selected" : ""
+        }" ${!canWall ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("wall", pColor, 18)}
+          <span>Wall</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.cityWall)}
+        </button>
+        <button type="button" id="btn-mode-knight" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "knight" ? "is-selected" : ""
+        }" ${!canBuildKnight ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("knight_piece", pColor, 18)}
+          <span>Knight</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.knight)}
+        </button>
+        <button type="button" id="btn-mode-activate-knight" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "activate_knight" ? "is-selected" : ""
+        }" ${!canActivateKnight ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("activate_knight", pColor, 18)}
+          <span>Activate</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.activateKnight)}
+        </button>
+        <button type="button" id="btn-mode-promote-knight" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "promote_knight" ? "is-selected" : ""
+        }" ${!canPromoteKnight ? "disabled" : ""}>
+          ${renderActionPieceIconSvg("promote_knight", pColor, 18)}
+          <span>Promote</span>
+          ${renderCostPipStripPure(BUILDING_COSTS.knight)}
+        </button>
+        ${
+          canMoveKnight || model.buildMode === "move_knight"
+            ? `<button type="button" id="btn-mode-move-knight" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "move_knight" ? "is-selected" : ""
+              }" ${!canMoveKnight ? "disabled" : ""}>
+                ${renderActionPieceIconSvg("move_knight", pColor, 18)}
+                <span>March</span>
+              </button>`
+            : ""
+        }
+        ${
+          canChaseRobber || model.buildMode === "chase_robber"
+            ? `<button type="button" id="btn-mode-chase-robber" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "chase_robber" ? "is-selected" : ""
+              }" ${!canChaseRobber ? "disabled" : ""}>
+                ${renderActionPieceIconSvg("chase_robber", pColor, 18)}
+                <span>Chase robber</span>
+              </button>`
+            : ""
+        }
+        <button type="button" id="btn-mode-upgrades" class="btn btn--secondary btn--sm action-btn-graphic ${
+          model.buildMode === "city_upgrades" ? "is-selected" : ""
+        }">
+          ${renderActionPieceIconSvg("city_upgrade", "#fbbf24", 18)}
+          <span>Upgrades${canUpgradeAny ? " •" : ""}</span>
+        </button>
+        ${
+          state.phase === "MAIN_PHASE"
+            ? `<button type="button" id="btn-mode-maritime" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "maritime_trade" ? "is-selected" : ""
+              }" title="${
+                canMaritime
+                  ? "Trade resources or commodities with the bank"
+                  : "Inspect trade rates or switch to player trade"
+              }">
+                ${renderActionPieceIconSvg("maritime_trade", pColor, 18)}
+                <span>Bank trade</span>
+              </button>
+              <button type="button" id="btn-mode-domestic" class="btn btn--secondary btn--sm action-btn-graphic ${
+                model.buildMode === "domestic_trade" ? "is-selected" : ""
+              }">
+                ${renderActionPieceIconSvg("domestic_trade", pColor, 18)}
+                <span>Player trade</span>
+              </button>`
+            : ""
+        }
+        <button type="button" id="btn-end-turn" class="btn btn--primary btn--sm action-btn-graphic" style="margin-left: auto;">
+          <span>${
+            state.phase === "SPECIAL_BUILDING"
+              ? "Finish build"
+              : "End turn"
+          }</span>
+          ${renderActionPieceIconSvg("end_turn", pColor, 16)}
+        </button>
+      </div>
+    `;
+  }
 
   return `
       ${subModalHtml}
@@ -3897,6 +5271,70 @@ export function renderCatanPlayerCardPure(
 
   const hiddenCardIconSvg = `<svg width="13" height="15" viewBox="0 0 14 16" aria-hidden="true"><rect x="1.5" y="1" width="11" height="14" rx="2.2" fill="#27272a" stroke="#a1a1aa" stroke-width="1.2"/><path d="M4.2 4.5h5.6M4.2 8h5.6M4.2 11.5h3.6" stroke="#fb923c" stroke-width="1.1" stroke-linecap="round"/></svg>`;
 
+  if (state.config.enableCitiesAndKnights) {
+    const activeStr = getPlayerActiveKnightStrength(state, p.id);
+    const progCount = p.handRedacted
+      ? p.hiddenProgressCardCount ?? 0
+      : p.progressCards.length;
+    return `
+      <div class="player-card ${isActing ? "active-turn" : ""}">
+        <div class="player-header">
+          <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
+            <span class="player-dot" style="background: ${p.color}"></span>
+            <strong class="player-card__name">${escapeAttr(p.name)}</strong>
+            <span class="ga-chip">${botBadge}</span>
+          </div>
+          <span class="ga-chip ga-chip--warn ga-num">${
+            showPrivateHand
+              ? `${totalVp} VP${totalVp !== visibleVp ? ` (${visibleVp})` : ""}`
+              : `${visibleVp} VP`
+          }</span>
+        </div>
+
+        <div class="player-card__hud-row">
+          <div class="res-pills">
+            ${
+              showPrivateHand
+                ? `${RESOURCES.map(
+                    (r) =>
+                      `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r)} ${p.resources[r]}</span>`
+                  ).join("")}${COMMODITIES.map(
+                    (c) =>
+                      `<span class="res-pill res-${c}" title="${COMMODITY_META[c].label}">${renderCommodityGlyphSvg(c)} ${p.commodities[c]}</span>`
+                  ).join("")}`
+                : `<span class="res-pill res-pill--hidden ga-num" title="Hidden resource & commodity cards in hand">${hiddenCardIconSvg} ${cardCount} ${
+                    cardCount === 1 ? "card" : "cards"
+                  }</span>`
+            }
+            <span class="ga-chip ga-num" title="Cards in hand vs safe limit on 7">${cardCount}/${safeLimit}</span>
+          </div>
+
+          <div class="player-card__stats">
+            <span title="Longest route">R <strong class="ga-num">${p.longestRoadLength}</strong></span>
+            <span title="Active knight strength">⚔ <strong class="ga-num">${activeStr}</strong></span>
+            <span title="Trade / Politics / Science levels">T<strong class="ga-num">${p.cityImprovements.trade}</strong>·P<strong class="ga-num">${p.cityImprovements.politics}</strong>·S<strong class="ga-num">${p.cityImprovements.science}</strong></span>
+            <span title="Progress cards">P <strong class="ga-num">${progCount}</strong></span>
+            ${
+              p.defenderPoints > 0
+                ? `<span title="Defender of Catan VP">🛡<strong class="ga-num">${p.defenderPoints}</strong></span>`
+                : ""
+            }
+            ${
+              state.config.enableHarbormaster
+                ? `<span title="Harbor points">H <strong class="ga-num">${p.harborPoints}</strong></span>`
+                : ""
+            }
+            ${
+              p.bonusVictoryPoints > 0
+                ? `<span title="Island bonus">+<strong class="ga-num">${p.bonusVictoryPoints}</strong></span>`
+                : ""
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   return `
       <div class="player-card ${isActing ? "active-turn" : ""}">
         <div class="player-header">
@@ -3973,6 +5411,8 @@ export function renderInGameViewPure(
         ...rawModel,
         buildMode: null,
         selectedMoveFromEdgeId: null,
+        selectedMoveKnightFromVertexId: null,
+        selectedChaseKnightVertexId: null,
       }
     : rawModel;
 
@@ -4071,6 +5511,117 @@ export function renderInGameViewPure(
       ? CatanEngine.getLegalActions(state, actingPlayerId)
       : [];
   const boardActingPlayerId = isMyTurn ? actingPlayerId : null;
+  const ckBoardOptions = (() => {
+    if (
+      room.gameId !== "catan" ||
+      !(state as CatanState).config.enableCitiesAndKnights
+    ) {
+      return {};
+    }
+    const cState = state as CatanState;
+    const progressCard =
+      isMyTurn &&
+      model.buildMode === "progress_card" &&
+      model.selectedProgressCardId &&
+      actingPlayer
+        ? actingPlayer.progressCards.find(
+            (c: any) => c.id === model.selectedProgressCardId
+          )
+        : undefined;
+
+    const progressTargets = ((): {
+      progressTargetVertexIds?: readonly string[];
+      progressTargetEdgeIds?: readonly string[];
+      progressTargetHexIds?: readonly string[];
+    } => {
+      if (!progressCard || !actingPlayer) return {};
+      if (progressCard.type === "engineer") {
+        return {
+          progressTargetVertexIds: Object.entries(cState.buildings)
+            .filter(
+              ([, b]) =>
+                b.ownerId === actingPlayer.id &&
+                b.type === "city" &&
+                !b.hasWall
+            )
+            .map(([vId]) => vId),
+        };
+      }
+      if (progressCard.type === "smith") {
+        return {
+          progressTargetVertexIds: getLegalPromoteKnightVertices(
+            cState,
+            actingPlayer.id,
+            true
+          ).filter((vId) => vId !== model.smithVertex1),
+        };
+      }
+      if (progressCard.type === "inventor") {
+        return {
+          progressTargetHexIds: cState.topology.hexOrder.filter((hId) => {
+            if (hId === model.inventorHex1) return false;
+            const t = cState.hexes[hId]!;
+            return (
+              t.numberToken !== null &&
+              t.numberToken !== 2 &&
+              t.numberToken !== 6 &&
+              t.numberToken !== 8 &&
+              t.numberToken !== 12 &&
+              t.terrain !== "sea" &&
+              t.terrain !== "fog"
+            );
+          }),
+        };
+      }
+      if (progressCard.type === "bishop") {
+        return {
+          progressTargetHexIds: getLegalRobberHexes(cState, actingPlayer.id),
+        };
+      }
+      if (progressCard.type === "intrigue") {
+        return {
+          progressTargetVertexIds: Object.entries(cState.knights)
+            .filter(([vId, k]) => {
+              if (k.ownerId === actingPlayer.id) return false;
+              const vNode = cState.topology.vertices[vId];
+              return Boolean(
+                vNode?.incidentEdgeIds.some(
+                  (eId) => cState.edges[eId]?.ownerId === actingPlayer.id
+                )
+              );
+            })
+            .map(([vId]) => vId),
+        };
+      }
+      if (progressCard.type === "diplomat") {
+        return {
+          progressTargetEdgeIds: getDiplomatRemovableRoadEdges(cState),
+        };
+      }
+      if (progressCard.type === "merchant") {
+        return {
+          progressTargetHexIds: cState.topology.hexOrder.filter((hId) => {
+            const tile = cState.hexes[hId]!;
+            if (!TERRAIN_TO_RESOURCE[tile.terrain]) return false;
+            return cState.topology.hexes[hId]!.cornerVertexIds.some(
+              (vId) => cState.buildings[vId]?.ownerId === actingPlayer.id
+            );
+          }),
+        };
+      }
+      return {};
+    })();
+
+    return {
+      selectedMoveKnightFromVertexId: isMyTurn
+        ? model.selectedMoveKnightFromVertexId
+        : null,
+      selectedChaseKnightVertexId: isMyTurn
+        ? model.selectedChaseKnightVertexId
+        : null,
+      ...progressTargets,
+    };
+  })();
 
   const html = `
       <div class="ga-game-canvas">
@@ -4100,7 +5651,12 @@ export function renderInGameViewPure(
                     ? state.lastRoll
                       ? `<span style="display: inline-flex; align-items: center; gap: 5px;">
                           ${renderDieSvg(state.lastRoll.die1, 22)}
-                          ${renderDieSvg(state.lastRoll.die2, 22)}
+                          ${renderDieSvg(state.lastRoll.die2, 22)}${
+                            state.config.enableCitiesAndKnights &&
+                            state.lastRoll.eventFace
+                              ? `\n                          ${renderEventDieSvg(state.lastRoll.eventFace, 22)}`
+                              : ""
+                          }
                           <span class="ga-chip ga-chip--warn ga-num">Roll ${
                             state.lastRoll.total
                           }</span>
@@ -4171,7 +5727,11 @@ export function renderInGameViewPure(
               ${
                 room.gameId === "catan"
                   ? `
-                    ${renderCatanMapDiceHudPure(state as CatanState)}
+                    ${renderCatanMapDiceHudPure(state as CatanState)}${
+                      (state as CatanState).config.enableCitiesAndKnights
+                        ? `\n                    ${renderCatanBarbarianHudPure(state as CatanState)}`
+                        : ""
+                    }
                     ${renderCatanBoardSvg(
                       state as CatanState,
                       boardActingPlayerId,
@@ -4183,6 +5743,7 @@ export function renderInGameViewPure(
                           ? model.selectedMoveFromEdgeId
                           : null,
                         selectedSpot: model.selectedBoardSpot,
+                        ...ckBoardOptions,
                       }
                     )}
                     ${renderCatanSpotPopoverPure(
@@ -4358,7 +5919,80 @@ export function renderInGameViewPure(
 
             ${
               room.gameId === "catan"
-                ? `
+                ? (state as CatanState).config.enableCitiesAndKnights
+                  ? `
+              <div class="ga-sidebar__head">
+                <span>Bank & progress decks</span>
+                <span class="ga-num">T${state.progressDecks.trade.length}·P${state.progressDecks.politics.length}·S${state.progressDecks.science.length}</span>
+              </div>
+              <div class="res-pills res-pills--bank">
+                ${RESOURCES.map(
+                  (r) =>
+                    `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}: ${state.bank[r]} in bank">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
+                ).join("")}${COMMODITIES.map(
+                  (c) =>
+                    `<span class="res-pill res-${c}" title="${COMMODITY_META[c].label}: ${state.commodityBank[c]} in bank">${renderCommodityGlyphSvg(c)} ${state.commodityBank[c]}</span>`
+                ).join("")}
+              </div>
+              <div class="ga-stat-list ga-stat-list--compact">
+                <div class="ga-stat-row">
+                  <span>Longest route (+2 VP)</span>
+                  <strong class="ga-num">${
+                    state.longestRoadOwnerId
+                      ? `${
+                          state.players.find(
+                            (p: any) => p.id === state.longestRoadOwnerId
+                          )?.name
+                        } (${state.longestRoadLength})`
+                      : "Unclaimed (5+)"
+                  }</strong>
+                </div>
+                ${IMPROVEMENT_DISCIPLINES.map((disc) => {
+                  const m = state.metropolises[disc];
+                  const dMeta = DISCIPLINE_META[disc];
+                  return `<div class="ga-stat-row">
+                    <span>${dMeta.label} Metro (+2 VP)</span>
+                    <strong class="ga-num">${
+                      m.ownerId
+                        ? `${
+                            state.players.find((p: any) => p.id === m.ownerId)
+                              ?.name
+                          } (Lv ${m.level})`
+                        : "Unclaimed (Lv 4)"
+                    }</strong>
+                  </div>`;
+                }).join("")}
+                <div class="ga-stat-row">
+                  <span>Merchant (+1 VP)</span>
+                  <strong class="ga-num">${
+                    state.merchantOwnerId
+                      ? `${
+                          state.players.find(
+                            (p: any) => p.id === state.merchantOwnerId
+                          )?.name
+                        }`
+                      : "Unclaimed"
+                  }</strong>
+                </div>
+                ${
+                  state.config.enableHarbormaster
+                    ? `<div class="ga-stat-row">
+                        <span>Harbormaster (+2 VP)</span>
+                        <strong class="ga-num">${
+                          state.harbormasterOwnerId
+                            ? `${
+                                state.players.find(
+                                  (p: any) => p.id === state.harbormasterOwnerId
+                                )?.name
+                              } (${state.harbormasterPoints})`
+                            : "Unclaimed (3+)"
+                        }</strong>
+                      </div>`
+                    : ""
+                }
+              </div>
+            `
+                  : `
               <div class="ga-sidebar__head">
                 <span>Bank supply and awards</span>
                 <span class="ga-num">Dev deck: ${state.devCardDeck.length}</span>
@@ -5618,7 +7252,9 @@ export function createMultiGamePlatformApp(
       state.activeTradeOffer &&
       actor &&
       actor.id !== state.activeTradeOffer.fromPlayerId &&
-      !hasResources(actor.resources, state.activeTradeOffer.want)
+      !(state.config.enableCitiesAndKnights
+        ? hasTradeGoodsForOfferPure(actor, state.activeTradeOffer)
+        : hasResources(actor.resources, state.activeTradeOffer.want))
     ) {
       dispatch(actor.id, {
         type: "DECLINE_DOMESTIC_TRADE",
@@ -6255,12 +7891,38 @@ export function createMultiGamePlatformApp(
         ?.addEventListener("change", (e) => {
           const nextScenario = (e.target as HTMLSelectElement)
             .value as ScenarioId;
-          model = updateRoomInModelPure(model, room.roomId, (r) =>
-            rebuildRoomSeatsPure({
+          model = updateRoomInModelPure(model, room.roomId, (r) => {
+            const prevIsCkPreset = Boolean(
+              SCENARIO_CATALOG[r.config.scenarioId].enableCitiesAndKnights
+            );
+            const nextIsCkPreset = Boolean(
+              SCENARIO_CATALOG[nextScenario].enableCitiesAndKnights
+            );
+            const nextCk = nextIsCkPreset
+              ? true
+              : prevIsCkPreset
+                ? false
+                : r.config.enableCitiesAndKnights;
+            const next56 = isExpanded56Scenario(nextScenario);
+            const nextBots =
+              !next56 &&
+              isExpanded56Scenario(r.config.scenarioId) &&
+              !r.allBots &&
+              r.humanPlayers.length + r.botCount > 4
+                ? Math.max(0, 4 - r.humanPlayers.length)
+                : r.botCount;
+            return rebuildRoomSeatsPure({
               ...r,
-              config: { ...r.config, scenarioId: nextScenario },
-            })
-          );
+              botCount: nextBots,
+              config: {
+                ...r.config,
+                scenarioId: nextScenario,
+                enable56PlayerExtension: next56,
+                enableCitiesAndKnights: nextCk,
+                enableCityWalls: nextCk ? true : r.config.enableCityWalls,
+              },
+            });
+          });
           const latest = model.rooms[room.roomId];
           if (latest) pushServerRoomSetup(latest);
           render();
@@ -6344,6 +8006,57 @@ export function createMultiGamePlatformApp(
                   : r.botCount,
             })
           );
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-chk-extension56")
+        ?.addEventListener("change", (e) => {
+          const checked = (e.target as HTMLInputElement).checked;
+          model = updateRoomInModelPure(model, room.roomId, (r) => {
+            const nextScenario = checked
+              ? toExpanded56ScenarioId(r.config.scenarioId)
+              : toStandard34ScenarioId(r.config.scenarioId);
+            const nextBots =
+              !checked && !r.allBots && r.humanPlayers.length + r.botCount > 4
+                ? Math.max(0, 4 - r.humanPlayers.length)
+                : r.botCount;
+            return rebuildRoomSeatsPure({
+              ...r,
+              botCount: nextBots,
+              config: {
+                ...r.config,
+                scenarioId: nextScenario,
+                enable56PlayerExtension: checked,
+              },
+            });
+          });
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-chk-citiesknights")
+        ?.addEventListener("change", (e) => {
+          const checked = (e.target as HTMLInputElement).checked;
+          model = updateRoomInModelPure(model, room.roomId, (r) => ({
+            ...r,
+            config: {
+              ...r.config,
+              scenarioId: !checked
+                ? r.config.scenarioId === "cities_and_knights"
+                  ? "standard"
+                  : r.config.scenarioId === "cities_and_knights_5_6"
+                    ? "big_island_5_6"
+                    : r.config.scenarioId
+                : r.config.scenarioId,
+              enableCitiesAndKnights: checked,
+              enableCityWalls: checked ? true : r.config.enableCityWalls,
+            },
+          }));
           const latest = model.rooms[room.roomId];
           if (latest) pushServerRoomSetup(latest);
           render();
@@ -6596,22 +8309,114 @@ export function createMultiGamePlatformApp(
 
     root.querySelectorAll("[data-close-submodal]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        model = { ...model, selectedBoardSpot: null, buildMode: null };
+        model = {
+          ...model,
+          selectedBoardSpot: null,
+          buildMode: null,
+          selectedProgressCardId: null,
+          inventorHex1: null,
+          smithVertex1: null,
+          deserterTargetPlayerId: null,
+        };
         render();
       });
     });
 
     root.querySelectorAll("[data-hand-res-card]").forEach((cardEl) => {
       cardEl.addEventListener("click", () => {
-        const r = cardEl.getAttribute("data-hand-res-card") as ResourceType;
+        const g = cardEl.getAttribute("data-hand-res-card") as TradeGoodType;
         const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
-        if (!actingPlayer || actingPlayer.resources[r] <= 0) return;
+        if (!actingPlayer || getPlayerGoodCount(actingPlayer, g) <= 0) return;
 
+        if (isCommodityType(g)) {
+          if (!state.config.enableCitiesAndKnights) return;
+          if (state.phase === "DISCARD_ON_SEVEN") {
+            const req = state.pendingDiscards[actingPlayerId] ?? 0;
+            const totalSel =
+              totalResourceCount(model.discardSelection) +
+              totalCommodityCount(model.discardCommodities);
+            if (
+              model.discardCommodities[g] < actingPlayer.commodities[g] &&
+              totalSel < req
+            ) {
+              model = {
+                ...model,
+                discardCommodities: {
+                  ...model.discardCommodities,
+                  [g]: model.discardCommodities[g] + 1,
+                },
+              };
+              render();
+            }
+          } else if (model.buildMode === "domestic_trade") {
+            if (model.domesticCommGive[g] < actingPlayer.commodities[g]) {
+              model = setSharedTradeGoodWantPure(
+                {
+                  ...model,
+                  domesticCommGive: {
+                    ...model.domesticCommGive,
+                    [g]: model.domesticCommGive[g] + 1,
+                  },
+                },
+                g,
+                0
+              );
+              render();
+            }
+          } else if (state.phase === "MAIN_PHASE" && !state.activeTradeOffer) {
+            const goodRatios = getPlayerGoodTradeRatios(state, actingPlayerId);
+            const ratio = goodRatios[g];
+            if (
+              actingPlayer.commodities[g] >= model.maritimeCommGive[g] + ratio
+            ) {
+              model = switchTradeModePure(
+                setSharedTradeGoodWantPure(
+                  {
+                    ...model,
+                    maritimeCommGive: {
+                      ...model.maritimeCommGive,
+                      [g]: model.maritimeCommGive[g] + ratio,
+                    },
+                  },
+                  g,
+                  0
+                ),
+                "maritime_trade"
+              );
+              render();
+            } else {
+              const withGive =
+                model.domesticCommGive[g] < actingPlayer.commodities[g]
+                  ? setSharedTradeGoodWantPure(
+                      {
+                        ...model,
+                        domesticCommGive: {
+                          ...model.domesticCommGive,
+                          [g]: model.domesticCommGive[g] + 1,
+                        },
+                      },
+                      g,
+                      0
+                    )
+                  : model;
+              model = switchTradeModePure(withGive, "domestic_trade");
+              render();
+            }
+          }
+          return;
+        }
+
+        const r = g;
         if (state.phase === "DISCARD_ON_SEVEN") {
           const req = state.pendingDiscards[actingPlayerId] ?? 0;
+          const totalSel =
+            totalResourceCount(model.discardSelection) +
+            (state.config.enableCitiesAndKnights
+              ? totalCommodityCount(model.discardCommodities)
+              : 0);
           if (
             model.discardSelection[r] < actingPlayer.resources[r] &&
-            totalResourceCount(model.discardSelection) < req
+            totalSel < req
           ) {
             model = {
               ...model,
@@ -6638,7 +8443,9 @@ export function createMultiGamePlatformApp(
             render();
           }
         } else if (state.phase === "MAIN_PHASE" && !state.activeTradeOffer) {
-          const ratios = getPlayerTradeRatios(state, actingPlayerId);
+          const ratios = state.config.enableCitiesAndKnights
+            ? getPlayerGoodTradeRatios(state, actingPlayerId)
+            : getPlayerTradeRatios(state, actingPlayerId);
           const ratio = ratios[r];
           if (actingPlayer.resources[r] >= model.maritimeGive[r] + ratio) {
             model = switchTradeModePure(
@@ -6675,6 +8482,42 @@ export function createMultiGamePlatformApp(
             render();
           }
         }
+      });
+    });
+
+    root.querySelectorAll("[data-play-progress-card]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const cardId = btn.getAttribute("data-play-progress-card")!;
+        const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
+        const card = actingPlayer?.progressCards.find((c) => c.id === cardId);
+        if (!card) return;
+        const immediateTypes = new Set([
+          "mining",
+          "irrigation",
+          "crane",
+          "medicine",
+          "road_building",
+          "warlord",
+          "saboteur",
+          "wedding",
+        ]);
+        if (immediateTypes.has(card.type)) {
+          dispatchUiAction(actingPlayerId, {
+            type: "PLAY_PROGRESS_CARD",
+            cardId,
+          });
+          return;
+        }
+        model = {
+          ...model,
+          selectedBoardSpot: null,
+          buildMode: "progress_card",
+          selectedProgressCardId: cardId,
+          inventorHex1: null,
+          smithVertex1: null,
+          deserterTargetPlayerId: null,
+        };
+        render();
       });
     });
 
@@ -6761,6 +8604,67 @@ export function createMultiGamePlatformApp(
             type: "BUILD_CITY_WALL",
             vertexId: spotId,
           });
+        } else if (act === "pillage_city") {
+          dispatch(actingPlayerId, {
+            type: "SELECT_PILLAGED_CITY",
+            vertexId: spotId,
+          });
+        } else if (act === "build_knight") {
+          dispatch(actingPlayerId, {
+            type: "BUILD_KNIGHT",
+            vertexId: spotId,
+          });
+        } else if (act === "activate_knight") {
+          dispatch(actingPlayerId, {
+            type: "ACTIVATE_KNIGHT",
+            vertexId: spotId,
+          });
+        } else if (act === "promote_knight") {
+          dispatch(actingPlayerId, {
+            type: "PROMOTE_KNIGHT",
+            vertexId: spotId,
+          });
+        } else if (act === "start_move_knight") {
+          model = {
+            ...model,
+            buildMode: "move_knight",
+            selectedMoveKnightFromVertexId: spotId,
+            selectedBoardSpot: null,
+          };
+          render();
+        } else if (
+          act === "complete_move_knight" &&
+          model.selectedMoveKnightFromVertexId
+        ) {
+          dispatch(actingPlayerId, {
+            type: "MOVE_KNIGHT",
+            fromVertexId: model.selectedMoveKnightFromVertexId,
+            toVertexId: spotId,
+          });
+        } else if (act === "start_chase_robber") {
+          model = {
+            ...model,
+            buildMode: "chase_robber",
+            selectedChaseKnightVertexId: spotId,
+            selectedBoardSpot: null,
+          };
+          render();
+        } else if (act === "complete_chase_robber") {
+          const chaseVId =
+            btn.getAttribute("data-chase-vertex") ??
+            model.selectedChaseKnightVertexId ??
+            "";
+          const targetKind =
+            (btn.getAttribute("data-chase-target") as "robber" | "pirate") ??
+            "robber";
+          if (chaseVId) {
+            dispatch(actingPlayerId, {
+              type: "CHASE_ROBBER_WITH_KNIGHT",
+              vertexId: chaseVId,
+              hexId: spotId,
+              targetKind,
+            });
+          }
         } else if (act === "move_robber") {
           dispatch(actingPlayerId, { type: "MOVE_ROBBER", hexId: spotId });
         } else if (act === "move_pirate") {
@@ -6797,6 +8701,95 @@ export function createMultiGamePlatformApp(
               return;
             }
           }
+        } else if (
+          state.config.enableCitiesAndKnights &&
+          model.buildMode === "chase_robber"
+        ) {
+          const legalChases = getLegalChaseRobberActions(
+            state,
+            actingPlayerId,
+            getLegalRobberHexes(state, actingPlayerId),
+            state.config.enableSeafarers ? getLegalPirateHexes(state) : []
+          );
+          const chosen = legalChases.find(
+            (c) =>
+              c.hexId === hexId &&
+              (!model.selectedChaseKnightVertexId ||
+                c.vertexId === model.selectedChaseKnightVertexId)
+          );
+          if (chosen) {
+            dispatch(actingPlayerId, chosen);
+            return;
+          }
+        } else if (
+          state.config.enableCitiesAndKnights &&
+          model.buildMode === "progress_card" &&
+          model.selectedProgressCardId
+        ) {
+          const actingPlayer = state.players.find(
+            (p) => p.id === actingPlayerId
+          );
+          const card = actingPlayer?.progressCards.find(
+            (c) => c.id === model.selectedProgressCardId
+          );
+          if (card?.type === "bishop") {
+            if (getLegalRobberHexes(state, actingPlayerId).includes(hexId)) {
+              dispatch(actingPlayerId, {
+                type: "PLAY_PROGRESS_CARD",
+                cardId: card.id,
+                params: { hexId },
+              });
+              return;
+            }
+          } else if (card?.type === "merchant") {
+            const tile = state.hexes[hexId];
+            const touchesOwn = Boolean(
+              tile &&
+                TERRAIN_TO_RESOURCE[tile.terrain] &&
+                state.topology.hexes[hexId]?.cornerVertexIds.some(
+                  (vId) => state.buildings[vId]?.ownerId === actingPlayerId
+                )
+            );
+            if (touchesOwn) {
+              dispatch(actingPlayerId, {
+                type: "PLAY_PROGRESS_CARD",
+                cardId: card.id,
+                params: { hexId },
+              });
+              return;
+            }
+          } else if (card?.type === "inventor") {
+            const t = state.hexes[hexId];
+            const swappable = Boolean(
+              t &&
+                t.numberToken !== null &&
+                t.numberToken !== 2 &&
+                t.numberToken !== 6 &&
+                t.numberToken !== 8 &&
+                t.numberToken !== 12 &&
+                t.terrain !== "sea" &&
+                t.terrain !== "fog"
+            );
+            if (swappable) {
+              if (!model.inventorHex1) {
+                model = {
+                  ...model,
+                  inventorHex1: hexId,
+                  selectedBoardSpot: null,
+                };
+                render();
+                return;
+              }
+              if (model.inventorHex1 !== hexId) {
+                dispatch(actingPlayerId, {
+                  type: "PLAY_PROGRESS_CARD",
+                  cardId: card.id,
+                  params: { hexId1: model.inventorHex1, hexId2: hexId },
+                });
+                return;
+              }
+            }
+          }
         }
         model = {
           ...model,
@@ -6814,6 +8807,16 @@ export function createMultiGamePlatformApp(
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         const vertexId = el.getAttribute("data-spot-vertex")!;
+        if (
+          state.phase === "BARBARIAN_PILLAGE_SELECTION" &&
+          getPlayerVulnerableCities(state, actingPlayerId).includes(vertexId)
+        ) {
+          dispatch(actingPlayerId, {
+            type: "SELECT_PILLAGED_CITY",
+            vertexId,
+          });
+          return;
+        }
         if (
           (state.phase === "SETUP_SETTLEMENT_1" ||
             state.phase === "SETUP_SETTLEMENT_2") &&
@@ -6852,6 +8855,157 @@ export function createMultiGamePlatformApp(
         ) {
           dispatch(actingPlayerId, { type: "BUILD_CITY_WALL", vertexId });
           return;
+        }
+        if (state.config.enableCitiesAndKnights) {
+          if (
+            model.buildMode === "knight" &&
+            getLegalBuildKnightVertices(state, actingPlayerId).includes(
+              vertexId
+            )
+          ) {
+            dispatch(actingPlayerId, { type: "BUILD_KNIGHT", vertexId });
+            return;
+          }
+          if (
+            model.buildMode === "activate_knight" &&
+            getLegalActivateKnightVertices(state, actingPlayerId).includes(
+              vertexId
+            )
+          ) {
+            dispatch(actingPlayerId, { type: "ACTIVATE_KNIGHT", vertexId });
+            return;
+          }
+          if (
+            model.buildMode === "promote_knight" &&
+            getLegalPromoteKnightVertices(
+              state,
+              actingPlayerId,
+              false
+            ).includes(vertexId)
+          ) {
+            dispatch(actingPlayerId, { type: "PROMOTE_KNIGHT", vertexId });
+            return;
+          }
+          if (model.buildMode === "move_knight") {
+            const kMoves = getLegalMoveKnightActions(state, actingPlayerId);
+            if (
+              !model.selectedMoveKnightFromVertexId &&
+              kMoves.some((m) => m.fromVertexId === vertexId)
+            ) {
+              model = {
+                ...model,
+                selectedMoveKnightFromVertexId: vertexId,
+                selectedBoardSpot: null,
+              };
+              render();
+              return;
+            }
+            if (
+              model.selectedMoveKnightFromVertexId &&
+              kMoves.some(
+                (m) =>
+                  m.fromVertexId === model.selectedMoveKnightFromVertexId &&
+                  m.toVertexId === vertexId
+              )
+            ) {
+              dispatch(actingPlayerId, {
+                type: "MOVE_KNIGHT",
+                fromVertexId: model.selectedMoveKnightFromVertexId,
+                toVertexId: vertexId,
+              });
+              return;
+            }
+          }
+          if (model.buildMode === "chase_robber") {
+            const chases = getLegalChaseRobberActions(
+              state,
+              actingPlayerId,
+              getLegalRobberHexes(state, actingPlayerId),
+              state.config.enableSeafarers ? getLegalPirateHexes(state) : []
+            );
+            if (chases.some((c) => c.vertexId === vertexId)) {
+              model = {
+                ...model,
+                selectedChaseKnightVertexId: vertexId,
+                selectedBoardSpot: null,
+              };
+              render();
+              return;
+            }
+          }
+          if (
+            model.buildMode === "progress_card" &&
+            model.selectedProgressCardId
+          ) {
+            const actingPlayer = state.players.find(
+              (p) => p.id === actingPlayerId
+            );
+            const card = actingPlayer?.progressCards.find(
+              (c) => c.id === model.selectedProgressCardId
+            );
+            if (
+              card?.type === "engineer" &&
+              state.buildings[vertexId]?.ownerId === actingPlayerId &&
+              state.buildings[vertexId]?.type === "city" &&
+              !state.buildings[vertexId]?.hasWall
+            ) {
+              dispatch(actingPlayerId, {
+                type: "PLAY_PROGRESS_CARD",
+                cardId: card.id,
+                params: { vertexId },
+              });
+              return;
+            }
+            if (
+              card?.type === "intrigue" &&
+              state.knights[vertexId] &&
+              state.knights[vertexId]!.ownerId !== actingPlayerId &&
+              state.topology.vertices[vertexId]?.incidentEdgeIds.some(
+                (eId) => state.edges[eId]?.ownerId === actingPlayerId
+              )
+            ) {
+              dispatch(actingPlayerId, {
+                type: "PLAY_PROGRESS_CARD",
+                cardId: card.id,
+                params: { vertexId },
+              });
+              return;
+            }
+            if (card?.type === "smith") {
+              const promotable = getLegalPromoteKnightVertices(
+                state,
+                actingPlayerId,
+                true
+              );
+              if (promotable.includes(vertexId)) {
+                if (promotable.length === 1) {
+                  dispatch(actingPlayerId, {
+                    type: "PLAY_PROGRESS_CARD",
+                    cardId: card.id,
+                    params: { vertexIds: [vertexId] },
+                  });
+                  return;
+                }
+                if (!model.smithVertex1) {
+                  model = {
+                    ...model,
+                    smithVertex1: vertexId,
+                    selectedBoardSpot: null,
+                  };
+                  render();
+                  return;
+                }
+                if (model.smithVertex1 !== vertexId) {
+                  dispatch(actingPlayerId, {
+                    type: "PLAY_PROGRESS_CARD",
+                    cardId: card.id,
+                    params: { vertexIds: [model.smithVertex1, vertexId] },
+                  });
+                  return;
+                }
+              }
+            }
+          }
         }
         model = {
           ...model,
@@ -6943,6 +9097,39 @@ export function createMultiGamePlatformApp(
             });
             return;
           }
+        } else if (
+          state.config.enableCitiesAndKnights &&
+          model.buildMode === "progress_card" &&
+          model.selectedProgressCardId
+        ) {
+          const actingPlayer = state.players.find(
+            (p) => p.id === actingPlayerId
+          );
+          const card = actingPlayer?.progressCards.find(
+            (c) => c.id === model.selectedProgressCardId
+          );
+          if (
+            card?.type === "diplomat" &&
+            getDiplomatRemovableRoadEdges(state).includes(edgeId)
+          ) {
+            const ownRebuilds = getLegalRoadEdges(
+              state,
+              actingPlayerId,
+              null
+            ).filter((rId) => rId !== edgeId);
+            const isOwn = state.edges[edgeId]?.ownerId === actingPlayerId;
+            dispatch(actingPlayerId, {
+              type: "PLAY_PROGRESS_CARD",
+              cardId: card.id,
+              params: {
+                edgeId,
+                ...(isOwn && ownRebuilds[0]
+                  ? { rebuildEdgeId: ownRebuilds[0] }
+                  : {}),
+              },
+            });
+            return;
+          }
         }
 
         model = {
@@ -6978,6 +9165,89 @@ export function createMultiGamePlatformApp(
         render();
       });
 
+    root.querySelectorAll("[data-pillage-city]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const vertexId = btn.getAttribute("data-pillage-city")!;
+        dispatch(actingPlayerId, {
+          type: "SELECT_PILLAGED_CITY",
+          vertexId,
+        });
+      });
+    });
+
+    root.querySelectorAll("[data-select-progress-deck]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const discipline = btn.getAttribute(
+          "data-select-progress-deck"
+        ) as ImprovementDiscipline;
+        dispatch(actingPlayerId, {
+          type: "SELECT_PROGRESS_DECK",
+          discipline,
+        });
+      });
+    });
+
+    root.querySelectorAll("[data-discard-progress-card]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const cardId = btn.getAttribute("data-discard-progress-card")!;
+        dispatch(actingPlayerId, {
+          type: "DISCARD_PROGRESS_CARD",
+          cardId,
+        });
+      });
+    });
+
+    root.querySelectorAll("[data-discard-good-add]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute("data-discard-good-add") as TradeGoodType;
+        if (isCommodityType(g)) {
+          model = {
+            ...model,
+            discardCommodities: {
+              ...model.discardCommodities,
+              [g]: model.discardCommodities[g] + 1,
+            },
+          };
+        } else {
+          model = {
+            ...model,
+            discardSelection: {
+              ...model.discardSelection,
+              [g]: model.discardSelection[g] + 1,
+            },
+          };
+        }
+        render();
+      });
+    });
+
+    root.querySelectorAll("[data-discard-good-sub]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute("data-discard-good-sub") as TradeGoodType;
+        if (isCommodityType(g)) {
+          if (model.discardCommodities[g] > 0) {
+            model = {
+              ...model,
+              discardCommodities: {
+                ...model.discardCommodities,
+                [g]: model.discardCommodities[g] - 1,
+              },
+            };
+            render();
+          }
+        } else if (model.discardSelection[g] > 0) {
+          model = {
+            ...model,
+            discardSelection: {
+              ...model.discardSelection,
+              [g]: model.discardSelection[g] - 1,
+            },
+          };
+          render();
+        }
+      });
+    });
+
     root.querySelectorAll("[data-discard-add]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const r = btn.getAttribute("data-discard-add") as ResourceType;
@@ -7009,7 +9279,11 @@ export function createMultiGamePlatformApp(
     });
 
     root.querySelector("#btn-discard-reset")?.addEventListener("click", () => {
-      model = { ...model, discardSelection: emptyResources() };
+      model = {
+        ...model,
+        discardSelection: emptyResources(),
+        discardCommodities: emptyCommodities(),
+      };
       render();
     });
 
@@ -7017,6 +9291,9 @@ export function createMultiGamePlatformApp(
       dispatch(actingPlayerId, {
         type: "DISCARD_CARDS",
         resources: { ...model.discardSelection },
+        ...(state.config.enableCitiesAndKnights
+          ? { commodities: { ...model.discardCommodities } }
+          : {}),
       });
     });
 
@@ -7104,6 +9381,231 @@ export function createMultiGamePlatformApp(
         buildMode: model.buildMode === "wall" ? null : "wall",
       };
       render();
+    });
+
+    root.querySelector("#btn-mode-knight")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        selectedBoardSpot: null,
+        buildMode: model.buildMode === "knight" ? null : "knight",
+      };
+      render();
+    });
+
+    root
+      .querySelector("#btn-mode-activate-knight")
+      ?.addEventListener("click", () => {
+        model = {
+          ...model,
+          selectedBoardSpot: null,
+          buildMode:
+            model.buildMode === "activate_knight" ? null : "activate_knight",
+        };
+        render();
+      });
+
+    root
+      .querySelector("#btn-mode-promote-knight")
+      ?.addEventListener("click", () => {
+        model = {
+          ...model,
+          selectedBoardSpot: null,
+          buildMode:
+            model.buildMode === "promote_knight" ? null : "promote_knight",
+        };
+        render();
+      });
+
+    root
+      .querySelector("#btn-mode-move-knight")
+      ?.addEventListener("click", () => {
+        model = {
+          ...model,
+          selectedBoardSpot: null,
+          selectedMoveKnightFromVertexId: null,
+          buildMode: model.buildMode === "move_knight" ? null : "move_knight",
+        };
+        render();
+      });
+
+    root
+      .querySelector("#btn-mode-chase-robber")
+      ?.addEventListener("click", () => {
+        model = {
+          ...model,
+          selectedBoardSpot: null,
+          selectedChaseKnightVertexId: null,
+          buildMode:
+            model.buildMode === "chase_robber" ? null : "chase_robber",
+        };
+        render();
+      });
+
+    root.querySelector("#btn-mode-upgrades")?.addEventListener("click", () => {
+      model = {
+        ...model,
+        selectedBoardSpot: null,
+        buildMode:
+          model.buildMode === "city_upgrades" ? null : "city_upgrades",
+      };
+      render();
+    });
+
+    root.querySelectorAll("[data-select-metro-city]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        model = {
+          ...model,
+          selectedMetropolisVertexId: btn.getAttribute("data-select-metro-city"),
+        };
+        render();
+      });
+    });
+
+    root.querySelectorAll("[data-upgrade-discipline]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const discipline = btn.getAttribute(
+          "data-upgrade-discipline"
+        ) as ImprovementDiscipline;
+        const metroV = btn.getAttribute("data-metro-vertex") || undefined;
+        dispatch(actingPlayerId, {
+          type: "UPGRADE_CITY_IMPROVEMENT",
+          discipline,
+          ...(metroV ? { metropolisVertexId: metroV } : {}),
+        });
+      });
+    });
+
+    root.querySelectorAll("[data-alch-die1]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        model = {
+          ...model,
+          alchemistDie1: Number(btn.getAttribute("data-alch-die1")),
+        };
+        render();
+      });
+    });
+
+    root.querySelectorAll("[data-alch-die2]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        model = {
+          ...model,
+          alchemistDie2: Number(btn.getAttribute("data-alch-die2")),
+        };
+        render();
+      });
+    });
+
+    root
+      .querySelector("#btn-exec-alchemist")
+      ?.addEventListener("click", () => {
+        if (!model.selectedProgressCardId) return;
+        dispatchUiAction(actingPlayerId, {
+          type: "PLAY_PROGRESS_CARD",
+          cardId: model.selectedProgressCardId,
+          params: {
+            die1: model.alchemistDie1,
+            die2: model.alchemistDie2,
+          },
+        });
+      });
+
+    root
+      .querySelector("#btn-exec-smith-single")
+      ?.addEventListener("click", () => {
+        if (!model.selectedProgressCardId) return;
+        const promotable = getLegalPromoteKnightVertices(
+          state,
+          actingPlayerId,
+          true
+        );
+        const vId = model.smithVertex1 ?? promotable[0];
+        if (!vId) return;
+        dispatchUiAction(actingPlayerId, {
+          type: "PLAY_PROGRESS_CARD",
+          cardId: model.selectedProgressCardId,
+          params: { vertexIds: [vId] },
+        });
+      });
+
+    root.querySelectorAll("[data-prog-res]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!model.selectedProgressCardId) return;
+        const resource = btn.getAttribute("data-prog-res") as ResourceType;
+        dispatchUiAction(actingPlayerId, {
+          type: "PLAY_PROGRESS_CARD",
+          cardId: model.selectedProgressCardId,
+          params: { resource },
+        });
+      });
+    });
+
+    root.querySelectorAll("[data-prog-comm]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!model.selectedProgressCardId) return;
+        const commodity = btn.getAttribute("data-prog-comm") as CommodityType;
+        dispatchUiAction(actingPlayerId, {
+          type: "PLAY_PROGRESS_CARD",
+          cardId: model.selectedProgressCardId,
+          params: { commodity },
+        });
+      });
+    });
+
+    root.querySelectorAll("[data-prog-good]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!model.selectedProgressCardId) return;
+        const good = btn.getAttribute("data-prog-good") as TradeGoodType;
+        dispatchUiAction(actingPlayerId, {
+          type: "PLAY_PROGRESS_CARD",
+          cardId: model.selectedProgressCardId,
+          params: { good },
+        });
+      });
+    });
+
+    root.querySelectorAll("[data-prog-opp]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!model.selectedProgressCardId) return;
+        const targetPlayerId = btn.getAttribute("data-prog-opp")!;
+        const legals = CatanEngine.getLegalActions(state, actingPlayerId);
+        const matched = legals.find(
+          (
+            a
+          ): a is Extract<CatanAction, { type: "PLAY_PROGRESS_CARD" }> =>
+            a.type === "PLAY_PROGRESS_CARD" &&
+            a.cardId === model.selectedProgressCardId &&
+            a.params?.targetPlayerId === targetPlayerId
+        );
+        dispatchUiAction(
+          actingPlayerId,
+          matched ?? {
+            type: "PLAY_PROGRESS_CARD",
+            cardId: model.selectedProgressCardId,
+            params: { targetPlayerId },
+          }
+        );
+      });
+    });
+
+    root.querySelectorAll("[data-prog-action-idx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!model.selectedProgressCardId) return;
+        const idx = Number(btn.getAttribute("data-prog-action-idx"));
+        const legals = CatanEngine.getLegalActions(
+          state,
+          actingPlayerId
+        ).filter(
+          (
+            a
+          ): a is Extract<CatanAction, { type: "PLAY_PROGRESS_CARD" }> =>
+            a.type === "PLAY_PROGRESS_CARD" &&
+            a.cardId === model.selectedProgressCardId
+        );
+        const chosen = legals[idx];
+        if (chosen) {
+          dispatchUiAction(actingPlayerId, chosen);
+        }
+      });
     });
 
     root.querySelector("#btn-buy-dev")?.addEventListener("click", () => {
@@ -7198,13 +9700,100 @@ export function createMultiGamePlatformApp(
       });
     });
 
+    root.querySelectorAll("[data-ck-dom-give]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute("data-ck-dom-give") as TradeGoodType;
+        if (isCommodityType(g)) {
+          model = setSharedTradeGoodWantPure(
+            {
+              ...model,
+              domesticCommGive: {
+                ...model.domesticCommGive,
+                [g]: model.domesticCommGive[g] + 1,
+              },
+            },
+            g,
+            0
+          );
+        } else {
+          model = setSharedTradeWantPure(
+            {
+              ...model,
+              domesticGive: {
+                ...model.domesticGive,
+                [g]: model.domesticGive[g] + 1,
+              },
+            },
+            g,
+            0
+          );
+        }
+        render();
+      });
+    });
+
+    root.querySelectorAll("[data-ck-dom-give-dec]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute("data-ck-dom-give-dec") as TradeGoodType;
+        if (isCommodityType(g)) {
+          if (model.domesticCommGive[g] > 0) {
+            model = {
+              ...model,
+              domesticCommGive: {
+                ...model.domesticCommGive,
+                [g]: model.domesticCommGive[g] - 1,
+              },
+            };
+            render();
+          }
+        } else if (model.domesticGive[g] > 0) {
+          model = {
+            ...model,
+            domesticGive: {
+              ...model.domesticGive,
+              [g]: model.domesticGive[g] - 1,
+            },
+          };
+          render();
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-ck-dom-want]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute("data-ck-dom-want") as TradeGoodType;
+        const cur = isCommodityType(g)
+          ? model.domesticCommWant[g]
+          : model.domesticWant[g];
+        model = setSharedTradeGoodWantPure(model, g, cur + 1);
+        render();
+      });
+    });
+
+    root.querySelectorAll("[data-ck-dom-want-dec]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute("data-ck-dom-want-dec") as TradeGoodType;
+        const cur = isCommodityType(g)
+          ? model.domesticCommWant[g]
+          : model.domesticWant[g];
+        if (cur > 0) {
+          model = setSharedTradeGoodWantPure(model, g, cur - 1);
+          render();
+        }
+      });
+    });
+
     root.querySelector("#btn-dom-reset")?.addEventListener("click", () => {
       model = {
         ...model,
         maritimeGive: emptyResources(),
         maritimeWant: emptyResources(),
+        maritimeCommGive: emptyCommodities(),
+        maritimeCommWant: emptyCommodities(),
         domesticGive: emptyResources(),
         domesticWant: emptyResources(),
+        domesticCommGive: emptyCommodities(),
+        domesticCommWant: emptyCommodities(),
       };
       render();
     });
@@ -7215,6 +9804,12 @@ export function createMultiGamePlatformApp(
         toPlayerId: null,
         give: { ...model.domesticGive },
         want: { ...model.domesticWant },
+        ...(state.config.enableCitiesAndKnights
+          ? {
+              giveCommodities: { ...model.domesticCommGive },
+              wantCommodities: { ...model.domesticCommWant },
+            }
+          : {}),
       });
     });
 
@@ -7331,18 +9926,158 @@ export function createMultiGamePlatformApp(
       });
     });
 
+    root.querySelectorAll("[data-ck-maritime-give]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute("data-ck-maritime-give") as TradeGoodType;
+        const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
+        if (!actingPlayer) return;
+        const goodRatios = getPlayerGoodTradeRatios(state, actingPlayerId);
+        const step = goodRatios[g];
+        const cur = isCommodityType(g)
+          ? model.maritimeCommGive[g]
+          : model.maritimeGive[g];
+        if (getPlayerGoodCount(actingPlayer, g) >= cur + step) {
+          if (isCommodityType(g)) {
+            model = setSharedTradeGoodWantPure(
+              {
+                ...model,
+                maritimeCommGive: {
+                  ...model.maritimeCommGive,
+                  [g]: cur + step,
+                },
+              },
+              g,
+              0
+            );
+          } else {
+            model = setSharedTradeWantPure(
+              {
+                ...model,
+                tradeGiveRes: g,
+                maritimeGive: {
+                  ...model.maritimeGive,
+                  [g]: cur + step,
+                },
+              },
+              g,
+              0
+            );
+          }
+          render();
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-ck-maritime-give-dec]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute(
+          "data-ck-maritime-give-dec"
+        ) as TradeGoodType;
+        const goodRatios = getPlayerGoodTradeRatios(state, actingPlayerId);
+        const step = goodRatios[g];
+        if (isCommodityType(g)) {
+          const nextVal =
+            model.maritimeCommGive[g] >= step
+              ? model.maritimeCommGive[g] - step
+              : 0;
+          model = {
+            ...model,
+            maritimeCommGive: { ...model.maritimeCommGive, [g]: nextVal },
+          };
+        } else {
+          const nextVal =
+            model.maritimeGive[g] >= step ? model.maritimeGive[g] - step : 0;
+          model = {
+            ...model,
+            maritimeGive: { ...model.maritimeGive, [g]: nextVal },
+          };
+        }
+        render();
+      });
+    });
+
+    root.querySelectorAll("[data-ck-maritime-receive]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute("data-ck-maritime-receive") as TradeGoodType;
+        const cur = isCommodityType(g)
+          ? model.maritimeCommWant[g]
+          : model.maritimeWant[g];
+        if (cur < getBankGoodCount(state, g)) {
+          const next = setSharedTradeGoodWantPure(model, g, cur + 1);
+          model = isCommodityType(g) ? next : { ...next, tradeReceiveRes: g };
+          render();
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-ck-maritime-receive-dec]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const g = btn.getAttribute(
+          "data-ck-maritime-receive-dec"
+        ) as TradeGoodType;
+        const cur = isCommodityType(g)
+          ? model.maritimeCommWant[g]
+          : model.maritimeWant[g];
+        if (cur > 0) {
+          model = setSharedTradeGoodWantPure(model, g, cur - 1);
+          render();
+        }
+      });
+    });
+
     root.querySelector("#btn-maritime-reset")?.addEventListener("click", () => {
       model = {
         ...model,
         maritimeGive: emptyResources(),
         maritimeWant: emptyResources(),
+        maritimeCommGive: emptyCommodities(),
+        maritimeCommWant: emptyCommodities(),
         domesticGive: emptyResources(),
         domesticWant: emptyResources(),
+        domesticCommGive: emptyCommodities(),
+        domesticCommWant: emptyCommodities(),
       };
       render();
     });
 
     root.querySelector("#btn-exec-maritime")?.addEventListener("click", () => {
+      if (state.config.enableCitiesAndKnights) {
+        const giveMap: TradeGoodMap = {
+          ...model.maritimeGive,
+          ...model.maritimeCommGive,
+        };
+        const receiveMap: TradeGoodMap = {
+          ...model.maritimeWant,
+          ...model.maritimeCommWant,
+        };
+        const activeGive = TRADE_GOODS.filter((g) => giveMap[g] > 0);
+        const activeWant = TRADE_GOODS.filter((g) => receiveMap[g] > 0);
+        if (activeGive.length === 0 || activeWant.length === 0) return;
+
+        const firstGive = activeGive[0]!;
+        const firstWant = activeWant[0]!;
+        if (activeGive.length === 1 && activeWant.length === 1) {
+          dispatch(actingPlayerId, {
+            type: "MARITIME_TRADE",
+            give: firstGive,
+            giveAmount: giveMap[firstGive],
+            receive: firstWant,
+            receiveAmount: receiveMap[firstWant],
+          });
+        } else {
+          dispatch(actingPlayerId, {
+            type: "MARITIME_TRADE",
+            give: firstGive,
+            giveAmount: giveMap[firstGive],
+            receive: firstWant,
+            receiveAmount: receiveMap[firstWant],
+            giveMap,
+            receiveMap,
+          });
+        }
+        return;
+      }
+
       const activeGive = RESOURCES.filter((r) => model.maritimeGive[r] > 0);
       const activeWant = RESOURCES.filter((r) => model.maritimeWant[r] > 0);
       if (activeGive.length === 0 || activeWant.length === 0) return;

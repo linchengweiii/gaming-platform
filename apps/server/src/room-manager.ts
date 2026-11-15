@@ -31,6 +31,9 @@ import {
   SCENARIO_CATALOG,
   type ScenarioId,
   getNextActingPlayerId,
+  isExpanded56Scenario,
+  toExpanded56ScenarioId,
+  toStandard34ScenarioId,
 } from "@gaming-platform/catan";
 import {
   SplendorEngine,
@@ -480,7 +483,69 @@ export function updateRoomSetupPure(
       : room.gameId;
 
   const mergedConfig = updates.config
-    ? { ...room.config, ...updates.config }
+    ? (() => {
+        const base: Record<string, unknown> = {
+          ...room.config,
+          ...updates.config,
+        };
+        if (nextGameId === "catan") {
+          const prevScenario = (room.config.scenarioId as ScenarioId) ?? "standard";
+          const rawScenario = (base.scenarioId as ScenarioId) ?? "standard";
+          const effectiveScenario =
+            updates.config.enable56PlayerExtension !== undefined &&
+            updates.config.scenarioId === undefined
+              ? updates.config.enable56PlayerExtension
+                ? toExpanded56ScenarioId(rawScenario)
+                : toStandard34ScenarioId(rawScenario)
+              : rawScenario;
+
+          const withScenario: Record<string, unknown> =
+            effectiveScenario !== rawScenario
+              ? { ...base, scenarioId: effectiveScenario }
+              : isExpanded56Scenario(effectiveScenario) &&
+                  updates.config.scenarioId !== undefined &&
+                  updates.config.enable56PlayerExtension === undefined
+                ? { ...base, enable56PlayerExtension: true }
+                : base;
+
+          const prevIsCkPreset = Boolean(
+            SCENARIO_CATALOG[prevScenario]?.enableCitiesAndKnights
+          );
+          const nextIsCkPreset = Boolean(
+            SCENARIO_CATALOG[effectiveScenario]?.enableCitiesAndKnights
+          );
+
+          if (nextIsCkPreset) {
+            return {
+              ...withScenario,
+              enableCitiesAndKnights: true,
+              enableCityWalls: true,
+            };
+          }
+          if (
+            prevIsCkPreset &&
+            updates.config.scenarioId &&
+            !nextIsCkPreset &&
+            updates.config.enableCitiesAndKnights === undefined
+          ) {
+            return {
+              ...withScenario,
+              enableCitiesAndKnights: false,
+            };
+          }
+          if (
+            updates.config.enableCitiesAndKnights === true &&
+            updates.config.enableCityWalls === undefined
+          ) {
+            return {
+              ...withScenario,
+              enableCityWalls: true,
+            };
+          }
+          return withScenario;
+        }
+        return base;
+      })()
     : room.config;
 
   const nextBotDifficulty = updates.botDifficulty ?? room.botDifficulty;
@@ -533,7 +598,10 @@ export function updateRoomSetupPure(
     }
     if (
       nextGameId === "catan" &&
-      nextConfig.scenarioId === "big_island_5_6" &&
+      (isExpanded56Scenario(
+        (nextConfig.scenarioId as ScenarioId) ?? "standard"
+      ) ||
+        Boolean(nextConfig.enable56PlayerExtension)) &&
       nextHumanPlayers.length + room.botCount < 5
     ) {
       return Math.max(room.botCount, 5 - nextHumanPlayers.length);

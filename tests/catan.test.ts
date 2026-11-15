@@ -1,16 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { MatchSession, type PlayerDescriptor } from "@gaming-platform/core";
 import {
+  MatchSession,
+  type PlayerDescriptor,
+  axialDistance,
+  createMatchSessionState,
+  dispatchSessionActionPure,
+  getSessionState,
+} from "@gaming-platform/core";
+import {
+  COMMODITIES,
   CatanEngine,
   RESOURCES,
+  SCENARIO_CATALOG,
   type ScenarioId,
   computePlayerVictoryPoints,
   getNextActingPlayerId,
+  getPlayerGoodTradeRatios,
   getPlayerSafeHandLimit,
   getPlayerTradeRatios,
   recalculateAwards,
+  resolveEventDieRollPure,
+  totalCommodityCount,
   totalResourceCount,
 } from "@gaming-platform/catan";
+import { renderCatanBoardSvg } from "../apps/web/src/catan-graphics.ts";
 
 const FOUR_PLAYERS: PlayerDescriptor[] = [
   { id: "p1", name: "Alice", color: "#e63946", isBot: true },
@@ -822,3 +835,1030 @@ describe("@gaming-platform/catan - Multi-Tier AI & Trading Strategy", () => {
     expect(monoAct).toEqual({ type: "PLAY_MONOPOLY", resource: "ore" });
   });
 });
+
+describe("@gaming-platform/catan - Cities & Knights Expansion", () => {
+  test("Setup places 2nd building as a City, sets 13/14 VP target, builds 54-card Progress Decks, and keeps Robber dormant before 1st Barbarian attack", () => {
+    const ckInit = CatanEngine.initGame(
+      FOUR_PLAYERS,
+      { scenarioId: "cities_and_knights" },
+      "ck-setup-spec"
+    );
+    expect(ckInit.config.enableCitiesAndKnights).toBe(true);
+    expect(ckInit.config.enableCityWalls).toBe(true);
+    expect(ckInit.config.targetVictoryPoints).toBe(13);
+    expect(ckInit.devCardDeck.length).toBe(0);
+    expect(ckInit.progressDecks.trade.length).toBe(18);
+    expect(ckInit.progressDecks.politics.length).toBe(18);
+    expect(ckInit.progressDecks.science.length).toBe(18);
+
+    const seafarersCk = CatanEngine.initGame(
+      FOUR_PLAYERS,
+      { scenarioId: "seafarers_new_shores", enableCitiesAndKnights: true },
+      "ck-seafarers-target"
+    );
+    expect(seafarersCk.config.targetVictoryPoints).toBe(14);
+
+    let { state } = completeSnakeDraftSetup(ckInit);
+    expect(state.phase).toBe("PRE_ROLL");
+    // Each player starts with 1 Settlement + 1 City (= 3 VP)
+    for (const p of state.players) {
+      const owned = Object.values(state.buildings).filter((b) => b.ownerId === p.id);
+      expect(owned.filter((b) => b.type === "settlement").length).toBe(1);
+      expect(owned.filter((b) => b.type === "city").length).toBe(1);
+      expect(p.settlementsRemaining).toBe(4);
+      expect(p.citiesRemaining).toBe(3);
+      expect(computePlayerVictoryPoints(state, p.id, true)).toBe(3);
+    }
+
+    // Before barbarianAttacksCount >= 1: rolling a 7 via Alchemist enforces >7 hand discard (including commodities!)
+    // and then enters MAIN_PHASE directly WITHOUT moving the dormant Robber!
+    state.activePlayerIndex = 0;
+    grantCardFromDeckForTest(state, "p1", "alch-1", "alchemist", "science");
+    for (const r of RESOURCES) {
+      state.bank[r] += state.players[0]!.resources[r];
+      state.players[0]!.resources[r] = 0;
+    }
+    state.players[0]!.resources.brick = 6;
+    state.bank.brick -= 6;
+    state.players[0]!.commodities.paper = 2;
+    state.commodityBank.paper -= 2; // 8 total cards > 7 safe limit -> must discard 4
+
+    // Force top event die roll not to trigger barbarian attack (barbarianPosition starts at 0)
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "PLAY_PROGRESS_CARD",
+      cardId: "alch-1",
+      params: { die1: 3, die2: 4 },
+    }).state;
+    expect(state.phase).toBe("DISCARD_ON_SEVEN");
+    expect(state.pendingDiscards.p1).toBe(4);
+
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "DISCARD_CARDS",
+      resources: { brick: 2 },
+      commodities: { paper: 2 },
+    }).state;
+    // Dormant robber skipped!
+    expect(state.phase).toBe("MAIN_PHASE");
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+
+    // Once barbarianAttacksCount >= 1, rolling 7 enters MOVE_ROBBER_OR_PIRATE
+    state.phase = "PRE_ROLL";
+    state.barbarianAttacksCount = 1;
+    grantCardFromDeckForTest(state, "p1", "alch-2", "alchemist", "science");
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "PLAY_PROGRESS_CARD",
+      cardId: "alch-2",
+      params: { die1: 4, die2: 3 },
+    }).state;
+    expect(state.phase).toBe("MOVE_ROBBER_OR_PIRATE");
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+  });
+
+  test("Commodity production (Forest/Pasture/Mountains Cities) and Science Lv 3 Aqueduct zero-yield pick", () => {
+    let { state } = completeSnakeDraftSetup(
+      CatanEngine.initGame(
+        FOUR_PLAYERS,
+        { scenarioId: "cities_and_knights" },
+        "ck-commodity-aqueduct"
+      )
+    );
+    state.buildings = {};
+    for (const p of state.players) {
+      p.settlementsRemaining = 5;
+      p.citiesRemaining = 4;
+      for (const r of RESOURCES) {
+        state.bank[r] += p.resources[r];
+        p.resources[r] = 0;
+      }
+      for (const c of COMMODITIES) {
+        state.commodityBank[c] += p.commodities[c];
+        p.commodities[c] = 0;
+      }
+    }
+
+    const forestEntry = Object.entries(state.hexes).find(
+      ([hId, tile]) =>
+        tile.terrain === "forest" &&
+        tile.numberToken !== null &&
+        hId !== state.robberHexId
+    )!;
+    const [forestHexId, forestTile] = forestEntry;
+    const rollNum = forestTile.numberToken!;
+    const forestNode = state.topology.hexes[forestHexId]!;
+
+    // Place p1 City and p2 Settlement on non-adjacent corners of the Forest hex
+    const p1CityVertex = forestNode.cornerVertexIds[0]!;
+    const p2SettleVertex = forestNode.cornerVertexIds[2]!;
+    state.buildings[p1CityVertex] = { ownerId: "p1", type: "city" };
+    state.players[0]!.citiesRemaining--;
+    state.buildings[p2SettleVertex] = { ownerId: "p2", type: "settlement" };
+    state.players[1]!.settlementsRemaining--;
+
+    // Give p3 Science Lv 3 (Aqueduct!) and 0 buildings on rollNum so p3 gets 0 natural yield -> 1 Aqueduct pick!
+    state.players[2]!.cityImprovements.science = 3;
+
+    // Split rollNum into valid (die1, die2) in 1..6
+    const die1 = Math.max(1, Math.min(6, rollNum - 1));
+    const die2 = rollNum - die1;
+    state.activePlayerIndex = 0;
+    state.phase = "PRE_ROLL";
+    grantCardFromDeckForTest(state, "p1", "alch-prod", "alchemist", "science");
+
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "PLAY_PROGRESS_CARD",
+      cardId: "alch-prod",
+      params: { die1, die2 },
+    }).state;
+
+    // p1 City on Forest produced 1 Lumber + 1 Paper; p2 Settlement on Forest produced 1 Lumber + 0 Paper!
+    expect(state.players[0]!.resources.lumber).toBeGreaterThanOrEqual(1);
+    expect(state.players[0]!.commodities.paper).toBeGreaterThanOrEqual(1);
+    expect(state.players[1]!.resources.lumber).toBeGreaterThanOrEqual(1);
+    expect(state.players[1]!.commodities.paper).toBe(0);
+
+    // p3 received an Aqueduct free resource pick!
+    expect(state.phase).toBe("GOLD_RESOURCE_SELECTION");
+    expect(state.pendingGoldPicks.p3).toBe(1);
+    expect(getNextActingPlayerId(state)).toBe("p3");
+
+    state = CatanEngine.applyAction(state, "p3", {
+      type: "SELECT_GOLD_RESOURCE",
+      resource: "ore",
+    }).state;
+    expect(state.players[2]!.resources.ore).toBe(1);
+    expect(state.phase).toBe("MAIN_PHASE");
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+  });
+
+  test("City Improvements, Trading House (2:1 commodities), Metropolis claiming at Lv 4, and Metropolis stealing at Lv 5", () => {
+    let { state } = completeSnakeDraftSetup(
+      CatanEngine.initGame(
+        FOUR_PLAYERS,
+        { scenarioId: "cities_and_knights" },
+        "ck-metropolis-spec"
+      )
+    );
+    state.phase = "MAIN_PHASE";
+    state.activePlayerIndex = 0;
+
+    const p1CityVertex = Object.entries(state.buildings).find(
+      ([, b]) => b.ownerId === "p1" && b.type === "city"
+    )![0];
+    const p2CityVertex = Object.entries(state.buildings).find(
+      ([, b]) => b.ownerId === "p2" && b.type === "city"
+    )![0];
+
+    // Give p1 10 cloth (cost 1+2+3+4 = 10 for Trade Lv 1 -> Lv 4)
+    state.commodityBank.cloth -= 10;
+    state.players[0]!.commodities.cloth += 10;
+
+    expect(getPlayerGoodTradeRatios(state, "p1").paper).toBe(4);
+
+    for (let targetLv = 1; targetLv <= 4; targetLv++) {
+      state = CatanEngine.applyAction(state, "p1", {
+        type: "UPGRADE_CITY_IMPROVEMENT",
+        discipline: "trade",
+        ...(targetLv === 4 ? { metropolisVertexId: p1CityVertex } : {}),
+      }).state;
+    }
+
+    expect(state.players[0]!.cityImprovements.trade).toBe(4);
+    // Trading House unlocked at Trade Lv 3 -> 2:1 on all 3 commodities!
+    expect(getPlayerGoodTradeRatios(state, "p1").paper).toBe(2);
+    expect(getPlayerGoodTradeRatios(state, "p1").cloth).toBe(2);
+    expect(getPlayerGoodTradeRatios(state, "p1").coin).toBe(2);
+
+    // Trade Metropolis claimed by p1 (+2 VP -> 3 base + 2 = 5 VP)
+    expect(state.metropolises.trade).toEqual({
+      ownerId: "p1",
+      vertexId: p1CityVertex,
+      level: 4,
+    });
+    expect(state.buildings[p1CityVertex]!.metropolis).toBe("trade");
+    expect(computePlayerVictoryPoints(state, "p1", true)).toBe(5);
+
+    // Verify 2:1 commodity maritime trade works cleanly
+    state.commodityBank.coin -= 2;
+    state.players[0]!.commodities.coin += 2;
+    const prevOre = state.players[0]!.resources.ore;
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "MARITIME_TRADE",
+      give: "coin",
+      giveAmount: 2,
+      receive: "ore",
+    }).state;
+    expect(state.players[0]!.resources.ore).toBe(prevOre + 1);
+
+    // Now p2 sits at Trade Lv 4 and upgrades to Trade Lv 5 -> steals the Trade Metropolis from p1!
+    state.activePlayerIndex = 1;
+    state.players[1]!.cityImprovements.trade = 4;
+    state.commodityBank.cloth -= 5;
+    state.players[1]!.commodities.cloth += 5;
+
+    state = CatanEngine.applyAction(state, "p2", {
+      type: "UPGRADE_CITY_IMPROVEMENT",
+      discipline: "trade",
+      metropolisVertexId: p2CityVertex,
+    }).state;
+
+    expect(state.metropolises.trade).toEqual({
+      ownerId: "p2",
+      vertexId: p2CityVertex,
+      level: 5,
+    });
+    expect(state.buildings[p1CityVertex]!.metropolis).toBeUndefined();
+    expect(state.buildings[p2CityVertex]!.metropolis).toBe("trade");
+    expect(computePlayerVictoryPoints(state, "p1", true)).toBe(3);
+    expect(computePlayerVictoryPoints(state, "p2", true)).toBe(5);
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+  });
+
+  test("Knights: recruit, activate, promote (Fortress Lv 3 gate), displace weaker knight, break Longest Road, and chase Robber", () => {
+    let { state } = completeSnakeDraftSetup(
+      CatanEngine.initGame(
+        FOUR_PLAYERS,
+        { scenarioId: "cities_and_knights" },
+        "ck-knights-spec"
+      )
+    );
+    state.buildings = {};
+    state.edges = {};
+    state.knights = {};
+    for (const p of state.players) {
+      p.roadsRemaining = 15;
+      p.settlementsRemaining = 5;
+      p.citiesRemaining = 4;
+      for (const r of RESOURCES) {
+        state.bank[r] += p.resources[r];
+        p.resources[r] = 0;
+      }
+    }
+
+    // Build a 5-road chain around center hex (0,0) for p1 so p1 holds Longest Road (length 5)
+    const centerHex = state.topology.hexes["0,0"]!;
+    const chainEdges = centerHex.sideEdgeIds.slice(0, 5);
+    for (const eId of chainEdges) {
+      state.edges[eId] = { ownerId: "p1", type: "road", builtOnTurn: 1 };
+      state.players[0]!.roadsRemaining--;
+    }
+    const vStart = centerHex.cornerVertexIds[0]!;
+    const vMid = centerHex.cornerVertexIds[2]!;
+    state.buildings[vStart] = { ownerId: "p1", type: "city" };
+    state.players[0]!.citiesRemaining--;
+
+    recalculateAwards(state);
+    expect(state.longestRoadOwnerId).toBe("p1");
+    expect(state.players[0]!.longestRoadLength).toBe(5);
+
+    // Connect p2's road to vMid and place a Basic (Lv 1) opponent knight at vMid -> breaks p1's Longest Road!
+    const p2IncomingEdge = state.topology.vertices[vMid]!.incidentEdgeIds.find(
+      (eId) => !state.edges[eId]
+    )!;
+    state.edges[p2IncomingEdge] = { ownerId: "p2", type: "road", builtOnTurn: 1 };
+    state.players[1]!.roadsRemaining--;
+    state.knights[vMid] = {
+      ownerId: "p2",
+      level: 1,
+      active: true,
+      activatedThisTurn: false,
+      actedThisTurn: false,
+      promotedThisTurn: false,
+    };
+    state.players[1]!.basicKnightsRemaining--;
+
+    recalculateAwards(state);
+    expect(state.players[0]!.longestRoadLength).toBeLessThan(5);
+    expect(state.longestRoadOwnerId).toBeNull();
+
+    // Now on p1's MAIN_PHASE: recruit a Basic knight on vAdj, activate it, promote to Strong (Lv 2), and check Lv 3 gate!
+    state.phase = "MAIN_PHASE";
+    state.activePlayerIndex = 0;
+    const vAdj = centerHex.cornerVertexIds[1]!;
+    state.bank.wool -= 3;
+    state.bank.ore -= 3;
+    state.bank.grain -= 1;
+    state.players[0]!.resources.wool += 3;
+    state.players[0]!.resources.ore += 3;
+    state.players[0]!.resources.grain += 1;
+
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "BUILD_KNIGHT",
+      vertexId: vAdj,
+    }).state;
+    expect(state.knights[vAdj]?.level).toBe(1);
+    expect(state.knights[vAdj]?.active).toBe(false);
+
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "ACTIVATE_KNIGHT",
+      vertexId: vAdj,
+    }).state;
+    expect(state.knights[vAdj]?.active).toBe(true);
+    // Cannot move or chase on the same turn it was activated!
+    expect(
+      CatanEngine.getLegalActions(state, "p1").some((a) => a.type === "MOVE_KNIGHT")
+    ).toBe(false);
+
+    // Promote to Strong (Lv 2)
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "PROMOTE_KNIGHT",
+      vertexId: vAdj,
+    }).state;
+    expect(state.knights[vAdj]?.level).toBe(2);
+    // Same-turn double promotion is forbidden even if Fortress were unlocked
+    expect(
+      CatanEngine.getLegalActions(state, "p1").some(
+        (a) => a.type === "PROMOTE_KNIGHT" && a.vertexId === vAdj
+      )
+    ).toBe(false);
+
+    // Next turn: reset per-turn knight flags -> still cannot promote to Mighty (Lv 3) without Politics Lv 3 Fortress!
+    state.knights[vAdj] = {
+      ...state.knights[vAdj]!,
+      activatedThisTurn: false,
+      actedThisTurn: false,
+      promotedThisTurn: false,
+    };
+    expect(
+      CatanEngine.getLegalActions(state, "p1").some(
+        (a) => a.type === "PROMOTE_KNIGHT" && a.vertexId === vAdj
+      )
+    ).toBe(false);
+    state.players[0]!.cityImprovements.politics = 3;
+    expect(
+      CatanEngine.getLegalActions(state, "p1").some(
+        (a) => a.type === "PROMOTE_KNIGHT" && a.vertexId === vAdj
+      )
+    ).toBe(true);
+
+    // p1's Strong (Lv 2) knight marches onto vMid, displacing p2's Basic (Lv 1) knight and restoring Longest Road!
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "MOVE_KNIGHT",
+      fromVertexId: vAdj,
+      toVertexId: vMid,
+    }).state;
+    expect(state.knights[vMid]?.ownerId).toBe("p1");
+    expect(state.knights[vMid]?.active).toBe(false); // Deactivates after displacing/moving!
+    expect(state.longestRoadOwnerId).toBe("p1");
+
+    // Re-activate on next turn and test CHASE_ROBBER_WITH_KNIGHT once barbarianAttacksCount >= 1
+    state.barbarianAttacksCount = 1;
+    state.robberHexId = "0,0";
+    state.knights[vMid] = {
+      ...state.knights[vMid]!,
+      active: true,
+      activatedThisTurn: false,
+      actedThisTurn: false,
+      promotedThisTurn: false,
+    };
+    const chaseAct = CatanEngine.getLegalActions(state, "p1").find(
+      (a) => a.type === "CHASE_ROBBER_WITH_KNIGHT" && a.vertexId === vMid
+    )!;
+    expect(chaseAct).toBeDefined();
+    state = CatanEngine.applyAction(state, "p1", chaseAct).state;
+    expect(state.robberHexId).not.toBe("0,0");
+    expect(state.knights[vMid]?.active).toBe(false);
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+  });
+
+  test("Event Die & Barbarian Attack: Caliper draws, VP auto-reveal, Defender Victory (solo & tie), and Barbarian Pillage (Metropolis immunity + borrowedCityPiece)", () => {
+    let { state } = completeSnakeDraftSetup(
+      CatanEngine.initGame(
+        FOUR_PLAYERS,
+        { scenarioId: "cities_and_knights" },
+        "ck-barbarians-spec"
+      )
+    );
+
+    // 1. Colored gate draw: p1 has Science Lv 2 (caliper 1..3); move "printer" to top of 18-card science deck
+    state.players[0]!.cityImprovements.science = 2;
+    const printerIdx = state.progressDecks.science.indexOf("printer");
+    expect(printerIdx).toBeGreaterThanOrEqual(0);
+    state.progressDecks.science.splice(printerIdx, 1);
+    state.progressDecks.science.unshift("printer");
+
+    const vpDraw = resolveEventDieRollPure(state, "science", 3, []);
+    state = vpDraw.state;
+    expect(state.players[0]!.publicProgressVpCards).toEqual(["printer"]);
+    expect(computePlayerVictoryPoints(state, "p1", true)).toBe(4); // 3 setup + 1 Printer
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+
+    // 2. Barbarian Attack — Solo Top Defender wins +1 Defender of Catan VP!
+    const vKnight1 = Object.keys(state.topology.vertices).find(
+      (vId) => !state.buildings[vId] && !state.knights[vId]
+    )!;
+    const vKnight2 = Object.keys(state.topology.vertices).find(
+      (vId) => vId !== vKnight1 && !state.buildings[vId] && !state.knights[vId]
+    )!;
+    // 4 cities on board -> Barbarian Strength = 4. Give p1 Lv 3 active + p2 Lv 1 active = 4 -> Defenders Win!
+    state.knights[vKnight1] = {
+      ownerId: "p1",
+      level: 3,
+      active: true,
+      activatedThisTurn: false,
+      actedThisTurn: false,
+      promotedThisTurn: false,
+    };
+    state.players[0]!.mightyKnightsRemaining--;
+    state.knights[vKnight2] = {
+      ownerId: "p2",
+      level: 1,
+      active: true,
+      activatedThisTurn: false,
+      actedThisTurn: false,
+      promotedThisTurn: false,
+    };
+    state.players[1]!.basicKnightsRemaining--;
+    state.barbarianPosition = 6;
+
+    const soloWin = resolveEventDieRollPure(state, "barbarian", 4, []);
+    state = soloWin.state;
+    expect(state.barbarianPosition).toBe(0);
+    expect(state.barbarianAttacksCount).toBe(1);
+    expect(state.players[0]!.defenderPoints).toBe(1);
+    expect(state.knights[vKnight1]?.active).toBe(false);
+    expect(state.knights[vKnight2]?.active).toBe(false);
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+
+    // 3. Barbarian Attack — Tied Top Defenders enter PROGRESS_CARD_SELECTION -> SELECT_PROGRESS_DECK
+    state.knights[vKnight1] = { ...state.knights[vKnight1]!, level: 2, active: true };
+    state.players[0]!.mightyKnightsRemaining++;
+    state.players[0]!.strongKnightsRemaining--;
+    state.knights[vKnight2] = { ...state.knights[vKnight2]!, level: 2, active: true };
+    state.players[1]!.basicKnightsRemaining++;
+    state.players[1]!.strongKnightsRemaining--;
+    state.barbarianPosition = 6;
+    state.phase = "PRE_ROLL";
+    const tiedWin = resolveEventDieRollPure(state, "barbarian", 2, []);
+    state = {
+      ...tiedWin.state,
+      phase: "PROGRESS_CARD_SELECTION",
+      pendingRollResolution: { die1: 2, die2: 3, total: 5 },
+    };
+    expect(state.pendingDefenderDeckPicks).toEqual(["p1", "p2"]);
+    expect(getNextActingPlayerId(state)).toBe("p1");
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "SELECT_PROGRESS_DECK",
+      discipline: "science",
+    }).state;
+    expect(getNextActingPlayerId(state)).toBe("p2");
+    state = CatanEngine.applyAction(state, "p2", {
+      type: "SELECT_PROGRESS_DECK",
+      discipline: "trade",
+    }).state;
+    expect(state.phase).toBe("MAIN_PHASE");
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+
+    // 4. Barbarian Victory — Metropolis city is immune; 0-settlementsRemaining player uses borrowedCityPiece!
+    const p1CityV = Object.entries(state.buildings).find(
+      ([, b]) => b.ownerId === "p1" && b.type === "city"
+    )![0];
+    const p2CityV = Object.entries(state.buildings).find(
+      ([, b]) => b.ownerId === "p2" && b.type === "city"
+    )![0];
+    // Protect p1's city with the Science Metropolis so p1 has 0 vulnerable cities!
+    state.buildings[p1CityV] = {
+      ...state.buildings[p1CityV]!,
+      metropolis: "science",
+    };
+    state.metropolises.science = { ownerId: "p1", vertexId: p1CityV, level: 4 };
+    state.players[0]!.cityImprovements.science = 4;
+
+    // Clear knights first so empty vertex selection sees clean vertices
+    state.knights = {};
+    state.players[0]!.strongKnightsRemaining = 2;
+    state.players[1]!.strongKnightsRemaining = 2;
+
+    // Place 4 Distance-Rule-valid extra settlements for p2 so p2 has 5 settlements on board and settlementsRemaining = 0!
+    let placedExtra = 0;
+    for (const vId of state.topology.vertexOrder) {
+      if (placedExtra >= 4) break;
+      if (state.buildings[vId]) continue;
+      const vNode = state.topology.vertices[vId]!;
+      if (vNode.adjacentVertexIds.some((adj) => Boolean(state.buildings[adj]))) {
+        continue;
+      }
+      state.buildings[vId] = { ownerId: "p2", type: "settlement" };
+      placedExtra++;
+    }
+    expect(placedExtra).toBe(4);
+    state.players[1]!.settlementsRemaining = 0; // 5 settlements already on board!
+
+    const knightSpots = state.topology.vertexOrder.filter(
+      (vId) => !state.buildings[vId] && !state.knights[vId]
+    );
+    state.knights = {
+      [knightSpots[0]!]: {
+        ownerId: "p3",
+        level: 1,
+        active: true,
+        activatedThisTurn: false,
+        actedThisTurn: false,
+        promotedThisTurn: false,
+      },
+      [knightSpots[1]!]: {
+        ownerId: "p4",
+        level: 1,
+        active: true,
+        activatedThisTurn: false,
+        actedThisTurn: false,
+        promotedThisTurn: false,
+      },
+    };
+    state.players[2]!.basicKnightsRemaining = 1;
+    state.players[3]!.basicKnightsRemaining = 1;
+
+    // Barbarian strength = 4 cities, Defender strength = 2 -> Barbarians Win!
+    // p1 has 0 strength, BUT p1's only city is a Metropolis (immune!), so ONLY p2 (0 strength, 1 vulnerable city) is pillaged!
+    state.barbarianPosition = 6;
+    const pillageRes = resolveEventDieRollPure(state, "barbarian", 5, []);
+    state = pillageRes.state;
+
+    expect(state.buildings[p1CityV]!.type).toBe("city"); // Metropolis untouched!
+    expect(state.buildings[p2CityV]!.type).toBe("settlement"); // Auto-downgraded!
+    expect(state.buildings[p2CityV]!.borrowedCityPiece).toBe(true); // Physical piece conservation preserved!
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+  });
+
+  test("Progress Cards (Medicine, Crane, Engineer, Resource/Trade Monopoly, Merchant) and Player View Redaction", () => {
+    let { state } = completeSnakeDraftSetup(
+      CatanEngine.initGame(
+        FOUR_PLAYERS,
+        { scenarioId: "cities_and_knights" },
+        "ck-progress-redaction"
+      )
+    );
+    state.phase = "MAIN_PHASE";
+    state.activePlayerIndex = 0;
+
+    for (const p of state.players) {
+      for (const r of RESOURCES) {
+        state.bank[r] += p.resources[r];
+        p.resources[r] = 0;
+      }
+      for (const c of COMMODITIES) {
+        state.commodityBank[c] += p.commodities[c];
+        p.commodities[c] = 0;
+      }
+    }
+
+    const p1SettleV = Object.entries(state.buildings).find(
+      ([, b]) => b.ownerId === "p1" && b.type === "settlement"
+    )![0];
+    const p1CityV = Object.entries(state.buildings).find(
+      ([, b]) => b.ownerId === "p1" && b.type === "city"
+    )![0];
+    const adjLandHex = state.topology.vertices[p1CityV]!.adjacentHexIds.find(
+      (hId) =>
+        state.hexes[hId] &&
+        TERRAIN_TO_RESOURCE_FOR_TEST(state.hexes[hId]!.terrain) !== null
+    )!;
+
+    grantCardFromDeckForTest(state, "p1", "pc-med", "medicine", "science");
+    grantCardFromDeckForTest(state, "p1", "pc-eng", "engineer", "science");
+    grantCardFromDeckForTest(state, "p1", "pc-tmono", "trade_monopoly", "trade");
+    grantCardFromDeckForTest(state, "p1", "pc-merch", "merchant", "trade");
+    state.players[1]!.commodities.paper = 2;
+    state.commodityBank.paper -= 2;
+    grantCardFromDeckForTest(state, "p2", "opp-secret", "spy", "politics");
+
+    // Check getPlayerView redaction for p1 looking at p2!
+    const viewForP1 = CatanEngine.getPlayerView(state, "p1");
+    expect(totalCommodityCount(viewForP1.players[1]!.commodities)).toBe(0);
+    expect(viewForP1.players[1]!.hiddenResourceCount).toBe(2); // includes commodities!
+    expect(viewForP1.players[1]!.progressCards).toEqual([]);
+    expect(viewForP1.players[1]!.hiddenProgressCardCount).toBe(1);
+
+    // 1. Medicine -> upgrade settlement to city for only 2 Ore + 1 Grain!
+    state.bank.ore -= 2;
+    state.bank.grain -= 1;
+    state.players[0]!.resources.ore = 2;
+    state.players[0]!.resources.grain = 1;
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "PLAY_PROGRESS_CARD",
+      cardId: "pc-med",
+    }).state;
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "BUILD_CITY",
+      vertexId: p1SettleV,
+    }).state;
+    expect(state.buildings[p1SettleV]!.type).toBe("city");
+    expect(totalResourceCount(state.players[0]!.resources)).toBe(0);
+
+    // 2. Engineer -> free City Wall (+2 safe hand limit -> 9)
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "PLAY_PROGRESS_CARD",
+      cardId: "pc-eng",
+      params: { vertexId: p1CityV },
+    }).state;
+    expect(state.buildings[p1CityV]!.hasWall).toBe(true);
+    expect(getPlayerSafeHandLimit(state, "p1")).toBe(9);
+
+    // 3. Trade Monopoly (Paper) -> steals up to 1 Paper from each opponent holding it
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "PLAY_PROGRESS_CARD",
+      cardId: "pc-tmono",
+      params: { commodity: "paper" },
+    }).state;
+    expect(state.players[0]!.commodities.paper).toBe(1);
+    expect(state.players[1]!.commodities.paper).toBe(1);
+
+    // 4. Merchant -> places cone on adjacent land hex (+1 VP + 2:1 bank rate on that hex's resource!)
+    const vpBeforeMerch = computePlayerVictoryPoints(state, "p1", true);
+    state = CatanEngine.applyAction(state, "p1", {
+      type: "PLAY_PROGRESS_CARD",
+      cardId: "pc-merch",
+      params: { hexId: adjLandHex },
+    }).state;
+    expect(state.merchantOwnerId).toBe("p1");
+    expect(state.merchantHexId).toBe(adjLandHex);
+    expect(computePlayerVictoryPoints(state, "p1", true)).toBe(vpBeforeMerch + 1);
+    const merchRes = TERRAIN_TO_RESOURCE_FOR_TEST(state.hexes[adjLandHex]!.terrain)!;
+    expect(getPlayerGoodTradeRatios(state, "p1")[merchRes]).toBe(2);
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+  });
+
+  test("Full-game deterministic Cities & Knights bot simulations complete cleanly across 4P, 5-6P, and Seafarers", () => {
+    const configs = [
+      {
+        label: "cities_and_knights-4p",
+        count: 4,
+        config: { scenarioId: "cities_and_knights" as const },
+      },
+      {
+        label: "big_island_ck-5p",
+        count: 5,
+        config: {
+          scenarioId: "big_island_5_6" as const,
+          enableCitiesAndKnights: true,
+        },
+      },
+      {
+        label: "seafarers_ck-4p",
+        count: 4,
+        config: {
+          scenarioId: "seafarers_new_shores" as const,
+          enableCitiesAndKnights: true,
+          enableHarbormaster: true,
+        },
+      },
+    ];
+
+    const difficulties = ["master", "smart", "normal", "easy", "smart"] as const;
+
+    for (const item of configs) {
+      const players: PlayerDescriptor[] = Array.from(
+        { length: item.count },
+        (_, i) => ({
+          id: `p${i + 1}`,
+          name: `CKBot ${i + 1}`,
+          color: "",
+          isBot: true,
+          botDifficulty: difficulties[i % difficulties.length],
+        })
+      );
+
+      const initial = CatanEngine.initGame(
+        players,
+        item.config,
+        `ck-fuzz-${item.label}-2026`
+      );
+      let session = createMatchSessionState(CatanEngine, initial, true);
+      let steps = 0;
+
+      while (getSessionState(session).phase !== "GAME_OVER" && steps < 5000) {
+        const cur = getSessionState(session);
+        const actor = getNextActingPlayerId(cur);
+        expect(actor).not.toBeNull();
+        const act = CatanEngine.chooseBotAction(cur, actor!);
+        expect(act).not.toBeNull();
+        session = dispatchSessionActionPure(
+          CatanEngine,
+          session,
+          actor!,
+          act!,
+          steps
+        ).session;
+        steps++;
+      }
+
+      const final = getSessionState(session);
+      expect(final.phase).toBe("GAME_OVER");
+      expect(final.winnerId).not.toBeNull();
+      expect(
+        computePlayerVictoryPoints(final, final.winnerId!, false)
+      ).toBeGreaterThanOrEqual(final.config.targetVictoryPoints);
+      expect(CatanEngine.checkInvariants(final).valid).toBe(true);
+    }
+  });
+});
+
+describe("@gaming-platform/catan - 5–6 Player Extension for Seafarers & Cities & Knights", () => {
+  const SIX_PLAYERS: PlayerDescriptor[] = Array.from({ length: 6 }, (_, i) => ({
+    id: `p${i + 1}`,
+    name: `Player ${i + 1}`,
+    color: "",
+    isBot: true,
+    botDifficulty: "smart",
+  }));
+
+  test("supports 5–6P scenario presets AND auto-upgrades 3–4P scenarios when 5–6 players are seated", () => {
+    // 1. All Catan scenarios allow up to 6 players
+    for (const sc of Object.values(SCENARIO_CATALOG)) {
+      expect(sc.maxPlayers).toBe(6);
+    }
+
+    // 2. Cities & Knights 5–6P (both explicit preset & 6P auto-upgrade on cities_and_knights)
+    for (const scenarioId of [
+      "cities_and_knights_5_6",
+      "cities_and_knights",
+    ] as const) {
+      const ck6 = CatanEngine.initGame(
+        SIX_PLAYERS,
+        { scenarioId },
+        `ck6-init-${scenarioId}`
+      );
+      expect(Object.keys(ck6.hexes)).toHaveLength(30);
+      expect(ck6.harbors).toHaveLength(11);
+      expect(ck6.config.enableCitiesAndKnights).toBe(true);
+      expect(ck6.config.enable56PlayerExtension).toBe(true);
+      expect(ck6.config.enableSpecialBuildingPhase).toBe(true);
+      expect(ck6.config.targetVictoryPoints).toBe(13);
+      for (const r of RESOURCES) expect(ck6.bank[r]).toBe(24);
+      for (const c of COMMODITIES) expect(ck6.commodityBank[c]).toBe(18);
+      const afterSetup = completeSnakeDraftSetup(ck6).state;
+      expect(Object.keys(afterSetup.buildings)).toHaveLength(12);
+      expect(
+        Object.values(afterSetup.buildings).filter((b) => b.type === "city")
+      ).toHaveLength(6);
+      expect(CatanEngine.checkInvariants(afterSetup).valid).toBe(true);
+    }
+
+    // 3. Seafarers 5–6P maps: strict sea separation (axialDistance >= 2 between distinct islands) & SVG rendering
+    const marine56Cases = [
+      {
+        scenarioId: "seafarers_new_shores_5_6" as const,
+        autoFrom: "seafarers_new_shores" as const,
+        expectedHexCount: 51,
+        expectedIslandIds: [1, 2, 3, 4],
+        expectedFogCount: 0,
+      },
+      {
+        scenarioId: "seafarers_six_islands_5_6" as const,
+        autoFrom: "seafarers_four_islands" as const,
+        expectedHexCount: 58,
+        expectedIslandIds: [1, 2, 3, 4, 5, 6],
+        expectedFogCount: 0,
+      },
+      {
+        scenarioId: "seafarers_fog_islands_5_6" as const,
+        autoFrom: "seafarers_fog_islands" as const,
+        expectedHexCount: 58,
+        expectedIslandIds: [1, 2, 3],
+        expectedFogCount: 11,
+      },
+    ];
+
+    for (const item of marine56Cases) {
+      for (const scId of [item.scenarioId, item.autoFrom]) {
+        const s0 = CatanEngine.initGame(
+          SIX_PLAYERS,
+          { scenarioId: scId },
+          `marine56-${scId}`
+        );
+        const tiles = Object.values(s0.hexes);
+        expect(tiles).toHaveLength(item.expectedHexCount);
+        expect(s0.config.enableSeafarers).toBe(true);
+        expect(s0.config.enable56PlayerExtension).toBe(true);
+        expect(s0.config.enableSpecialBuildingPhase).toBe(true);
+        expect(s0.config.targetVictoryPoints).toBe(12);
+        expect(s0.pirateHexId).not.toBeNull();
+        expect(s0.hexes[s0.pirateHexId!]?.terrain).toBe("sea");
+        expect(s0.fogPool).toHaveLength(item.expectedFogCount);
+        for (const r of RESOURCES) expect(s0.bank[r]).toBe(24);
+
+        const nonSeaTiles = tiles.filter((t) => t.islandId > 0);
+        const distinctIslands = Array.from(
+          new Set(nonSeaTiles.map((t) => t.islandId))
+        ).sort((a, b) => a - b);
+        expect(distinctIslands).toEqual(item.expectedIslandIds);
+
+        // Verify no two distinct islands touch at an edge or vertex (axialDistance >= 2)
+        for (let i = 0; i < nonSeaTiles.length; i++) {
+          for (let j = i + 1; j < nonSeaTiles.length; j++) {
+            const a = nonSeaTiles[i]!;
+            const b = nonSeaTiles[j]!;
+            if (a.islandId !== b.islandId) {
+              expect(axialDistance(a, b)).toBeGreaterThanOrEqual(2);
+            }
+          }
+        }
+
+        // Complete 6-player snake draft (12 initial buildings + 12 roads/ships) & render SVG
+        const { state: s1 } = completeSnakeDraftSetup(s0);
+        expect(Object.keys(s1.buildings)).toHaveLength(12);
+        expect(Object.keys(s1.edges)).toHaveLength(12);
+        expect(CatanEngine.checkInvariants(s1).valid).toBe(true);
+
+        const svg = renderCatanBoardSvg(s1, getNextActingPlayerId(s1), {
+          buildMode: null,
+          setupEdgeKind: "road",
+          robberOrPirateMode: "robber",
+          selectedMoveFromEdgeId: null,
+        });
+        expect(svg).toContain('class="ocean-frame-hex"');
+        expect(svg).toContain('class="harbor-marker"');
+      }
+    }
+  });
+
+  test("Cities & Knights 6-player Special Building Phase allows City Improvements, Knights, and City Walls between turns", () => {
+    let state = completeSnakeDraftSetup(
+      CatanEngine.initGame(
+        SIX_PLAYERS,
+        { scenarioId: "cities_and_knights_5_6", startingPlayerIndex: 0 },
+        "ck6-special-build-seed"
+      )
+    ).state;
+
+    // Advance p1 through roll into MAIN_PHASE and end turn -> p2 enters SPECIAL_BUILDING
+    const rollAct = CatanEngine.getLegalActions(state, "p1").find(
+      (a) => a.type === "ROLL_DICE"
+    )!;
+    state = CatanEngine.applyAction(state, "p1", rollAct).state;
+    while (state.phase !== "MAIN_PHASE") {
+      const actor = getNextActingPlayerId(state)!;
+      const move = CatanEngine.chooseBotAction(state, actor)!;
+      state = CatanEngine.applyAction(state, actor, move).state;
+    }
+
+    // Grant p2 commodities & resources from the bank so conservation holds
+    const p2 = state.players[1]!;
+    p2.commodities.cloth += 1;
+    state.commodityBank.cloth -= 1;
+    p2.resources.wool += 1;
+    state.bank.wool -= 1;
+    p2.resources.ore += 1;
+    state.bank.ore -= 1;
+    p2.resources.grain += 1;
+    state.bank.grain -= 1;
+    p2.resources.brick += 2;
+    state.bank.brick -= 2;
+
+    state = CatanEngine.applyAction(state, "p1", { type: "END_TURN" }).state;
+    expect(state.phase).toBe("SPECIAL_BUILDING");
+    expect(getNextActingPlayerId(state)).toBe("p2");
+
+    const sbLegal = CatanEngine.getLegalActions(state, "p2");
+    const upgradeTrade = sbLegal.find(
+      (a) =>
+        a.type === "UPGRADE_CITY_IMPROVEMENT" && a.discipline === "trade"
+    );
+    const buildKnight = sbLegal.find((a) => a.type === "BUILD_KNIGHT");
+    const buildWall = sbLegal.find((a) => a.type === "BUILD_CITY_WALL");
+    expect(upgradeTrade).toBeDefined();
+    expect(buildKnight).toBeDefined();
+    expect(buildWall).toBeDefined();
+
+    state = CatanEngine.applyAction(state, "p2", upgradeTrade!).state;
+    expect(state.players[1]!.cityImprovements.trade).toBe(1);
+
+    const buildKnight2 = CatanEngine.getLegalActions(state, "p2").find(
+      (a) => a.type === "BUILD_KNIGHT"
+    )!;
+    state = CatanEngine.applyAction(state, "p2", buildKnight2).state;
+
+    const activateKnight = CatanEngine.getLegalActions(state, "p2").find(
+      (a) => a.type === "ACTIVATE_KNIGHT"
+    )!;
+    state = CatanEngine.applyAction(state, "p2", activateKnight).state;
+
+    const buildWall2 = CatanEngine.getLegalActions(state, "p2").find(
+      (a) => a.type === "BUILD_CITY_WALL"
+    )!;
+    state = CatanEngine.applyAction(state, "p2", buildWall2).state;
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+
+    // Finish Special Building Phase across p2..p6 -> advances cleanly to p2's Turn 2 PRE_ROLL
+    while (state.phase === "SPECIAL_BUILDING") {
+      const sbActor = getNextActingPlayerId(state)!;
+      state = CatanEngine.applyAction(state, sbActor, {
+        type: "END_SPECIAL_BUILD",
+      }).state;
+    }
+    expect(state.phase).toBe("PRE_ROLL");
+    expect(getNextActingPlayerId(state)).toBe("p2");
+    expect(CatanEngine.checkInvariants(state).valid).toBe(true);
+  });
+
+  test("Full-game 6-player bot simulations complete cleanly across Cities & Knights 5–6P and all Seafarers 5–6P scenarios", () => {
+    const scenarios = [
+      {
+        label: "cities_and_knights_5_6-6p",
+        config: { scenarioId: "cities_and_knights_5_6" as const },
+      },
+      {
+        label: "seafarers_new_shores_5_6-6p",
+        config: {
+          scenarioId: "seafarers_new_shores_5_6" as const,
+          enableHarbormaster: true,
+        },
+      },
+      {
+        label: "seafarers_six_islands_5_6-6p",
+        config: { scenarioId: "seafarers_six_islands_5_6" as const },
+      },
+      {
+        label: "seafarers_fog_islands_5_6-6p",
+        config: {
+          scenarioId: "seafarers_fog_islands_5_6" as const,
+          enableFriendlyRobber: true,
+        },
+      },
+      {
+        label: "seafarers_six_islands_ck_5_6-6p",
+        config: {
+          scenarioId: "seafarers_six_islands_5_6" as const,
+          enableCitiesAndKnights: true,
+        },
+      },
+    ];
+
+    const diffs = ["master", "smart", "normal", "master", "smart", "easy"] as const;
+    const players: PlayerDescriptor[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `p${i + 1}`,
+      name: `Bot6P ${i + 1}`,
+      color: "",
+      isBot: true,
+      botDifficulty: diffs[i]!,
+    }));
+
+    for (const item of scenarios) {
+      const initial = CatanEngine.initGame(
+        players,
+        item.config,
+        `ext56-sim-${item.label}-2026`
+      );
+      let session = createMatchSessionState(CatanEngine, initial, true);
+      let steps = 0;
+
+      while (getSessionState(session).phase !== "GAME_OVER" && steps < 6000) {
+        const cur = getSessionState(session);
+        const actor = getNextActingPlayerId(cur);
+        expect(actor).not.toBeNull();
+        const act = CatanEngine.chooseBotAction(cur, actor!);
+        expect(act).not.toBeNull();
+        session = dispatchSessionActionPure(
+          CatanEngine,
+          session,
+          actor!,
+          act!,
+          steps
+        ).session;
+        steps++;
+      }
+
+      const final = getSessionState(session);
+      expect(final.phase).toBe("GAME_OVER");
+      expect(final.winnerId).not.toBeNull();
+      expect(
+        computePlayerVictoryPoints(final, final.winnerId!, false)
+      ).toBeGreaterThanOrEqual(final.config.targetVictoryPoints);
+      expect(CatanEngine.checkInvariants(final).valid).toBe(true);
+    }
+  });
+});
+
+function grantCardFromDeckForTest(
+  state: ReturnType<typeof CatanEngine.initGame>,
+  playerId: string,
+  cardId: string,
+  type: import("@gaming-platform/catan").ProgressCardType,
+  discipline: import("@gaming-platform/catan").ImprovementDiscipline
+): void {
+  const deck = state.progressDecks[discipline];
+  const idx = deck.indexOf(type);
+  if (idx >= 0) {
+    deck.splice(idx, 1);
+  }
+  const player = state.players.find((p) => p.id === playerId)!;
+  player.progressCards.push({ id: cardId, type, discipline });
+}
+
+function TERRAIN_TO_RESOURCE_FOR_TEST(
+  terrain: string
+): "brick" | "lumber" | "wool" | "grain" | "ore" | null {
+  switch (terrain) {
+    case "hills":
+      return "brick";
+    case "forest":
+      return "lumber";
+    case "pasture":
+      return "wool";
+    case "fields":
+      return "grain";
+    case "mountains":
+      return "ore";
+    default:
+      return null;
+  }
+}

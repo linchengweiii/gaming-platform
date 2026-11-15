@@ -6,13 +6,16 @@ A TypeScript monorepo for an online multi-board-game platform featuring pure, de
 
 ### 1. 🏝️ Settlers of Catan (Base Game + Extensions & Expansions)
 - **Standard Catan (3–4 Players)**: 19 hexes, 9 harbors, balanced 6/8 tokens, Longest Road, Largest Army, Maritime & Domestic trading, Development Cards.
-- **5–6 Player Extension (Big Island)**: 30-hex island, 11 harbors, expanded bank & dev deck, and between-turn **Special Building Phase**.
-- **Catan: Seafarers Expansion**:
+- **5–6 Player Extensions (Base, Seafarers & Cities & Knights)**: Expanded islands & marine maps, 24 per resource / 18 per commodity bank supplies, and between-turn **Special Building Phase** across all expansions.
+- **Catan: Cities & Knights Expansion (3–4P & 5–6P, combinable with Seafarers)**:
+  - **Commodities & City Improvements**: Collect **Paper**, **Cloth**, and **Coin** from Forest, Pasture, and Mountains cities to upgrade **Trade** (Trading House), **Politics** (Fortress), and **Science** (Aqueduct) from Level 1 to Level 5 and claim the 3 **Metropolises** (+2 VP, immune to Barbarian pillage).
+  - **Knights & Barbarian Fleet**: Recruit, promote, activate, move, and displace **Basic**, **Strong**, and **Mighty Knights**; chase the Robber; and defend Catan on the 7-step Barbarian Track to earn **Defender of Catan** (+1 VP) or risk vulnerable City pillage.
+  - **54 Official Progress Cards & Merchant**: Full Trade, Politics, and Science Progress Decks (18 cards each) plus the **Merchant** pawn (+1 VP & 2:1 resource trade).
+- **Catan: Seafarers Expansion (3–4P & 5–6P)**:
   - **Ships & Shipping Routes** (`1 wool + 1 lumber`), moving open ships (`MOVE_SHIP`), and unified Longest Trade Route.
-  - **Pirate Fleet** (sea hex blockades & ship stealing).
-  - **Gold River Hexes** (choose any resource on production).
-  - **Scenarios**: *Heading for New Shores* (+2 Bonus VP for colonizing foreign islands), *The Four Islands*, and *The Fog Islands* (dynamic fog tile exploration & discovery rewards).
-- **Modular Variants**: **Harbormaster** (+2 VP for 3+ harbor points), **City Walls** (*Cities & Knights* +2 hand limit per wall on a `7`), and **Friendly Robber**.
+  - **Pirate Fleet** (sea hex blockades & ship stealing) and **Gold River Hexes** (choose any resource on production).
+  - **Scenarios**: *Heading for New Shores* (3–4P & 5–6P), *The Four Islands* / *The Six Islands* (5–6P), and *The Fog Islands* (3–4P & 5–6P dynamic fog tile exploration & discovery rewards).
+- **Modular Variants**: **Harbormaster** (+2 VP for 3+ harbor points), **City Walls** (+2 hand limit per wall on a `7`), and **Friendly Robber**.
 
 ### 2. 💎 Splendor
 - **90 Authentic Development Cards** across **Tier 1 (40)**, **Tier 2 (30)**, and **Tier 3 (20)** + **10 Royal Nobles** (+3 VP each).

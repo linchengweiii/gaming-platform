@@ -1,21 +1,36 @@
 import { axialNeighbors, hexId, hexToPixel } from "@gaming-platform/core";
 import {
+  COMMODITIES,
   type CatanAction,
   type CatanPlayerState,
   type CatanState,
+  type CommodityType,
   type DevCardType,
+  type EventDieFace,
+  type ImprovementDiscipline,
   NUMBER_TOKEN_PIPS,
+  PROGRESS_CARD_CATALOG,
+  type ProgressCardType,
   RESOURCES,
   type ResourceType,
   TERRAIN_TO_RESOURCE,
   type TerrainType,
+  type TradeGoodType,
+  getLegalActivateKnightVertices,
+  getLegalBuildKnightVertices,
+  getLegalChaseRobberActions,
+  getLegalMoveKnightActions,
   getLegalMoveShipActions,
   getLegalPirateHexes,
+  getLegalPromoteKnightVertices,
   getLegalRoadEdges,
   getLegalRobberHexes,
   getLegalSettlementVertices,
   getLegalShipEdges,
   getPlayerSafeHandLimit,
+  getPlayerVulnerableCities,
+  isCommodityType,
+  totalCommodityCount,
   totalResourceCount,
 } from "@gaming-platform/catan";
 
@@ -221,6 +236,126 @@ export const DEV_CARD_META: Record<
     border: "#fbbf24",
   },
 };
+
+export const COMMODITY_META: Record<
+  CommodityType,
+  {
+    label: string;
+    subtitle: string;
+    accent: string;
+    bgTop: string;
+    bgBottom: string;
+    border: string;
+  }
+> = {
+  paper: {
+    label: "Paper",
+    subtitle: "Parchment mill",
+    accent: "#10b981",
+    bgTop: "#064e3b",
+    bgBottom: "#022c22",
+    border: "#34d399",
+  },
+  cloth: {
+    label: "Cloth",
+    subtitle: "Weaver guild",
+    accent: "#f59e0b",
+    bgTop: "#78350f",
+    bgBottom: "#351505",
+    border: "#fbbf24",
+  },
+  coin: {
+    label: "Coin",
+    subtitle: "Royal mint",
+    accent: "#3b82f6",
+    bgTop: "#1e3a8a",
+    bgBottom: "#0f172a",
+    border: "#60a5fa",
+  },
+};
+
+export const TRADE_GOOD_META: Record<
+  TradeGoodType,
+  {
+    label: string;
+    subtitle: string;
+    accent: string;
+    bgTop: string;
+    bgBottom: string;
+    border: string;
+  }
+> = {
+  ...RESOURCE_META,
+  ...COMMODITY_META,
+};
+
+export const DISCIPLINE_META: Record<
+  ImprovementDiscipline,
+  {
+    label: string;
+    shortCode: string;
+    commodity: CommodityType;
+    perkTitle: string;
+    perkRule: string;
+    accent: string;
+    border: string;
+    bg: string;
+  }
+> = {
+  trade: {
+    label: "Trade",
+    shortCode: "T",
+    commodity: "cloth",
+    perkTitle: "Trading House",
+    perkRule: "Lv 3: Trade all commodities 2:1 with the bank",
+    accent: "#f59e0b",
+    border: "#fbbf24",
+    bg: "#2b1908",
+  },
+  politics: {
+    label: "Politics",
+    shortCode: "P",
+    commodity: "coin",
+    perkTitle: "Fortress",
+    perkRule: "Lv 3: Promote Strong Knights to Mighty Knights (Lv 3)",
+    accent: "#3b82f6",
+    border: "#60a5fa",
+    bg: "#122142",
+  },
+  science: {
+    label: "Science",
+    shortCode: "S",
+    commodity: "paper",
+    perkTitle: "Aqueduct",
+    perkRule: "Lv 3: Gain 1 free resource on non-7 zero-yield rolls",
+    accent: "#10b981",
+    border: "#34d399",
+    bg: "#092b22",
+  },
+};
+
+export function renderCommodityGlyphSvg(
+  commodity: CommodityType,
+  size = 14
+): string {
+  switch (commodity) {
+    case "paper":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5h7l2.5 2.5v8.5h-9.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.5 7h5M5.5 9.8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+    case "cloth":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5c2.2-1.4 4.4 1.4 6.6 0s4.4 0 4.4 0v7c-2.2 1.2-4.4-1.2-6.6 0s-4.4 0-4.4 0z" fill="currentColor" opacity="0.88"/></svg>`;
+    case "coin":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2.6" fill="currentColor"/></svg>`;
+  }
+}
+
+export function renderTradeGoodGlyphSvg(
+  good: TradeGoodType,
+  size = 14
+): string {
+  return isCommodityType(good)
+    ? renderCommodityGlyphSvg(good, size)
+    : renderResourceGlyphSvg(good, size);
+}
 
 function getPolygonPoints(
   centerX: number,
@@ -620,6 +755,57 @@ export function renderRollDiceButtonGraphicSvg(size = 34): string {
   `;
 }
 
+export function renderEventDieSvg(
+  eventFace: EventDieFace,
+  size = 28
+): string {
+  const glyph = (() => {
+    switch (eventFace) {
+      case "barbarian":
+        return `
+          <path d="M6,17.5 L22,17.5 L19,21.5 L9,21.5 Z" fill="#18191b" />
+          <line x1="14" y1="17.5" x2="14" y2="6" stroke="#18191b" stroke-width="1.8" />
+          <path d="M14.5,6.8 Q21,10.5 21,16 L14.5,16 Z" fill="#18191b" />
+          <path d="M13.5,8.5 Q8,11.5 8,16 L13.5,16 Z" fill="#3f3f46" />
+        `;
+      case "trade":
+        return `
+          <circle cx="14" cy="14" r="7.2" fill="#f59e0b" stroke="#78350f" stroke-width="1.4" />
+          <circle cx="14" cy="14" r="4.1" fill="#fef08a" />
+          <text x="14" y="16.8" text-anchor="middle" font-family="Sora, sans-serif" font-size="8.2" font-weight="700" fill="#78350f">T</text>
+        `;
+      case "politics":
+        return `
+          <path d="M7.5,20.5 V9.5 H10.2 V11.8 H12.8 V9.5 H15.2 V11.8 H17.8 V9.5 H20.5 V20.5 Z" fill="#2563eb" stroke="#1e3a8a" stroke-width="1.2" stroke-linejoin="round" />
+          <rect x="12.2" y="15.2" width="3.6" height="5.3" rx="1.4" fill="#dbeafe" />
+        `;
+      case "science":
+        return `
+          <circle cx="14" cy="14" r="7.2" fill="#10b981" stroke="#064e3b" stroke-width="1.3" />
+          <path d="M14,8.5 L18,18.5 M14,8.5 L10,18.5 M11.2,15.5 H16.8" fill="none" stroke="#ecfdf5" stroke-width="1.7" stroke-linecap="round" />
+        `;
+    }
+  })();
+
+  const borderStroke =
+    eventFace === "barbarian"
+      ? "#18191b"
+      : eventFace === "trade"
+        ? "#d97706"
+        : eventFace === "politics"
+          ? "#2563eb"
+          : "#059669";
+
+  return `
+    <svg width="${size}" height="${size}" viewBox="0 0 28 28" aria-hidden="true" class="catan-die-svg catan-event-die-svg">
+      <rect x="1" y="2.4" width="26" height="25" rx="6" fill="#27272a" opacity="0.62" />
+      <rect x="1" y="1" width="26" height="25" rx="6" fill="#fffbeb" stroke="${borderStroke}" stroke-width="1.7" />
+      <rect x="2.6" y="2.4" width="22.8" height="22.2" rx="4.6" fill="none" stroke="#ffffff" stroke-width="1.1" opacity="0.9" />
+      ${glyph}
+    </svg>
+  `;
+}
+
 export type ActionGraphicKind =
   | "road"
   | "ship"
@@ -631,6 +817,14 @@ export type ActionGraphicKind =
   | "maritime_trade"
   | "domestic_trade"
   | "knight"
+  | "knight_piece"
+  | "promote_knight"
+  | "activate_knight"
+  | "move_knight"
+  | "chase_robber"
+  | "city_upgrade"
+  | "metropolis"
+  | "progress_card"
   | "road_building"
   | "year_of_plenty"
   | "monopoly"
@@ -714,6 +908,49 @@ export function renderActionPieceIconSvg(
         <path d="M6,4 H18 V12 C18,17.5 12,21 12,21 C12,21 6,17.5 6,12 Z" fill="#dc2626" stroke="#fde68a" stroke-width="1.5"/>
         <path d="M12,4.5 V20.2 M6.5,11.5 H17.5" stroke="#fde68a" stroke-width="1.4"/>
       </svg>`;
+    case "knight_piece":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" fill="${dark}" stroke="#fde68a" stroke-width="1.5"/>
+        <path d="M8,8 H16 V13 C16,16.8 12,18.8 12,18.8 C12,18.8 8,16.8 8,13 Z" fill="${playerColor}" stroke="#ffffff" stroke-width="1.2"/>
+        <polygon points="12,4.5 14,7.5 10,7.5" fill="#fde047"/>
+      </svg>`;
+    case "promote_knight":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5,7 H17.5 V13 C17.5,17.5 12,20.5 12,20.5 C12,20.5 6.5,17.5 6.5,13 Z" fill="${playerColor}" stroke="#fde68a" stroke-width="1.4"/>
+        <path d="M8.5,11.5 L12,8 L15.5,11.5 M8.5,15 L12,11.5 L15.5,15" fill="none" stroke="#fde047" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    case "activate_knight":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.2" fill="rgba(250, 204, 21, 0.2)" stroke="#fde047" stroke-width="1.8"/>
+        <path d="M8,8 H16 V13 C16,16.8 12,18.8 12,18.8 C12,18.8 8,16.8 8,13 Z" fill="${playerColor}" stroke="#fde68a" stroke-width="1.3"/>
+      </svg>`;
+    case "move_knight":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5,7.5 H13.5 V12.5 C13.5,16.2 9,18.8 9,18.8 C9,18.8 4.5,16.2 4.5,12.5 Z" fill="${playerColor}" stroke="#fde68a" stroke-width="1.3"/>
+        <path d="M14.5,12 H21.5 M18.5,8.8 L21.8,12 L18.5,15.2" fill="none" stroke="#fde047" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    case "chase_robber":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="9.5" cy="8" r="3.4" fill="#27272a" stroke="#f8fafc" stroke-width="1.2"/>
+        <path d="M5,19 C5.6,12.5 7.5,11.5 9.5,11.5 C11.5,11.5 13.4,12.5 14,19 Z" fill="#18191b" stroke="#e2e8f0" stroke-width="1.2"/>
+        <path d="M14.5,10.5 H21.5 M18.5,7.5 L21.8,10.5 L18.5,13.5" fill="none" stroke="#f87171" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    case "city_upgrade":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3.5" y="4" width="17" height="16" rx="2.5" fill="#1e293b" stroke="#fbbf24" stroke-width="1.5"/>
+        <line x1="3.5" y1="9" x2="20.5" y2="9" stroke="#fbbf24" stroke-width="1.2"/>
+        <path d="M8.5,16 L12,11.5 L15.5,16" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    case "metropolis":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3,20 V10 L7,6 L12,2.5 L17,6 L21,10 V20 H15.5 V14 A3.5,3.5 0 0,0 8.5,14 V20 Z" fill="#f59e0b" stroke="#fef08a" stroke-width="1.4" stroke-linejoin="round"/>
+      </svg>`;
+    case "progress_card":
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4" y="2.5" width="16" height="19" rx="3" fill="#092b22" stroke="#34d399" stroke-width="1.5"/>
+        <circle cx="12" cy="12" r="4.2" fill="none" stroke="#fde047" stroke-width="1.5"/>
+        <circle cx="12" cy="12" r="1.6" fill="#fde047"/>
+      </svg>`;
     case "road_building":
       return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M3,18 Q9,8 14,12 T21,6" fill="none" stroke="#fde68a" stroke-width="4.5" stroke-linecap="round"/>
@@ -758,6 +995,19 @@ export function renderMiniResourceCardSvg(
   height = 36
 ): string {
   return renderResourceCardIllustrationSvg(resource)
+    .replace('width="76"', `width="${width}"`)
+    .replace('height="48"', `height="${height}"`);
+}
+
+export function renderMiniTradeGoodCardSvg(
+  good: TradeGoodType,
+  width = 56,
+  height = 36
+): string {
+  const baseSvg = isCommodityType(good)
+    ? renderCommodityCardIllustrationSvg(good)
+    : renderResourceCardIllustrationSvg(good);
+  return baseSvg
     .replace('width="76"', `width="${width}"`)
     .replace('height="48"', `height="${height}"`);
 }
@@ -862,6 +1112,11 @@ export function renderCatanBoardSvg(
     setupEdgeKind: "road" | "ship";
     robberOrPirateMode: "robber" | "pirate";
     selectedMoveFromEdgeId: string | null;
+    selectedMoveKnightFromVertexId?: string | null;
+    selectedChaseKnightVertexId?: string | null;
+    progressTargetHexIds?: readonly string[];
+    progressTargetVertexIds?: readonly string[];
+    progressTargetEdgeIds?: readonly string[];
     selectedSpot?: { kind: "edge" | "vertex" | "hex"; id: string } | null;
   }
 ): string {
@@ -1006,7 +1261,78 @@ export function renderCatanBoardSvg(
             .filter((m) => m.fromEdgeId === options.selectedMoveFromEdgeId)
             .forEach((m) => clickableEdges.add(m.toEdgeId));
         }
+      } else if (
+        state.config.enableCitiesAndKnights &&
+        options.buildMode === "knight"
+      ) {
+        getLegalBuildKnightVertices(state, actingPlayerId).forEach((v) =>
+          clickableVertices.add(v)
+        );
+      } else if (
+        state.config.enableCitiesAndKnights &&
+        options.buildMode === "promote_knight"
+      ) {
+        getLegalPromoteKnightVertices(state, actingPlayerId).forEach((v) =>
+          clickableVertices.add(v)
+        );
+      } else if (
+        state.config.enableCitiesAndKnights &&
+        options.buildMode === "activate_knight"
+      ) {
+        getLegalActivateKnightVertices(state, actingPlayerId).forEach((v) =>
+          clickableVertices.add(v)
+        );
+      } else if (
+        state.config.enableCitiesAndKnights &&
+        options.buildMode === "move_knight"
+      ) {
+        const moves = getLegalMoveKnightActions(state, actingPlayerId);
+        if (!options.selectedMoveKnightFromVertexId) {
+          moves.forEach((m) => clickableVertices.add(m.fromVertexId));
+        } else {
+          moves
+            .filter(
+              (m) => m.fromVertexId === options.selectedMoveKnightFromVertexId
+            )
+            .forEach((m) => clickableVertices.add(m.toVertexId));
+        }
+      } else if (
+        state.config.enableCitiesAndKnights &&
+        options.buildMode === "chase_robber"
+      ) {
+        const chases = getLegalChaseRobberActions(
+          state,
+          actingPlayerId,
+          getLegalRobberHexes(state, actingPlayerId),
+          state.config.enableSeafarers ? getLegalPirateHexes(state) : []
+        );
+        const distinctVertices = Array.from(
+          new Set(chases.map((c) => c.vertexId))
+        );
+        const chosenKnightVertex =
+          options.selectedChaseKnightVertexId ??
+          (distinctVertices.length === 1 ? distinctVertices[0]! : null);
+        if (!chosenKnightVertex) {
+          distinctVertices.forEach((v) => clickableVertices.add(v));
+        } else {
+          chases
+            .filter((c) => c.vertexId === chosenKnightVertex)
+            .forEach((c) => clickableHexes.add(c.hexId));
+        }
       }
+    } else if (
+      state.config.enableCitiesAndKnights &&
+      state.phase === "BARBARIAN_PILLAGE_SELECTION"
+    ) {
+      getPlayerVulnerableCities(state, actingPlayerId).forEach((v) =>
+        clickableVertices.add(v)
+      );
+    }
+
+    if (state.config.enableCitiesAndKnights) {
+      options.progressTargetHexIds?.forEach((h) => clickableHexes.add(h));
+      options.progressTargetVertexIds?.forEach((v) => clickableVertices.add(v));
+      options.progressTargetEdgeIds?.forEach((e) => clickableEdges.add(e));
     }
   }
 
@@ -1379,6 +1705,25 @@ export function renderCatanBoardSvg(
       `);
     }
 
+    // Cities & Knights Merchant Guild Cone (+1 VP & 2:1 trade on hex resource)
+    if (state.config.enableCitiesAndKnights && state.merchantHexId === hId) {
+      const merchantOwner = state.players.find(
+        (p) => p.id === state.merchantOwnerId
+      );
+      const mColor = merchantOwner?.color ?? "#f59e0b";
+      const mx = hNode.centerX + 24;
+      const my = hNode.centerY + 4;
+      parts.push(`
+        <g transform="translate(${mx}, ${my})" filter="url(#piece-shadow)">
+          <ellipse cx="0" cy="10.5" rx="9.5" ry="4" fill="#451a03" stroke="#fde047" stroke-width="1.3" />
+          <polygon points="-7.5,9.5 0,-11.5 7.5,9.5" fill="${mColor}" stroke="#fef08a" stroke-width="1.4" stroke-linejoin="round" />
+          <circle cx="0" cy="-12.5" r="3.4" fill="#fde047" stroke="#78350f" stroke-width="1" />
+          <rect x="-9" y="1" width="18" height="8.5" rx="3" fill="#18191b" stroke="#fbbf24" stroke-width="0.9" />
+          <text x="0" y="7" text-anchor="middle" font-family="Martian Mono, monospace" font-size="6.6" font-weight="700" fill="#fde047">2:1</text>
+        </g>
+      `);
+    }
+
     if (isClickable) {
       parts.push(
         `<circle class="pulse-highlight" cx="${hNode.centerX}" cy="${hNode.centerY}" r="27" fill="rgba(253, 224, 71, 0.22)" stroke="#fde047" stroke-width="2.6" />`
@@ -1626,9 +1971,69 @@ export function renderCatanBoardSvg(
             <rect x="-8.2" y="4.2" width="3.6" height="5.5" rx="1" fill="#18191b" opacity="0.78" />
           </g>
         `);
+
+        if (state.config.enableCitiesAndKnights && building.metropolis) {
+          const dMeta = DISCIPLINE_META[building.metropolis];
+          parts.push(`
+            <g transform="translate(${vx}, ${vy})">
+              <path d="M-16,10.5 V-9.5 L-9,-18 L0,-23 L9,-18 L16,-9.5 V10.5 H12.2 V-6.5 L0,-15.5 L-12.2,-6.5 V10.5 Z"
+                    fill="#f59e0b" stroke="#fef08a" stroke-width="1.35" stroke-linejoin="round" />
+              <circle cx="0" cy="-21.5" r="7.2" fill="${dMeta.bg}" stroke="${dMeta.border}" stroke-width="1.7" />
+              <text x="0" y="-18.7" text-anchor="middle" font-family="Sora, system-ui, sans-serif" font-size="8.4" font-weight="700" fill="#ffffff">${dMeta.shortCode}</text>
+            </g>
+          `);
+        }
       }
 
       parts.push(`</g>`);
+    }
+
+    if (state.config.enableCitiesAndKnights && state.knights[vId]) {
+      const knight = state.knights[vId]!;
+      const kOwner = state.players.find((p) => p.id === knight.ownerId);
+      const kColor = kOwner?.color ?? "#ffffff";
+      const kDark = shadeHexColor(kColor, -0.3);
+      const vx = vNode.x;
+      const vy = vNode.y;
+      const pipOffsets =
+        knight.level === 1
+          ? [0]
+          : knight.level === 2
+            ? [-3.5, 3.5]
+            : [-5.5, 0, 5.5];
+
+      parts.push(`
+        <g class="${
+          isClickable ? "clickable-target" : "spot-vertex-group"
+        } catan-knight-piece" data-vertex-id="${vId}" data-spot-vertex="${vId}" filter="url(#piece-shadow)" transform="translate(${vx}, ${vy})">
+          ${
+            knight.active
+              ? `<circle cx="0" cy="0" r="15.2" fill="rgba(250, 204, 21, 0.24)" stroke="#fde047" stroke-width="2.2" />`
+              : `<circle cx="0" cy="0" r="13.5" fill="rgba(15, 23, 42, 0.55)" stroke="#64748b" stroke-width="1.4" stroke-dasharray="3,2" />`
+          }
+          <circle cx="0" cy="1.2" r="11.5" fill="${kDark}" stroke="#18191b" stroke-width="1.7" />
+          <circle cx="0" cy="0" r="11.2" fill="${kColor}" stroke="${
+            knight.active ? "#fef08a" : "#cbd5e1"
+          }" stroke-width="1.6" />
+          <path d="M-5.8,-5.5 H5.8 V0.5 C5.8,5.2 0,8 0,8 C0,8 -5.8,5.2 -5.8,0.5 Z"
+                fill="${knight.active ? "#18191b" : "#334155"}" stroke="${
+                  knight.active ? "#fde047" : "#94a3b8"
+                }" stroke-width="1.2" />
+          ${pipOffsets
+            .map(
+              (px) =>
+                `<circle cx="${px}" cy="-1.2" r="1.55" fill="${
+                  knight.active ? "#fde047" : "#cbd5e1"
+                }" />`
+            )
+            .join("")}
+          ${
+            knight.active
+              ? `<polygon points="0,-14.8 3.2,-9.8 -3.2,-9.8" fill="#fde047" stroke="#78350f" stroke-width="0.9" />`
+              : ""
+          }
+        </g>
+      `);
     }
 
     const isSelectedVertex =
@@ -1797,6 +2202,90 @@ export function renderDevCardIllustrationSvg(devType: DevCardType): string {
 }
 
 /**
+ * Renders a framed scenic SVG vignette for a Cities & Knights Commodity Card.
+ */
+export function renderCommodityCardIllustrationSvg(
+  commodity: CommodityType
+): string {
+  switch (commodity) {
+    case "paper":
+      return `
+        <svg viewBox="0 0 80 52" width="76" height="48" aria-hidden="true">
+          <rect width="80" height="52" rx="6" fill="#022c22" />
+          <path d="M0,38 Q28,28 56,35 T80,32 L80,52 L0,52 Z" fill="#064e3b" />
+          <rect x="20" y="9" width="36" height="34" rx="3" fill="#fef3c7" stroke="#34d399" stroke-width="1.4" />
+          <line x1="27" y1="18" x2="49" y2="18" stroke="#065f46" stroke-width="2" stroke-linecap="round" />
+          <line x1="27" y1="25" x2="49" y2="25" stroke="#065f46" stroke-width="2" stroke-linecap="round" />
+          <line x1="27" y1="32" x2="42" y2="32" stroke="#065f46" stroke-width="2" stroke-linecap="round" />
+          <circle cx="52" cy="36" r="5" fill="#10b981" stroke="#ecfdf5" stroke-width="1.1" />
+        </svg>
+      `;
+    case "cloth":
+      return `
+        <svg viewBox="0 0 80 52" width="76" height="48" aria-hidden="true">
+          <rect width="80" height="52" rx="6" fill="#351505" />
+          <path d="M0,38 Q26,28 54,35 T80,32 L80,52 L0,52 Z" fill="#78350f" />
+          <path d="M16,15 C28,9 38,21 50,15 C56,12 62,14 64,16 V37 C54,41 44,30 32,36 C24,40 18,38 16,36 Z"
+                fill="#f59e0b" stroke="#fef08a" stroke-width="1.4" />
+          <path d="M22,22 C32,18 42,27 56,21" fill="none" stroke="#fffbeb" stroke-width="1.5" stroke-dasharray="3,2.5" />
+          <path d="M22,30 C32,26 42,35 56,29" fill="none" stroke="#78350f" stroke-width="1.5" />
+        </svg>
+      `;
+    case "coin":
+      return `
+        <svg viewBox="0 0 80 52" width="76" height="48" aria-hidden="true">
+          <rect width="80" height="52" rx="6" fill="#0f172a" />
+          <path d="M0,38 Q30,28 58,35 T80,33 L80,52 L0,52 Z" fill="#1e3a8a" />
+          <circle cx="31" cy="28" r="12" fill="#d97706" stroke="#fef08a" stroke-width="1.4" />
+          <circle cx="47" cy="23" r="13" fill="#facc15" stroke="#ffffff" stroke-width="1.5" />
+          <circle cx="47" cy="23" r="8.5" fill="none" stroke="#92400e" stroke-width="1.3" />
+          <polygon points="47,17.5 49,21.5 53,22 50,25 50.8,29 47,27 43.2,29 44,25 41,22 45,21.5" fill="#92400e" />
+        </svg>
+      `;
+  }
+}
+
+/**
+ * Renders a discipline-themed SVG vignette for a Cities & Knights Progress Card.
+ */
+export function renderProgressCardIllustrationSvg(
+  discipline: ImprovementDiscipline
+): string {
+  switch (discipline) {
+    case "trade":
+      return `
+        <svg viewBox="0 0 120 44" width="116" height="42" aria-hidden="true">
+          <rect width="120" height="44" rx="6" fill="#2b1908" />
+          <line x1="60" y1="7" x2="60" y2="36" stroke="#fbbf24" stroke-width="2.2" />
+          <line x1="36" y1="14" x2="84" y2="14" stroke="#fde68a" stroke-width="2" stroke-linecap="round" />
+          <circle cx="36" cy="26" r="6.5" fill="#f59e0b" stroke="#fef08a" stroke-width="1.2" />
+          <circle cx="84" cy="26" r="6.5" fill="#facc15" stroke="#fef08a" stroke-width="1.2" />
+          <rect x="49" y="34" width="22" height="3.5" rx="1.5" fill="#f59e0b" />
+        </svg>
+      `;
+    case "politics":
+      return `
+        <svg viewBox="0 0 120 44" width="116" height="42" aria-hidden="true">
+          <rect width="120" height="44" rx="6" fill="#122142" />
+          <line x1="36" y1="35" x2="84" y2="9" stroke="#93c5fd" stroke-width="2.2" stroke-linecap="round" />
+          <line x1="84" y1="35" x2="36" y2="9" stroke="#93c5fd" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M48,8 H72 V21 C72,30 60,36.5 60,36.5 C60,36.5 48,30 48,21 Z" fill="#2563eb" stroke="#bfdbfe" stroke-width="1.6" />
+          <polygon points="60,13 62.5,19 69,19.5 64,23.5 65.5,30 60,26.5 54.5,30 56,23.5 51,19.5 57.5,19" fill="#fde047" />
+        </svg>
+      `;
+    case "science":
+      return `
+        <svg viewBox="0 0 120 44" width="116" height="42" aria-hidden="true">
+          <rect width="120" height="44" rx="6" fill="#092b22" />
+          <circle cx="60" cy="22" r="13" fill="none" stroke="#34d399" stroke-width="1.8" stroke-dasharray="4,2.5" />
+          <path d="M60,9 L70,34 M60,9 L50,34 M53,26 H67" fill="none" stroke="#ecfdf5" stroke-width="2.2" stroke-linecap="round" />
+          <circle cx="60" cy="9" r="3" fill="#fde047" />
+        </svg>
+      `;
+  }
+}
+
+/**
  * Renders the visual tabletop Card Hand tray for the active/human player in Catan.
  */
 export function renderCatanVisualHandTray(
@@ -1806,6 +2295,176 @@ export function renderCatanVisualHandTray(
 ): string {
   const safeLimit = getPlayerSafeHandLimit(state, player.id);
   const totalRes = totalResourceCount(player.resources);
+
+  if (state.config.enableCitiesAndKnights) {
+    const totalComm = totalCommodityCount(player.commodities);
+    const totalHandCards = totalRes + totalComm;
+    const progressGroups = new Map<
+      ProgressCardType,
+      {
+        total: number;
+        discipline: ImprovementDiscipline;
+        playableCardId: string | null;
+      }
+    >();
+
+    for (const card of player.progressCards) {
+      const existing = progressGroups.get(card.type) ?? {
+        total: 0,
+        discipline: card.discipline,
+        playableCardId: null,
+      };
+      existing.total += 1;
+      if (!existing.playableCardId) {
+        const matchingLegal = legalActions.find(
+          (a) =>
+            a.type === "PLAY_PROGRESS_CARD" &&
+            (a.cardId === card.id ||
+              player.progressCards.find((pc) => pc.id === a.cardId)?.type ===
+                card.type)
+        );
+        if (matchingLegal && matchingLegal.type === "PLAY_PROGRESS_CARD") {
+          existing.playableCardId = matchingLegal.cardId;
+        }
+      }
+      progressGroups.set(card.type, existing);
+    }
+
+    return `
+      <div class="visual-hand-tray ck-hand-tray">
+        <div class="hand-tray-header">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+            <span class="player-dot" style="background: ${player.color}"></span>
+            <strong style="font-size: var(--t-small); font-weight: 500;">${player.name} hand</strong>
+            <span class="ga-chip ${totalHandCards > safeLimit ? "ga-chip--danger" : "ga-chip--ok"} ga-num">
+              ${totalHandCards}/${safeLimit} cards (${totalRes}R · ${totalComm}C)
+            </span>
+            <span class="ga-chip ga-num">
+              ${player.progressCards.length}/4 progress
+            </span>
+            ${
+              player.publicProgressVpCards.length > 0
+                ? `<span class="ga-chip ga-chip--warn ga-num">+${player.publicProgressVpCards.length} VP (${player.publicProgressVpCards.map((t) => PROGRESS_CARD_CATALOG[t].title).join(", ")})</span>`
+                : ""
+            }
+          </div>
+          <div class="muted">
+            Select a resource or commodity to trade, upgrade cities, or play a progress card
+          </div>
+        </div>
+
+        <div class="hand-cards-scroll">
+          <div class="hand-section-cards">
+            ${RESOURCES.map((res) => {
+              const count = player.resources[res];
+              const meta = RESOURCE_META[res];
+              const hasCards = count > 0;
+              const stackAttr =
+                count >= 3 ? 'data-stack="3"' : count === 2 ? 'data-stack="2"' : "";
+              return `
+                <div class="playing-card resource-playing-card ${
+                  hasCards ? "has-cards" : "empty-card"
+                }"
+                     data-hand-res-card="${res}" ${stackAttr}
+                     style="--card-top: ${meta.bgTop}; --card-bottom: ${
+                       meta.bgBottom
+                     }; --card-border: ${meta.border}; --card-accent: ${meta.accent};">
+                  <div class="playing-card-top">
+                    <span class="playing-card-glyph">${renderResourceGlyphSvg(res)}</span>
+                    <span class="playing-card-count ${hasCards ? "active" : ""}">×${count}</span>
+                  </div>
+                  <div class="playing-card-art">
+                    ${renderResourceCardIllustrationSvg(res)}
+                  </div>
+                  <div class="playing-card-footer">
+                    <div class="playing-card-title">${meta.label}</div>
+                    <div class="playing-card-sub">${meta.subtitle}</div>
+                  </div>
+                </div>
+              `;
+            }).join("")}
+            ${COMMODITIES.map((comm) => {
+              const count = player.commodities[comm];
+              const meta = COMMODITY_META[comm];
+              const hasCards = count > 0;
+              const stackAttr =
+                count >= 3 ? 'data-stack="3"' : count === 2 ? 'data-stack="2"' : "";
+              return `
+                <div class="playing-card resource-playing-card commodity-playing-card ${
+                  hasCards ? "has-cards" : "empty-card"
+                }"
+                     data-hand-res-card="${comm}" ${stackAttr}
+                     style="--card-top: ${meta.bgTop}; --card-bottom: ${
+                       meta.bgBottom
+                     }; --card-border: ${meta.border}; --card-accent: ${meta.accent};">
+                  <div class="playing-card-top">
+                    <span class="playing-card-glyph">${renderCommodityGlyphSvg(comm)}</span>
+                    <span class="playing-card-count ${hasCards ? "active" : ""}">×${count}</span>
+                  </div>
+                  <div class="playing-card-art">
+                    ${renderCommodityCardIllustrationSvg(comm)}
+                  </div>
+                  <div class="playing-card-footer">
+                    <div class="playing-card-title">${meta.label}</div>
+                    <div class="playing-card-sub">${meta.subtitle}</div>
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+
+          <div class="hand-divider"></div>
+
+          <div class="hand-section-cards">
+            ${
+              progressGroups.size === 0
+                ? `<div class="empty-dev-placeholder">
+                     <strong style="color: var(--ink); font-weight: 500;">No progress cards</strong>
+                     <span>Upgrade Trade, Politics, or Science to earn cards on rolls</span>
+                   </div>`
+                : Array.from(progressGroups.entries())
+                    .map(([cardType, info]) => {
+                      const cat = PROGRESS_CARD_CATALOG[cardType];
+                      const dMeta = DISCIPLINE_META[info.discipline];
+                      const canPlayThis = Boolean(info.playableCardId);
+                      return `
+                        <div class="playing-card dev-playing-card ${
+                          canPlayThis ? "playable-dev-card" : ""
+                        }"
+                             style="--card-border: ${dMeta.border}; --card-accent: ${dMeta.accent};">
+                          <div class="playing-card-top">
+                            <span class="ga-chip" style="height: 22px; padding: 0 8px;">${
+                              dMeta.label
+                            }</span>
+                            <span class="playing-card-count active">×${info.total}</span>
+                          </div>
+                          <div class="playing-card-art">
+                            ${renderProgressCardIllustrationSvg(info.discipline)}
+                          </div>
+                          <div class="dev-card-title">${cat.title}</div>
+                          <div class="dev-card-rule">${cat.description}</div>
+                          <div class="dev-card-action">
+                            ${
+                              canPlayThis
+                                ? `<button type="button" class="btn btn--primary btn--sm" data-play-progress-card="${info.playableCardId}" style="width: 100%;">Play ${cat.title.toLowerCase()}</button>`
+                                : `<span class="ga-chip" style="width: 100%; justify-content: center;">${
+                                    cat.phase === "PRE_ROLL"
+                                      ? "Play pre-roll"
+                                      : "Main phase"
+                                  }</span>`
+                            }
+                          </div>
+                        </div>
+                      `;
+                    })
+                    .join("")
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   const unplayedDevs = player.devCards.filter((c) => !c.played);
 
   const devGroups = new Map<
