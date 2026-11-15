@@ -1750,82 +1750,85 @@ describe("@gaming-platform/catan - 5–6 Player Extension for Seafarers & Cities
     expect(CatanEngine.checkInvariants(state).valid).toBe(true);
   });
 
-  test("Full-game 6-player bot simulations complete cleanly across Cities & Knights 5–6P and all Seafarers 5–6P scenarios", () => {
-    const scenarios = [
-      {
-        label: "cities_and_knights_5_6-6p",
-        config: { scenarioId: "cities_and_knights_5_6" as const },
+  const sixPlayerSimScenarios = [
+    {
+      label: "cities_and_knights_5_6-6p",
+      config: { scenarioId: "cities_and_knights_5_6" as const },
+    },
+    {
+      label: "seafarers_new_shores_5_6-6p",
+      config: {
+        scenarioId: "seafarers_new_shores_5_6" as const,
+        enableHarbormaster: true,
       },
-      {
-        label: "seafarers_new_shores_5_6-6p",
-        config: {
-          scenarioId: "seafarers_new_shores_5_6" as const,
-          enableHarbormaster: true,
-        },
+    },
+    {
+      label: "seafarers_six_islands_5_6-6p",
+      config: { scenarioId: "seafarers_six_islands_5_6" as const },
+    },
+    {
+      label: "seafarers_fog_islands_5_6-6p",
+      config: {
+        scenarioId: "seafarers_fog_islands_5_6" as const,
+        enableFriendlyRobber: true,
       },
-      {
-        label: "seafarers_six_islands_5_6-6p",
-        config: { scenarioId: "seafarers_six_islands_5_6" as const },
+    },
+    {
+      label: "seafarers_six_islands_ck_5_6-6p",
+      config: {
+        scenarioId: "seafarers_six_islands_5_6" as const,
+        enableCitiesAndKnights: true,
       },
-      {
-        label: "seafarers_fog_islands_5_6-6p",
-        config: {
-          scenarioId: "seafarers_fog_islands_5_6" as const,
-          enableFriendlyRobber: true,
-        },
-      },
-      {
-        label: "seafarers_six_islands_ck_5_6-6p",
-        config: {
-          scenarioId: "seafarers_six_islands_5_6" as const,
-          enableCitiesAndKnights: true,
-        },
-      },
-    ];
+    },
+  ];
 
-    const diffs = ["master", "smart", "normal", "master", "smart", "easy"] as const;
-    const players: PlayerDescriptor[] = Array.from({ length: 6 }, (_, i) => ({
-      id: `p${i + 1}`,
-      name: `Bot6P ${i + 1}`,
-      color: "",
-      isBot: true,
-      botDifficulty: diffs[i]!,
-    }));
+  const simDiffs = ["master", "smart", "normal", "master", "smart", "easy"] as const;
+  const simPlayers: PlayerDescriptor[] = Array.from({ length: 6 }, (_, i) => ({
+    id: `p${i + 1}`,
+    name: `Bot6P ${i + 1}`,
+    color: "",
+    isBot: true,
+    botDifficulty: simDiffs[i]!,
+  }));
 
-    for (const item of scenarios) {
-      const initial = CatanEngine.initGame(
-        players,
-        item.config,
-        `ext56-sim-${item.label}-2026`
-      );
-      let session = createMatchSessionState(CatanEngine, initial, true);
-      let steps = 0;
+  for (const item of sixPlayerSimScenarios) {
+    test(
+      `Full-game 6-player bot simulation completes cleanly: ${item.label}`,
+      () => {
+        const initial = CatanEngine.initGame(
+          simPlayers,
+          item.config,
+          `ext56-sim-${item.label}-2026`
+        );
+        let session = createMatchSessionState(CatanEngine, initial, true);
+        let steps = 0;
 
-      while (getSessionState(session).phase !== "GAME_OVER" && steps < 6000) {
-        const cur = getSessionState(session);
-        const actor = getNextActingPlayerId(cur);
-        expect(actor).not.toBeNull();
-        const act = CatanEngine.chooseBotAction(cur, actor!);
-        expect(act).not.toBeNull();
-        session = dispatchSessionActionPure(
-          CatanEngine,
-          session,
-          actor!,
-          act!,
-          steps
-        ).session;
-        steps++;
+        while (getSessionState(session).phase !== "GAME_OVER" && steps < 6000) {
+          const cur = getSessionState(session);
+          const actor = getNextActingPlayerId(cur);
+          expect(actor).not.toBeNull();
+          const act = CatanEngine.chooseBotAction(cur, actor!);
+          expect(act).not.toBeNull();
+          session = dispatchSessionActionPure(
+            CatanEngine,
+            session,
+            actor!,
+            act!,
+            steps
+          ).session;
+          steps++;
+        }
+
+        const final = getSessionState(session);
+        expect(final.phase).toBe("GAME_OVER");
+        expect(final.winnerId).not.toBeNull();
+        expect(
+          computePlayerVictoryPoints(final, final.winnerId!, false)
+        ).toBeGreaterThanOrEqual(final.config.targetVictoryPoints);
+        expect(CatanEngine.checkInvariants(final).valid).toBe(true);
       }
-
-      const final = getSessionState(session);
-      expect(final.phase).toBe("GAME_OVER");
-      expect(final.winnerId).not.toBeNull();
-      expect(
-        computePlayerVictoryPoints(final, final.winnerId!, false)
-      ).toBeGreaterThanOrEqual(final.config.targetVictoryPoints);
-      expect(CatanEngine.checkInvariants(final).valid).toBe(true);
-    }
-  });
+    );
+  }
 });
 
 function grantCardFromDeckForTest(
