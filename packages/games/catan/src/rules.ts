@@ -84,6 +84,7 @@ export const PLAYER_COLORS = [
   "#10b981", // Green (or White/Emerald for visibility)
   "#8b5cf6", // Purple / Brown-5P
   "#ec4899", // Rose / 6P
+  "#06b6d4", // Cyan / 7P
 ];
 
 export function emptyResources(): ResourceMap {

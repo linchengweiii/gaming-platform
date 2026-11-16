@@ -24,6 +24,8 @@ export interface SplendorCard {
   bonus: GemColor;
   points: number;
   cost: GemMap;
+  reservedFromDeck?: boolean;
+  redacted?: boolean;
 }
 
 export interface SplendorNoble {

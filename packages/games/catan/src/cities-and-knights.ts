@@ -1515,8 +1515,8 @@ export function getLegalProgressCardActions(
           );
         });
         if (swappableHexes.length < 2) return [];
-        return swappableHexes.slice(0, 8).flatMap((h1, idx) =>
-          swappableHexes.slice(idx + 1, 10).map((h2) => ({
+        return swappableHexes.flatMap((h1, idx) =>
+          swappableHexes.slice(idx + 1).map((h2) => ({
             type: "PLAY_PROGRESS_CARD" as const,
             cardId: card.id,
             params: { hexId1: h1, hexId2: h2 },
@@ -1568,7 +1568,7 @@ export function getLegalProgressCardActions(
         });
         return opponentsWithKnights.flatMap((opp) =>
           ownSpots.length > 0
-            ? ownSpots.slice(0, 4).map((placeVertexId) => ({
+            ? ownSpots.map((placeVertexId) => ({
                 type: "PLAY_PROGRESS_CARD" as const,
                 cardId: card.id,
                 params: { targetPlayerId: opp.id, placeVertexId },
@@ -1586,17 +1586,24 @@ export function getLegalProgressCardActions(
       case "diplomat": {
         const openEdges = getDiplomatRemovableRoadEdges(state);
         if (openEdges.length === 0) return [];
-        const ownRebuilds = getLegalRoadEdgesFn(state, player.id).slice(0, 4);
-        return openEdges.slice(0, 8).flatMap((edgeId) => {
+        const ownRebuilds = getLegalRoadEdgesFn(state, player.id);
+        return openEdges.flatMap((edgeId) => {
           const isOwn = state.edges[edgeId]?.ownerId === player.id;
           if (isOwn && ownRebuilds.length > 0) {
-            return ownRebuilds
-              .filter((rId) => rId !== edgeId)
-              .map((rebuildEdgeId) => ({
+            return [
+              {
                 type: "PLAY_PROGRESS_CARD" as const,
                 cardId: card.id,
-                params: { edgeId, rebuildEdgeId },
-              }));
+                params: { edgeId },
+              },
+              ...ownRebuilds
+                .filter((rId) => rId !== edgeId)
+                .map((rebuildEdgeId) => ({
+                  type: "PLAY_PROGRESS_CARD" as const,
+                  cardId: card.id,
+                  params: { edgeId, rebuildEdgeId },
+                })),
+            ];
           }
           return [
             {

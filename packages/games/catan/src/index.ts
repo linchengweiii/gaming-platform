@@ -89,7 +89,10 @@ function redactPlayerForViewer(
   return {
     ...player,
     hiddenResourceCount: getPlayerResourceCount(player),
-    hiddenProgressCardCount: player.progressCards.length,
+    hiddenProgressCardCount:
+      typeof player.hiddenProgressCardCount === "number"
+        ? player.hiddenProgressCardCount
+        : player.progressCards.length,
     handRedacted: true,
     resources: emptyResources(),
     commodities: emptyCommodities(),
@@ -109,6 +112,7 @@ export function getCatanPlayerViewPure(
   }
   return {
     ...state,
+    rngState: 0,
     devCardDeck: state.devCardDeck.map(() => "knight"),
     progressDecks: {
       trade: state.progressDecks.trade.map(() => "merchant"),
@@ -144,7 +148,7 @@ export const CatanEngine: GameEngine<
     id: "catan",
     name: "Settlers of Catan",
     description:
-      "Trade, build, and settle the island of Catan! Includes Base Game, 5–6 Player Extension, Seafarers Expansion, Harbormaster, and City Walls.",
+      "Trade, build, and settle the island of Catan! Includes Base Game, 5–6 Player Extension, Cities & Knights Expansion, Seafarers Expansion, Harbormaster, and City Walls.",
     minPlayers: 2,
     maxPlayers: 6,
     supportsBots: true,
@@ -174,7 +178,7 @@ export const CatanEngine: GameEngine<
   getWinner: (state: CatanState): string | null => state.winnerId,
 
   chooseBotAction: (state: CatanState, playerId: string): CatanAction | null =>
-    chooseCatanBotAction(state, playerId),
+    chooseCatanBotAction(getCatanPlayerViewPure(state, playerId), playerId),
 
   checkInvariants: (state: CatanState) => checkCatanInvariants(state),
 

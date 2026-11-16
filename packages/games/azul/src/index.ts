@@ -17,6 +17,15 @@ export function getAzulActingPlayerId(state: AzulState): string | null {
   return state.players[state.activePlayerIndex]?.id ?? null;
 }
 
+export function getAzulPlayerView(state: AzulState): AzulState {
+  if (state.phase === "GAME_OVER") return state;
+  return {
+    ...state,
+    bag: [...state.bag].sort(),
+    rngState: 0,
+  };
+}
+
 export const AzulEngine: GameEngine<
   AzulState,
   AzulConfig,
@@ -55,7 +64,7 @@ export const AzulEngine: GameEngine<
   },
 
   getPlayerView(state: AzulState): AzulState {
-    return state;
+    return getAzulPlayerView(state);
   },
 
   getWinner(state: AzulState): string | null {
@@ -76,6 +85,7 @@ export const AzulEngine: GameEngine<
     nextState: AzulState
   ): boolean {
     if (nextState.phase === "GAME_OVER") return false;
+    if (prevState.turn !== nextState.turn) return false;
     return (
       prevState.rngState === nextState.rngState &&
       prevState.bag.length === nextState.bag.length

@@ -19,6 +19,7 @@ import {
   totalCommodityCount,
 } from "./cities-and-knights.ts";
 import {
+  applyCatanAction,
   computePlayerVictoryPoints,
   emptyResources,
   getCatanLegalActions,
@@ -437,6 +438,170 @@ function grantsNewIslandBonusVp(
 }
 
 /**
+ * Redacts hidden deck order, fog pool, RNG seed, and opponent hands so direct calls
+ * to `chooseCatanBotAction` are 100% fair even if the caller passes an unredacted state.
+ */
+function redactStateForBotPlayerPure(
+  state: CatanState,
+  viewerPlayerId: string
+): CatanState {
+  if (state.phase === "GAME_OVER") return state;
+  return {
+    ...state,
+    rngState: 0,
+    devCardDeck: state.devCardDeck.map(() => "knight"),
+    progressDecks: {
+      trade: state.progressDecks.trade.map(() => "merchant"),
+      politics: state.progressDecks.politics.map(() => "spy"),
+      science: state.progressDecks.science.map(() => "mining"),
+    },
+    fogPool: state.fogPool.map(() => ({
+      terrain: "fog",
+      numberToken: null,
+    })),
+    players: state.players.map((p) => {
+      if (p.id === viewerPlayerId) return p;
+      return {
+        ...p,
+        hiddenResourceCount: getPlayerResourceCount(p),
+        hiddenProgressCardCount:
+          typeof p.hiddenProgressCardCount === "number"
+            ? p.hiddenProgressCardCount
+            : p.progressCards.length,
+        handRedacted: true,
+        resources: emptyResources(),
+        commodities: emptyCommodities(),
+        progressCards: [],
+        devCards: p.devCards.map((c) =>
+          c.played ? c : { ...c, type: "knight" }
+        ),
+      };
+    }),
+    eventLog: state.eventLog.map((evt) => {
+      if (evt.type === "CARDS_DISCARDED" && evt.playerId !== viewerPlayerId) {
+        const { payload: _hidden, ...rest } = evt;
+        return rest;
+      }
+      return evt;
+    }),
+  };
+}
+
+function getOpponentProgressCardCountFair(opp: CatanPlayerState): number {
+  return typeof opp.hiddenProgressCardCount === "number"
+    ? opp.hiddenProgressCardCount
+    : opp.progressCards.length;
+}
+
+function getVertexResourcePipScore(
+  state: CatanState,
+  vertexId: string,
+  isCity: boolean
+): number {
+  const vNode = state.topology.vertices[vertexId];
+  if (!vNode) return 0;
+  let score = 0;
+  for (const hId of vNode.adjacentHexIds) {
+    const h = state.hexes[hId];
+    if (!h || !h.numberToken) continue;
+    const pips = NUMBER_TOKEN_PIPS[h.numberToken] ?? 0;
+    const res = TERRAIN_TO_RESOURCE[h.terrain];
+    const comm = TERRAIN_TO_COMMODITY[h.terrain];
+    if (h.terrain === "gold") {
+      score += pips * (isCity ? 3.2 : 1.7);
+    } else if (res) {
+      const mult = res === "ore" || res === "grain" ? 1.24 : 1.0;
+      score += pips * mult * (isCity ? 2.0 : 1.0);
+    }
+    if (state.config.enableCitiesAndKnights && isCity && comm) {
+      if (comm === "paper") score += pips * 1.42;
+      else if (comm === "coin") score += pips * 1.12;
+      else if (comm === "cloth") score += pips * 1.08;
+    }
+  }
+  return score;
+}
+
+/**
+ * Shortest sea-edge hop distance from `startEdgeId` to any open vertex on an unsettled
+ * foreign island (`islandId >= 2` or `fog`) respecting the distance rule.
+ */
+function seaHopsToForeignIsland(
+  state: CatanState,
+  playerId: string,
+  startEdgeId: string
+): number {
+  const me = state.players.find((p) => p.id === playerId);
+  if (!me) return 99;
+  const homeIds = me.homeIslandIds.length > 0 ? me.homeIslandIds : [1];
+  const homeMap: Record<number, true> = {};
+  for (const id of homeIds) homeMap[id] = true;
+
+  const isTargetVertex = (vId: string): boolean => {
+    if (state.buildings[vId]) return false;
+    const v = state.topology.vertices[vId];
+    if (!v) return false;
+    if (v.adjacentVertexIds.some((adj) => Boolean(state.buildings[adj]))) {
+      return false;
+    }
+    return v.adjacentHexIds.some((hId) => {
+      const h = state.hexes[hId];
+      if (!h) return false;
+      if (h.terrain === "fog") return true;
+      return (
+        h.islandId >= 2 &&
+        !homeMap[h.islandId] &&
+        !me.settledIslandIds.includes(h.islandId)
+      );
+    });
+  };
+
+  const e0 = state.topology.edges[startEdgeId];
+  if (!e0) return 99;
+  if (isTargetVertex(e0.v1) || isTargetVertex(e0.v2)) return 0;
+
+  const visitedVerts: Record<string, true> = {
+    [e0.v1]: true,
+    [e0.v2]: true,
+  };
+  const queue: Array<{ vId: string; dist: number }> = [
+    { vId: e0.v1, dist: 0 },
+    { vId: e0.v2, dist: 0 },
+  ];
+
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head]!;
+    head += 1;
+    if (cur.dist >= 7) continue;
+    const v = state.topology.vertices[cur.vId];
+    if (!v) continue;
+    const b = state.buildings[cur.vId];
+    if (b && b.ownerId !== playerId) continue;
+
+    for (const nextEdgeId of v.incidentEdgeIds) {
+      const edgeOwner = state.edges[nextEdgeId]?.ownerId;
+      if (edgeOwner && edgeOwner !== playerId) continue;
+      const ne = state.topology.edges[nextEdgeId];
+      if (!ne) continue;
+      const isWater = ne.adjacentHexIds.some((hId) => {
+        const t = state.hexes[hId]?.terrain;
+        return t === "sea" || t === "fog";
+      });
+      if (!isWater && edgeOwner !== playerId) continue;
+      const nextV = ne.v1 === cur.vId ? ne.v2 : ne.v1;
+      if (visitedVerts[nextV]) continue;
+      const stepCost = edgeOwner === playerId ? 0 : 1;
+      const nd = cur.dist + stepCost;
+      if (isTargetVertex(nextV)) return nd;
+      visitedVerts[nextV] = true;
+      queue.push({ vId: nextV, dist: nd });
+    }
+  }
+  return 99;
+}
+
+/**
  * Computes `playerId`'s Longest Road / Trade Route if `addedEdge` is placed (and optional `removedEdgeId` removed).
  */
 function simulateRouteLengthWithEdge(
@@ -602,7 +767,9 @@ export function evaluateVertexScore(
             ? 1.17
             : res === "brick" || res === "lumber"
               ? 1.05
-              : 0.94;
+              : state.config.enableCitiesAndKnights
+                ? 1.08
+                : 0.94;
       const scarcityBoost =
         1 + (boardScarcity[res] - 1) * (weights.setupScarcityWeight * 0.4);
 
@@ -958,6 +1125,42 @@ function evaluateHandStrategicValue(
       }
     } else if (devDef === 1) {
       devFirstScore = weights.devCardPriority * 0.11;
+    }
+  } else if (state.config.enableCitiesAndKnights) {
+    const vulnCities = getPlayerVulnerableCities(state, player.id).length;
+    const totalDef = getTotalActiveKnightStrength(state);
+    const barbStr = getBarbarianStrength(state);
+    const myActStr = getPlayerActiveKnightStrength(state, player.id);
+    const inactiveKnights = Object.values(state.knights).filter(
+      (k) => k.ownerId === player.id && !k.active
+    ).length;
+    const urgentDefense =
+      vulnCities > 0 &&
+      totalDef < barbStr &&
+      (state.barbarianPosition >= 3 || myActStr === 0);
+    const knightAndActivateCost: Partial<ResourceMap> = {
+      wool: 1,
+      ore: 1,
+      grain: 1,
+    };
+    const knightCostOnly: Partial<ResourceMap> = { wool: 1, ore: 1 };
+    const fullDef = countResourceDeficit(hand, knightAndActivateCost);
+    const recDef = countResourceDeficit(hand, knightCostOnly);
+    const urgMult = urgentDefense
+      ? state.barbarianPosition >= 5
+        ? 1.85
+        : 1.45
+      : 0.85;
+
+    if (inactiveKnights > 0 && hand.grain >= 1) {
+      devFirstScore = Math.max(devFirstScore, 14 * urgMult);
+    }
+    if (fullDef === 0) {
+      devFirstScore = Math.max(devFirstScore, 20 * urgMult);
+    } else if (recDef === 0) {
+      devFirstScore = Math.max(devFirstScore, 13.5 * urgMult);
+    } else if (fullDef === 1 && urgentDefense) {
+      devFirstScore = Math.max(devFirstScore, 8.5 * urgMult);
     }
   }
   val += Math.max(cityOnlyScore, devFirstScore);
@@ -1556,6 +1759,25 @@ function shouldBotAcceptDomesticTrade(
       }
     }
 
+    if (state.config.enableCitiesAndKnights) {
+      const vulnCities = getPlayerVulnerableCities(state, responder.id).length;
+      if (
+        vulnCities > 0 &&
+        getTotalActiveKnightStrength(state) < getBarbarianStrength(state)
+      ) {
+        const knightGoal: Partial<ResourceMap> = {
+          wool: 1,
+          ore: 1,
+          grain: 1,
+        };
+        const defBefore = countResourceDeficit(responder.resources, knightGoal);
+        const defAfter = countResourceDeficit(myAfterHand, knightGoal);
+        if (defBefore <= 1 && defAfter > defBefore) {
+          return false;
+        }
+      }
+    }
+
     if (diff === "master" && giveTotalReceivedByMe <= wantTotalGivenByMe) {
       // On 1:1 (or worse) off-turn swaps, proposer gets immediate active-turn tempo;
       // Master only accepts if the received card concretely reduces deficit on a real build or completes a 2:1 port pair!
@@ -1569,6 +1791,9 @@ function shouldBotAcceptDomesticTrade(
       }
       if (state.devCardDeck.length > 0) {
         activeGoals.push(BUILDING_COSTS.devCard);
+      }
+      if (state.config.enableCitiesAndKnights) {
+        activeGoals.push({ wool: 1, ore: 1, grain: 1 });
       }
       if (openSettleNow.length === 0 && responder.roadsRemaining > 0) {
         activeGoals.push(BUILDING_COSTS.road);
@@ -1814,6 +2039,25 @@ function findStrategicDomesticTradeOffer(
       priority: weights.devCardPriority,
     });
   }
+  const ckUndefendedCity =
+    state.config.enableCitiesAndKnights &&
+    getPlayerVulnerableCities(state, player.id).length > 0 &&
+    getTotalActiveKnightStrength(state) < getBarbarianStrength(state);
+  if (state.config.enableCitiesAndKnights && diff !== "normal") {
+    const hasInactiveKnight = Object.values(state.knights).some(
+      (k) => k.ownerId === player.id && !k.active
+    );
+    if (hasInactiveKnight && player.resources.grain === 0) {
+      candidateTargets.push({
+        cost: { grain: 1 },
+        priority: ckUndefendedCity ? weights.cityPriority + 18 : weights.devCardPriority + 6,
+      });
+    }
+    candidateTargets.push({
+      cost: ckUndefendedCity ? { wool: 1, ore: 1, grain: 1 } : { wool: 1, ore: 1 },
+      priority: ckUndefendedCity ? weights.cityPriority + 14 : weights.devCardPriority + 4,
+    });
+  }
   if (
     diff === "master" &&
     player.settlementsRemaining > 0 &&
@@ -1918,11 +2162,22 @@ function findStrategicDomesticTradeOffer(
       wantRes = arbPortRes;
     }
 
-    const spareResources = RESOURCES.filter(
-      (r) =>
-        r !== wantRes &&
-        player.resources[r] - (target.cost[r] ?? 0) - reservedForPort[r] >= 1
-    ).sort((a, b) => {
+    const spareResources = RESOURCES.filter((r) => {
+      if (r === wantRes) return false;
+      const keepForDefense =
+        ckUndefendedCity &&
+        (r === "wool" || r === "ore" || r === "grain") &&
+        (target.cost[r] ?? 0) === 0
+          ? 1
+          : 0;
+      return (
+        player.resources[r] -
+          (target.cost[r] ?? 0) -
+          reservedForPort[r] -
+          keepForDefense >=
+        1
+      );
+    }).sort((a, b) => {
       const spareA =
         player.resources[a] - (target.cost[a] ?? 0) - reservedForPort[a];
       const spareB =
@@ -2132,16 +2387,102 @@ function scoreExpansionEdge(
   }
 
   if (kind === "ship") {
+    let directShipBonus = 0;
     for (const hId of eNode.adjacentHexIds) {
       const tile = state.hexes[hId];
       if (!tile) continue;
-      if (tile.terrain === "fog") score += diff === "master" ? 24 : 16;
+      if (tile.terrain === "fog") directShipBonus += diff === "master" ? 24 : 16;
+      if (tile.terrain === "gold") directShipBonus += diff === "master" ? 15 : 10;
       if (
         tile.islandId > 0 &&
         !player.homeIslandIds.includes(tile.islandId) &&
         !player.settledIslandIds.includes(tile.islandId)
       ) {
-        score += diff === "master" ? 20 : 12;
+        directShipBonus += diff === "master" ? 22 : 14;
+      }
+    }
+    score += directShipBonus;
+
+    // 4-hop sea BFS so coastal ships on home islands sail toward +2 VP foreign islands, gold, and fog!
+    if (diff !== "easy") {
+      const visitedEdges = new Set<string>([edgeId]);
+      let frontier: string[] = [edgeId];
+      let bestDistantSeaBonus = 0;
+
+      for (let hop = 1; hop <= 4 && frontier.length > 0; hop++) {
+        const nextFrontier: string[] = [];
+        for (const curEId of frontier) {
+          const curEdge = state.topology.edges[curEId];
+          if (!curEdge) continue;
+          for (const vId of [curEdge.v1, curEdge.v2]) {
+            const b = state.buildings[vId];
+            if (b && b.ownerId !== playerId) continue;
+            const vNode = state.topology.vertices[vId];
+            if (!vNode) continue;
+
+            for (const nextEId of vNode.incidentEdgeIds) {
+              if (visitedEdges.has(nextEId)) continue;
+              const existingEdge = state.edges[nextEId];
+              if (existingEdge && existingEdge.ownerId !== playerId) continue;
+              const nextEdge = state.topology.edges[nextEId];
+              if (!nextEdge) continue;
+              const canSail = nextEdge.adjacentHexIds.some((hId) => {
+                const t = state.hexes[hId]?.terrain;
+                return t === "sea" || t === "fog";
+              });
+              if (!canSail) continue;
+              visitedEdges.add(nextEId);
+              nextFrontier.push(nextEId);
+
+              let hopTargetVal = 0;
+              for (const hId of nextEdge.adjacentHexIds) {
+                const tile = state.hexes[hId];
+                if (!tile) continue;
+                if (tile.terrain === "fog") {
+                  hopTargetVal = Math.max(
+                    hopTargetVal,
+                    diff === "master" ? 22 : 15
+                  );
+                }
+                if (
+                  tile.islandId > 0 &&
+                  !player.homeIslandIds.includes(tile.islandId) &&
+                  !player.settledIslandIds.includes(tile.islandId)
+                ) {
+                  const pips = tile.numberToken
+                    ? NUMBER_TOKEN_PIPS[tile.numberToken] ?? 0
+                    : 0;
+                  const goldBoost = tile.terrain === "gold" ? 8 : 0;
+                  hopTargetVal = Math.max(
+                    hopTargetVal,
+                    (diff === "master" ? 24 : 16) + pips * 1.4 + goldBoost
+                  );
+                }
+              }
+              if (hopTargetVal > 0) {
+                bestDistantSeaBonus = Math.max(
+                  bestDistantSeaBonus,
+                  hopTargetVal / (hop * 0.75 + 0.45)
+                );
+              }
+            }
+          }
+        }
+        frontier = nextFrontier;
+      }
+
+      score += bestDistantSeaBonus;
+
+      if (
+        state.phase.startsWith("SETUP_ROAD_") &&
+        (directShipBonus > 0 || bestDistantSeaBonus > 0)
+      ) {
+        const alreadyHasShip = Object.values(state.edges).some(
+          (r) => r.ownerId === playerId && r.type === "ship"
+        );
+        if (!alreadyHasShip) {
+          score += diff === "master" ? 9.5 : 6.5;
+        }
       }
     }
   }
@@ -2378,6 +2719,60 @@ function findImmediateWinningAction(
     }
   }
 
+  // 4e. Exact 1-step & 2-step deterministic lethal check via `applyCatanAction`
+  //     (catches Port -> Commodity -> Metropolis +2 VP, Medicine City +2 VP, and MOVE_SHIP -> Foreign Island +3 VP!)
+  for (const act of legalActions) {
+    if (
+      act.type === "END_TURN" ||
+      act.type === "OFFER_DOMESTIC_TRADE" ||
+      act.type === "MARITIME_TRADE" ||
+      act.type === "BUY_DEV_CARD"
+    ) {
+      continue;
+    }
+    try {
+      const sim = applyCatanAction(state, player.id, act);
+      if (computePlayerVictoryPoints(sim.state, player.id, false) >= targetVp) {
+        return act;
+      }
+    } catch {
+      // Ignore actions whose simulation requires unredacted hidden deck draws
+    }
+  }
+
+  if (currentVp >= targetVp - 3) {
+    const setupCandidates = legalActions.filter(
+      (a) => a.type === "MARITIME_TRADE" || a.type === "MOVE_SHIP"
+    );
+    for (const step1 of setupCandidates) {
+      try {
+        const sim1 = applyCatanAction(state, player.id, step1);
+        const nextLegals = getCatanLegalActions(sim1.state, player.id);
+        for (const step2 of nextLegals) {
+          if (
+            step2.type === "BUILD_SETTLEMENT" ||
+            step2.type === "BUILD_CITY" ||
+            step2.type === "UPGRADE_CITY_IMPROVEMENT"
+          ) {
+            try {
+              const sim2 = applyCatanAction(sim1.state, player.id, step2);
+              if (
+                computePlayerVictoryPoints(sim2.state, player.id, false) >=
+                targetVp
+              ) {
+                return step1;
+              }
+            } catch {
+              // Ignore
+            }
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    }
+  }
+
   return null;
 }
 
@@ -2472,7 +2867,14 @@ function chooseMasterFirstSettlementWithSnakeRollout(
           return oppPick.vId
             ? {
                 ...curBuildings,
-                [oppPick.vId]: { ownerId: step.oppId, type: "settlement" },
+                [oppPick.vId]: {
+                  ownerId: step.oppId,
+                  type:
+                    state.config.enableCitiesAndKnights &&
+                    step.phase === "SETUP_SETTLEMENT_2"
+                      ? "city"
+                      : "settlement",
+                },
               }
             : curBuildings;
         },
@@ -2519,17 +2921,26 @@ function chooseMasterFirstSettlementWithSnakeRollout(
                 ),
               emptyResources()
             );
-            return (
+             return (
               (pairPips.ore >= 4 && pairPips.grain >= 4 ? 3.2 : 0) +
               (pairPips.brick >= 4 && pairPips.lumber >= 4 && pairPips.grain >= 3
                 ? 2.2
                 : 0) -
-              (pairPips.ore >= 4 && pairPips.grain === 0 ? 4.0 : 0)
+              (pairPips.ore >= 4 && pairPips.grain === 0 ? 4.0 : 0) -
+              (state.config.enableCitiesAndKnights && pairPips.wool === 0
+                ? 6.5
+                : 0) -
+              (state.config.enableCitiesAndKnights && pairPips.ore === 0
+                ? 5.5
+                : 0)
             );
           })()
         : 0;
 
-      const combined = cand.s1 * 0.56 + secondPick.score * 0.58 + empireSynergy;
+      const s1Weight = state.config.enableCitiesAndKnights ? 0.46 : 0.56;
+      const s2Weight = state.config.enableCitiesAndKnights ? 0.68 : 0.58;
+      const combined =
+        cand.s1 * s1Weight + secondPick.score * s2Weight + empireSynergy;
       return combined > best.bestCombined
         ? { act: cand.act, bestCombined: combined }
         : best;
@@ -2575,6 +2986,23 @@ function chooseCkProgressSelectionAction(
       a.type === "SELECT_PROGRESS_DECK"
   );
   if (deckPicks.length > 0) {
+    if ((player.botDifficulty ?? "smart") === "master") {
+      const sci = deckPicks.find((d) => d.discipline === "science");
+      if (
+        sci &&
+        state.progressDecks.science.length > 0 &&
+        player.cityImprovements.science < 4
+      ) {
+        return sci;
+      }
+      const oppTotalCards = state.players
+        .filter((p) => p.id !== player.id)
+        .reduce((acc, o) => acc + getPlayerResourceCount(o), 0);
+      const trd = deckPicks.find((d) => d.discipline === "trade");
+      if (trd && oppTotalCards >= 10) return trd;
+      const pol = deckPicks.find((d) => d.discipline === "politics");
+      return sci ?? trd ?? pol ?? deckPicks[0]!;
+    }
     const prefOrder: ImprovementDiscipline[] = ["science", "trade", "politics"];
     for (const d of prefOrder) {
       const match = deckPicks.find((a) => a.discipline === d);
@@ -2842,7 +3270,16 @@ function chooseCkPriorityMainAction(
     myActiveStr <= maxOppActiveStr &&
     myActiveStr + 2 > maxOppActiveStr;
 
-  if (cityInDanger && (stepsLeft <= 4 || difficulty === "master")) {
+  const metroSavesOnlyCity =
+    difficulty === "master" &&
+    myVulnCities.length === 1 &&
+    upgradeActs.some((a) => Boolean(a.metropolisVertexId));
+
+  if (
+    cityInDanger &&
+    !metroSavesOnlyCity &&
+    (stepsLeft <= 4 || difficulty === "master")
+  ) {
     if (activateKnightActs.length > 0) {
       // Activate highest-level inactive knight first!
       return [...activateKnightActs].sort(
@@ -2872,11 +3309,56 @@ function chooseCkPriorityMainAction(
     )[0]!;
   }
 
+  const opponents = state.players.filter((p) => p.id !== playerId);
+
   // 4. City Improvements & Metropolis Race!
   if (upgradeActs.length > 0) {
     const scoredUpgrades = upgradeActs
       .map((act) => {
         const check = canPlayerUpgradeDiscipline(state, player, act.discipline);
+        if (difficulty === "master") {
+          const d = act.discipline;
+          const nextLv = check.nextLevel;
+          let score = 32;
+          if (d === "science" && nextLv === 3) score += 44; // Aqueduct rush!
+          else if (d === "science") score += 14;
+          else if (d === "trade" && nextLv === 3) score += 20; // 2:1 all commodities!
+
+          const maxOppLv = Math.max(
+            0,
+            ...opponents.map((o) => o.cityImprovements[d])
+          );
+          const metro = state.metropolises[d];
+          if (nextLv >= 4) {
+            if (!metro.ownerId) {
+              score += 55 + (maxOppLv >= 3 ? 20 : 0);
+            } else if (metro.ownerId !== playerId && nextLv > metro.level) {
+              score += 78; // 4-VP swing stealing opponent's Metropolis!
+            } else if (
+              metro.ownerId === playerId &&
+              nextLv === 5 &&
+              maxOppLv >= 4
+            ) {
+              score += 38; // Lock Lv 5 Metropolis against steals!
+            }
+          } else if (nextLv === 3 && !metro.ownerId && maxOppLv >= 3) {
+            score += 12;
+          }
+          if (player.activeTurnDiscounts.crane) score += 14;
+
+          // Score `act.metropolisVertexId` so we crown our highest-pip un-walled commodity City!
+          if (act.metropolisVertexId) {
+            const b = state.buildings[act.metropolisVertexId];
+            const cityPipVal = getVertexResourcePipScore(
+              state,
+              act.metropolisVertexId,
+              true
+            );
+            const wallSaveBonus = b && !b.hasWall ? 4.5 : 0;
+            score += cityPipVal * 0.8 + wallSaveBonus;
+          }
+          return { act, score };
+        }
         let score = 22 + check.nextLevel * 3;
         if (check.claimsMetropolis) score += 55;
         if (act.discipline === "science" && check.nextLevel <= 3) score += 16;
@@ -2892,130 +3374,456 @@ function chooseCkPriorityMainAction(
     }
   }
 
+  const hasCitySlotForDiscipline = (d: ImprovementDiscipline): boolean => {
+    const nextLv = player.cityImprovements[d] + 1;
+    if (!state.config.enableCitiesAndKnights || nextLv > 5) return false;
+    const hasOwnCity = Object.values(state.buildings).some(
+      (b) => b.ownerId === playerId && b.type === "city"
+    );
+    if (!hasOwnCity) return false;
+    const metro = state.metropolises[d];
+    const wouldClaimNewMetro =
+      metro.ownerId !== playerId &&
+      ((nextLv === 4 && !metro.ownerId) || (nextLv === 5 && metro.level < 5));
+    if (wouldClaimNewMetro && myVulnCities.length === 0) {
+      return false;
+    }
+    return true;
+  };
+
   // 5. High-Impact Progress Cards in Main Phase
   if (progressActs.length > 0) {
     let bestProg: CatanAction | null = null;
-    let bestProgScore = 8;
+    let bestProgScore = difficulty === "master" ? 14 : 8;
+    const isExp = isExpanded56State(state);
+    const maxResBank = isExp ? 24 : 19;
+    const maxCommBank = isExp ? 18 : 12;
+    const ratios = getPlayerGoodTradeRatios(state, playerId);
+    const myVisibleVp = computePlayerVictoryPoints(state, playerId, true);
 
     for (const act of progressActs) {
       const cType = findCardType(act.cardId);
       if (!cType) continue;
       let s = 0;
-      switch (cType) {
-        case "mining":
-        case "irrigation":
-          s = 34;
-          break;
-        case "merchant": {
-          const hId = act.params?.hexId;
-          const pips = hId && state.hexes[hId]?.numberToken
-            ? NUMBER_TOKEN_PIPS[state.hexes[hId]!.numberToken!] ?? 0
-            : 0;
-          s = (state.merchantOwnerId !== playerId ? 28 : 12) + pips * 2;
-          break;
-        }
-        case "resource_monopoly": {
-          const res = act.params?.resource;
-          if (res) {
-            const isExp = isExpanded56State(state);
-            const oppTotal = Math.max(
-              0,
-              (isExp ? 24 : 19) - state.bank[res] - player.resources[res]
-            );
-            s = oppTotal >= 2 ? 16 + oppTotal * 3.5 : 0;
+      if (difficulty === "master") {
+        s = -1;
+        switch (cType) {
+          case "irrigation": {
+            const fieldsSpots = Object.entries(state.buildings).filter(
+              ([vId, b]) =>
+                b.ownerId === playerId &&
+                (state.topology.vertices[vId]?.adjacentHexIds ?? []).some(
+                  (h) => state.hexes[h]?.terrain === "fields"
+                )
+            ).length;
+            if (fieldsSpots > 0) s = 22 + fieldsSpots * 14;
+            break;
           }
-          break;
-        }
-        case "trade_monopoly": {
-          const comm = act.params?.commodity;
-          if (comm) {
-            const isExp = isExpanded56State(state);
-            const oppTotal = Math.max(
-              0,
-              (isExp ? 18 : 12) -
-                state.commodityBank[comm] -
-                player.commodities[comm]
-            );
-            s = oppTotal >= 1 ? 18 + oppTotal * 6 : 0;
+          case "mining": {
+            const mtnSpots = Object.entries(state.buildings).filter(
+              ([vId, b]) =>
+                b.ownerId === playerId &&
+                (state.topology.vertices[vId]?.adjacentHexIds ?? []).some(
+                  (h) => state.hexes[h]?.terrain === "mountains"
+                )
+            ).length;
+            if (mtnSpots > 0) s = 24 + mtnSpots * 15;
+            break;
           }
-          break;
-        }
-        case "road_building":
-          s = 25;
-          break;
-        case "spy":
-        case "master_merchant":
-        case "wedding":
-          s = 24;
-          break;
-        case "bishop": {
-          const hId = act.params?.hexId;
-          const hNode = hId ? state.topology.hexes[hId] : undefined;
-          const touchesSelf = Boolean(
-            hNode?.cornerVertexIds.some(
-              (vId) => state.buildings[vId]?.ownerId === playerId
-            )
-          );
-          const oppTouchCount = (hNode?.cornerVertexIds ?? []).filter((vId) => {
-            const b = state.buildings[vId];
-            return b && b.ownerId !== playerId;
-          }).length;
-          s = touchesSelf ? -20 : 14 + oppTouchCount * 6;
-          break;
-        }
-        case "saboteur": {
-          const hurtCount = state.players.filter(
-            (opp) =>
-              opp.id !== playerId &&
-              computePlayerVictoryPoints(state, opp.id, true) >=
-                computePlayerVictoryPoints(state, playerId, true) &&
-              getPlayerResourceCount(opp) >= 4
-          ).length;
-          s = hurtCount > 0 ? 15 + hurtCount * 6 : 0;
-          break;
-        }
-        case "deserter":
-          s = 26;
-          break;
-        case "intrigue":
-          s = 19;
-          break;
-        case "diplomat": {
-          const eId = act.params?.edgeId;
-          const isOpp = eId && state.edges[eId]?.ownerId !== playerId;
-          s = isOpp ? 18 : 0;
-          break;
-        }
-        case "inventor": {
-          const h1 = act.params?.hexId1;
-          const h2 = act.params?.hexId2;
-          if (h1 && h2) {
-            const p1 = NUMBER_TOKEN_PIPS[state.hexes[h1]?.numberToken ?? 0] ?? 0;
-            const p2 = NUMBER_TOKEN_PIPS[state.hexes[h2]?.numberToken ?? 0] ?? 0;
-            const own1 = (state.topology.hexes[h1]?.cornerVertexIds ?? []).some(
-              (vId) => state.buildings[vId]?.ownerId === playerId
-            );
-            const own2 = (state.topology.hexes[h2]?.cornerVertexIds ?? []).some(
-              (vId) => state.buildings[vId]?.ownerId === playerId
-            );
-            if (own1 && !own2 && p2 > p1) s = 14 + (p2 - p1) * 4;
-            else if (own2 && !own1 && p1 > p2) s = 14 + (p1 - p2) * 4;
+          case "road_building":
+            s = 36;
+            break;
+          case "resource_monopoly": {
+            const res = act.params?.resource;
+            if (res) {
+              const oppHeld = Math.max(
+                0,
+                maxResBank - state.bank[res] - player.resources[res]
+              );
+              const estGain = Math.min(oppHeld, opponents.length * 2) * 0.72;
+              const resWeight = res === "ore" || res === "grain" ? 1.35 : 1.05;
+              if (oppHeld >= 3) {
+                s = 16 + estGain * 8.5 * resWeight;
+              }
+            }
+            break;
           }
-          break;
-        }
-        case "merchant_fleet": {
-          const g = act.params?.good;
-          if (g && getPlayerGoodCount(player, g) >= 2) {
-            const curRatio = getPlayerGoodTradeRatios(state, playerId)[g];
-            if (curRatio > 2) s = 13;
+          case "trade_monopoly": {
+            const comm = act.params?.commodity;
+            if (comm) {
+              const oppHeld = Math.max(
+                0,
+                maxCommBank -
+                  state.commodityBank[comm] -
+                  player.commodities[comm]
+              );
+              const disc: ImprovementDiscipline =
+                comm === "paper"
+                  ? "science"
+                  : comm === "coin"
+                    ? "politics"
+                    : "trade";
+              const nextLv = player.cityImprovements[disc] + 1;
+              const completesUpgrade =
+                hasCitySlotForDiscipline(disc) &&
+                player.commodities[comm] < nextLv &&
+                player.commodities[comm] + Math.min(oppHeld, opponents.length) >=
+                  nextLv;
+              if (oppHeld >= 1) {
+                s =
+                  18 +
+                  Math.min(oppHeld, opponents.length) * 13 +
+                  (completesUpgrade ? 24 : 0) +
+                  (comm === "paper" ? 6 : 0);
+              }
+            }
+            break;
           }
-          break;
+          case "commercial_harbor": {
+            const giveRes = act.params?.resource;
+            if (giveRes) {
+              const totalOppComms = COMMODITIES.reduce(
+                (sum, c) =>
+                  sum +
+                  Math.max(
+                    0,
+                    maxCommBank -
+                      state.commodityBank[c] -
+                      player.commodities[c]
+                  ),
+                0
+              );
+              if (totalOppComms >= 2) {
+                const giveCostPenalty =
+                  (giveRes === "ore" || giveRes === "grain" ? 9 : 3) -
+                  Math.min(4, player.resources[giveRes]);
+                s = 22 + Math.min(3, totalOppComms) * 7 - giveCostPenalty;
+              }
+            }
+            break;
+          }
+          case "merchant_fleet": {
+            const g = act.params?.good;
+            if (g && ratios[g] > 2) {
+              const count = getPlayerGoodCount(player, g);
+              if (count >= 4) s = 38 + (count >> 1) * 5;
+              else if (count >= 2) s = 24;
+            }
+            break;
+          }
+          case "merchant": {
+            const hId = act.params?.hexId;
+            if (hId) {
+              const h = state.hexes[hId];
+              const res = h ? TERRAIN_TO_RESOURCE[h.terrain] : null;
+              const pips = h?.numberToken
+                ? NUMBER_TOKEN_PIPS[h.numberToken] ?? 0
+                : 0;
+              const held = res ? player.resources[res] : 0;
+              s =
+                (state.merchantOwnerId === playerId ? 15 : 34) +
+                pips * 1.8 +
+                held * 3.5;
+            }
+            break;
+          }
+          case "master_merchant": {
+            const tId = act.params?.targetPlayerId;
+            const opp = opponents.find((o) => o.id === tId);
+            if (opp) {
+              const oppCards = getPlayerResourceCount(opp);
+              const oppCities = Object.values(state.buildings).filter(
+                (b) => b.ownerId === opp.id && b.type === "city"
+              ).length;
+              if (oppCards >= 2) {
+                s =
+                  22 +
+                  Math.min(2, oppCards) * 10 +
+                  Math.min(4, oppCards) * 2 +
+                  oppCities * 2.5;
+              }
+            }
+            break;
+          }
+          case "spy": {
+            const tId = act.params?.targetPlayerId;
+            const opp = opponents.find((o) => o.id === tId);
+            if (opp) {
+              const pCount = getOpponentProgressCardCountFair(opp);
+              const oppVp = computePlayerVictoryPoints(state, opp.id, true);
+              if (pCount >= 1) {
+                s = 25 + pCount * 5 + oppVp * 1.5;
+              }
+            }
+            break;
+          }
+          case "deserter": {
+            const tId = act.params?.targetPlayerId;
+            const placeV = act.params?.placeVertexId;
+            const opp = opponents.find((o) => o.id === tId);
+            if (opp) {
+              const oppKnights = Object.values(state.knights).filter(
+                (k) => k.ownerId === opp.id
+              );
+              if (oppKnights.length > 0) {
+                const minOppLevel = Math.min(...oppKnights.map((k) => k.level));
+                const anyActive = oppKnights.some((k) => k.active);
+                const oppVp = computePlayerVictoryPoints(state, opp.id, true);
+                const placeBonus = placeV
+                  ? getVertexResourcePipScore(state, placeV, false) * 0.4
+                  : 0;
+                s =
+                  30 +
+                  minOppLevel * 12 +
+                  (anyActive ? 6 : 0) +
+                  oppVp * 1.2 +
+                  placeBonus;
+              }
+            }
+            break;
+          }
+          case "saboteur": {
+            const richOpps = opponents.filter(
+              (o) =>
+                computePlayerVictoryPoints(state, o.id, true) >= myVisibleVp &&
+                getPlayerResourceCount(o) >= 4
+            ).length;
+            if (richOpps >= 1) s = 20 + richOpps * 11;
+            break;
+          }
+          case "wedding": {
+            const aheadWithCards = opponents.filter(
+              (o) =>
+                computePlayerVictoryPoints(state, o.id, true) > myVisibleVp &&
+                getPlayerResourceCount(o) >= 2
+            ).length;
+            if (aheadWithCards >= 1) s = 22 + aheadWithCards * 12;
+            break;
+          }
+          case "bishop": {
+            const hId = act.params?.hexId;
+            if (hId) {
+              const h = state.hexes[hId];
+              const pips = h?.numberToken
+                ? NUMBER_TOKEN_PIPS[h.numberToken] ?? 0
+                : 0;
+              const verts = state.topology.hexes[hId]?.cornerVertexIds ?? [];
+              const selfTouch = verts.some(
+                (v) => state.buildings[v]?.ownerId === playerId
+              );
+              if (!selfTouch) {
+                const oppCardOwners: Record<string, true> = {};
+                let oppOwnerCount = 0;
+                let blockedOppPips = 0;
+                for (const v of verts) {
+                  const b = state.buildings[v];
+                  if (b && b.ownerId !== playerId) {
+                    const o = state.players.find((p) => p.id === b.ownerId)!;
+                    if (
+                      getPlayerResourceCount(o) > 0 &&
+                      !oppCardOwners[o.id]
+                    ) {
+                      oppCardOwners[o.id] = true;
+                      oppOwnerCount += 1;
+                    }
+                    blockedOppPips += pips * (b.type === "city" ? 2 : 1);
+                  }
+                }
+                s = 18 + oppOwnerCount * 11 + blockedOppPips * 1.4;
+              }
+            }
+            break;
+          }
+          case "inventor": {
+            const h1Id = act.params?.hexId1;
+            const h2Id = act.params?.hexId2;
+            if (h1Id && h2Id) {
+              const h1 = state.hexes[h1Id];
+              const h2 = state.hexes[h2Id];
+              const p1Pips = h1?.numberToken
+                ? NUMBER_TOKEN_PIPS[h1.numberToken] ?? 0
+                : 0;
+              const p2Pips = h2?.numberToken
+                ? NUMBER_TOKEN_PIPS[h2.numberToken] ?? 0
+                : 0;
+              const pipDeltaForH1 = p2Pips - p1Pips;
+              if (pipDeltaForH1 !== 0) {
+                const netWeightOnHex = (hexId: string): number => {
+                  const hex = state.hexes[hexId]!;
+                  const commMult =
+                    TERRAIN_TO_COMMODITY[hex.terrain] === "paper"
+                      ? 1.45
+                      : TERRAIN_TO_COMMODITY[hex.terrain]
+                        ? 1.2
+                        : 1.0;
+                  let w = 0;
+                  for (const v of state.topology.hexes[hexId]?.cornerVertexIds ??
+                    []) {
+                    const b = state.buildings[v];
+                    if (!b) continue;
+                    const bVal = b.type === "city" ? 2.2 * commMult : 1.0;
+                    if (b.ownerId === playerId) w += bVal;
+                    else w -= bVal * 0.75;
+                  }
+                  return w;
+                };
+                const netGain =
+                  pipDeltaForH1 * (netWeightOnHex(h1Id) - netWeightOnHex(h2Id));
+                if (netGain >= 3.0) {
+                  s = 18 + netGain * 4.5;
+                }
+              }
+            }
+            break;
+          }
+          case "diplomat": {
+            const eId = act.params?.edgeId;
+            if (
+              eId &&
+              state.edges[eId]?.ownerId &&
+              state.edges[eId]!.ownerId !== playerId
+            ) {
+              const oppId = state.edges[eId]!.ownerId;
+              const oppVp = computePlayerVictoryPoints(state, oppId, true);
+              s =
+                20 +
+                oppVp * 1.2 +
+                (state.longestRoadOwnerId === oppId ? 12 : 0);
+            }
+            break;
+          }
+          case "intrigue": {
+            const vId = act.params?.vertexId;
+            if (vId && state.knights[vId]) {
+              const k = state.knights[vId]!;
+              s = 22 + k.level * 8 + (k.active ? 5 : 0);
+            }
+            break;
+          }
+          default:
+            s = -1;
         }
-        case "commercial_harbor":
-          s = player.progressCards.length >= 3 ? 11 : 0;
-          break;
-        default:
-          s = 0;
+        if (player.progressCards.length >= 4 && s >= 10) s += 8;
+      } else {
+        switch (cType) {
+          case "mining":
+          case "irrigation":
+            s = 34;
+            break;
+          case "merchant": {
+            const hId = act.params?.hexId;
+            const pips =
+              hId && state.hexes[hId]?.numberToken
+                ? NUMBER_TOKEN_PIPS[state.hexes[hId]!.numberToken!] ?? 0
+                : 0;
+            s = (state.merchantOwnerId !== playerId ? 28 : 12) + pips * 2;
+            break;
+          }
+          case "resource_monopoly": {
+            const res = act.params?.resource;
+            if (res) {
+              const oppTotal = Math.max(
+                0,
+                maxResBank - state.bank[res] - player.resources[res]
+              );
+              s = oppTotal >= 2 ? 16 + oppTotal * 3.5 : 0;
+            }
+            break;
+          }
+          case "trade_monopoly": {
+            const comm = act.params?.commodity;
+            if (comm) {
+              const oppTotal = Math.max(
+                0,
+                maxCommBank -
+                  state.commodityBank[comm] -
+                  player.commodities[comm]
+              );
+              s = oppTotal >= 1 ? 18 + oppTotal * 6 : 0;
+            }
+            break;
+          }
+          case "road_building":
+            s = 25;
+            break;
+          case "spy":
+          case "master_merchant":
+          case "wedding":
+            s = 24;
+            break;
+          case "bishop": {
+            const hId = act.params?.hexId;
+            const hNode = hId ? state.topology.hexes[hId] : undefined;
+            const touchesSelf = Boolean(
+              hNode?.cornerVertexIds.some(
+                (vId) => state.buildings[vId]?.ownerId === playerId
+              )
+            );
+            const oppTouchCount = (hNode?.cornerVertexIds ?? []).filter(
+              (vId) => {
+                const b = state.buildings[vId];
+                return b && b.ownerId !== playerId;
+              }
+            ).length;
+            s = touchesSelf ? -20 : 14 + oppTouchCount * 6;
+            break;
+          }
+          case "saboteur": {
+            const hurtCount = state.players.filter(
+              (opp) =>
+                opp.id !== playerId &&
+                computePlayerVictoryPoints(state, opp.id, true) >=
+                  computePlayerVictoryPoints(state, playerId, true) &&
+                getPlayerResourceCount(opp) >= 4
+            ).length;
+            s = hurtCount > 0 ? 15 + hurtCount * 6 : 0;
+            break;
+          }
+          case "deserter":
+            s = 26;
+            break;
+          case "intrigue":
+            s = 19;
+            break;
+          case "diplomat": {
+            const eId = act.params?.edgeId;
+            const isOpp = eId && state.edges[eId]?.ownerId !== playerId;
+            s = isOpp ? 18 : 0;
+            break;
+          }
+          case "inventor": {
+            const h1 = act.params?.hexId1;
+            const h2 = act.params?.hexId2;
+            if (h1 && h2) {
+              const p1 =
+                NUMBER_TOKEN_PIPS[state.hexes[h1]?.numberToken ?? 0] ?? 0;
+              const p2 =
+                NUMBER_TOKEN_PIPS[state.hexes[h2]?.numberToken ?? 0] ?? 0;
+              const own1 = (
+                state.topology.hexes[h1]?.cornerVertexIds ?? []
+              ).some((vId) => state.buildings[vId]?.ownerId === playerId);
+              const own2 = (
+                state.topology.hexes[h2]?.cornerVertexIds ?? []
+              ).some((vId) => state.buildings[vId]?.ownerId === playerId);
+              if (own1 && !own2 && p2 > p1) s = 14 + (p2 - p1) * 4;
+              else if (own2 && !own1 && p1 > p2) s = 14 + (p1 - p2) * 4;
+            }
+            break;
+          }
+          case "merchant_fleet": {
+            const g = act.params?.good;
+            if (g && getPlayerGoodCount(player, g) >= 2) {
+              const curRatio = ratios[g];
+              if (curRatio > 2) s = 13;
+            }
+            break;
+          }
+          case "commercial_harbor":
+            s = player.progressCards.length >= 3 ? 11 : 0;
+            break;
+          default:
+            s = 0;
+        }
       }
       if (s > bestProgScore) {
         bestProgScore = s;
@@ -3023,6 +3831,113 @@ function chooseCkPriorityMainAction(
       }
     }
     if (bestProg) return bestProg;
+  }
+
+  // 5b. Master Pre-9e Maritime Trade into Medicine-Discounted City OR High-EV Commodity Upgrades!
+  if (difficulty === "master" && state.phase === "MAIN_PHASE") {
+    const hasImmediateCityOrSettlement = legalActions.some(
+      (a) => a.type === "BUILD_CITY" || a.type === "BUILD_SETTLEMENT"
+    );
+    if (!hasImmediateCityOrSettlement) {
+      if (
+        player.activeTurnDiscounts.medicine &&
+        player.citiesRemaining > 0 &&
+        Object.values(state.buildings).some(
+          (b) => b.ownerId === playerId && b.type === "settlement"
+        )
+      ) {
+        const missOre = Math.max(0, 2 - player.resources.ore);
+        const missGrain = Math.max(0, 1 - player.resources.grain);
+        if (missOre + missGrain === 1) {
+          const needed: ResourceType = missOre === 1 ? "ore" : "grain";
+          const mTrades = legalActions.filter(
+            (a): a is Extract<CatanAction, { type: "MARITIME_TRADE" }> =>
+              a.type === "MARITIME_TRADE" && a.receive === needed
+          );
+          const safeTrade = mTrades.find((t) => {
+            if (t.give === "ore") {
+              return player.resources.ore - t.giveAmount >= 2;
+            }
+            if (t.give === "grain") {
+              return player.resources.grain - t.giveAmount >= 1;
+            }
+            return true;
+          });
+          if (safeTrade) return safeTrade;
+        }
+      }
+
+      const craneActive = player.activeTurnDiscounts.crane;
+      const hasSettlementForCity =
+        player.citiesRemaining > 0 &&
+        Object.values(state.buildings).some(
+          (b) => b.ownerId === playerId && b.type === "settlement"
+        );
+      const oneCardOffCity =
+        hasSettlementForCity &&
+        Math.max(0, 3 - player.resources.ore) +
+          Math.max(0, 2 - player.resources.grain) <=
+          1;
+
+      for (const d of ["science", "trade", "politics"] as const) {
+        if (!hasCitySlotForDiscipline(d)) continue;
+        const nextLv = player.cityImprovements[d] + 1;
+        const metro = state.metropolises[d];
+        const claimsOrStealsMetro =
+          (nextLv === 4 && !metro.ownerId) ||
+          (nextLv === 5 &&
+            metro.ownerId !== null &&
+            metro.ownerId !== playerId &&
+            metro.level < 5);
+        const locksThreatenedMetro =
+          nextLv === 5 &&
+          metro.ownerId === playerId &&
+          opponents.some((o) => o.cityImprovements[d] >= 4);
+        const isAqueduct = d === "science" && nextLv === 3;
+        if (
+          !claimsOrStealsMetro &&
+          !locksThreatenedMetro &&
+          !isAqueduct &&
+          !craneActive
+        ) {
+          continue;
+        }
+
+        const reqComm = craneActive ? Math.max(1, nextLv - 1) : nextLv;
+        const comm = DISCIPLINE_TO_COMMODITY[d];
+        if (state.commodityBank[comm] < 1) continue;
+        const missingComm = reqComm - player.commodities[comm];
+        if (missingComm === 1) {
+          const commTrades = legalActions
+            .filter(
+              (a): a is Extract<CatanAction, { type: "MARITIME_TRADE" }> =>
+                a.type === "MARITIME_TRADE" &&
+                a.receive === comm &&
+                a.give !== comm
+            )
+            .sort((a, b) => a.giveAmount - b.giveAmount);
+
+          for (const ct of commTrades) {
+            if (
+              oneCardOffCity &&
+              !claimsOrStealsMetro &&
+              (ct.give === "ore" || ct.give === "grain")
+            ) {
+              continue;
+            }
+            if (
+              !claimsOrStealsMetro &&
+              ct.giveAmount >= 4 &&
+              (ct.give === "ore" || ct.give === "grain") &&
+              getPlayerResourceCount(player) <= 7
+            ) {
+              continue;
+            }
+            return ct;
+          }
+        }
+      }
+    }
   }
 
   // 6. Tactical Knight Actions: Chase Robber off our hex, or displace / road-break opponent!
@@ -3176,14 +4091,22 @@ function chooseCkPostBuildAction(
  * `"easy"` | `"normal"` | `"smart"` | `"master"`.
  */
 export function chooseCatanBotAction(
-  state: CatanState,
+  rawState: CatanState,
   playerId: string
 ): CatanAction | null {
+  const state = redactStateForBotPlayerPure(rawState, playerId);
   const player = state.players.find((p) => p.id === playerId);
   if (!player) return null;
 
   const difficulty: BotDifficulty = player.botDifficulty ?? "smart";
-  const weights = CATAN_BOT_WEIGHTS[difficulty] ?? CATAN_BOT_WEIGHTS.smart;
+  const baseWeights = CATAN_BOT_WEIGHTS[difficulty] ?? CATAN_BOT_WEIGHTS.smart;
+  const weights: CatanBotWeights =
+    difficulty === "master" && state.players.length >= 5
+      ? {
+          ...baseWeights,
+          longestRoadContestBonus: baseWeights.longestRoadContestBonus * 0.42,
+        }
+      : baseWeights;
   const legalActions = getCatanLegalActions(state, playerId);
 
   if (legalActions.length === 0) return null;
@@ -3300,6 +4223,22 @@ export function chooseCatanBotAction(
   if (state.phase === "SETUP_ROAD_1" || state.phase === "SETUP_ROAD_2") {
     if (difficulty === "easy") {
       return legalActions[0]!;
+    }
+    if (difficulty === "master" && state.config.enableSeafarers) {
+      let bestShipAct: CatanAction | null = null;
+      let bestHops = 99;
+      for (const act of legalActions) {
+        if (act.type === "PLACE_SETUP_EDGE" && act.edgeKind === "ship") {
+          const hops = seaHopsToForeignIsland(state, playerId, act.edgeId);
+          if (hops < bestHops) {
+            bestHops = hops;
+            bestShipAct = act;
+          }
+        }
+      }
+      if (bestShipAct && bestHops <= 3) {
+        return bestShipAct;
+      }
     }
     let bestAction = legalActions[0]!;
     let bestScore = -Infinity;
@@ -3540,20 +4479,50 @@ export function chooseCatanBotAction(
         }
       } else if (act.type === "MOVE_PIRATE") {
         const hNode = state.topology.hexes[act.hexId]!;
-        let pirateScore = 2;
-        for (const eId of hNode.sideEdgeIds) {
-          const r = state.edges[eId];
-          if (!r || r.type !== "ship") continue;
-          if (r.ownerId === playerId) {
-            pirateScore -= 75;
-          } else {
+        if (difficulty === "master") {
+          let selfShip = false;
+          const seenOppIds: Record<string, true> = {};
+          let oppShipScore = 0;
+          let hasStealableOpp = false;
+          for (const eId of hNode.sideEdgeIds) {
+            const r = state.edges[eId];
+            if (!r || r.type !== "ship") continue;
+            if (r.ownerId === playerId) {
+              selfShip = true;
+              break;
+            }
+            if (seenOppIds[r.ownerId]) continue;
+            seenOppIds[r.ownerId] = true;
+            const opp = state.players.find((p) => p.id === r.ownerId)!;
             const oppThreat = estimatePublicPlayerThreatVp(state, r.ownerId);
-            pirateScore += 10 + oppThreat * weights.robberLeaderVpWeight * 0.85;
+            oppShipScore += 8 + oppThreat * weights.robberLeaderVpWeight * 0.85;
+            if (getPlayerResourceCount(opp) > 0) hasStealableOpp = true;
           }
-        }
-        if (pirateScore > bestScore) {
-          bestScore = pirateScore;
-          bestAction = act;
+          const pirateScore = selfShip
+            ? -200
+            : oppShipScore === 0
+              ? 1
+              : oppShipScore + (hasStealableOpp ? 13 : -12);
+          if (pirateScore > bestScore) {
+            bestScore = pirateScore;
+            bestAction = act;
+          }
+        } else {
+          let pirateScore = 2;
+          for (const eId of hNode.sideEdgeIds) {
+            const r = state.edges[eId];
+            if (!r || r.type !== "ship") continue;
+            if (r.ownerId === playerId) {
+              pirateScore -= 75;
+            } else {
+              const oppThreat = estimatePublicPlayerThreatVp(state, r.ownerId);
+              pirateScore += 10 + oppThreat * weights.robberLeaderVpWeight * 0.85;
+            }
+          }
+          if (pirateScore > bestScore) {
+            bestScore = pirateScore;
+            bestAction = act;
+          }
         }
       }
     }
@@ -3676,16 +4645,101 @@ export function chooseCatanBotAction(
     if (ckPriority) return ckPriority;
   }
 
-  // 9a-2. Master Pre-Action Free Fog Harvester via 0-cost `MOVE_SHIP`!
-  if (difficulty === "master" && state.phase === "MAIN_PHASE") {
-    const fogShipMove = legalActions.find(
+  // 9a-2. Master Pre-Action Seafarers `MOVE_SHIP` (Claims Longest Route, unlocks Foreign Island / Settlement, steps across channel, or discovers Fog!)
+  if (
+    difficulty === "master" &&
+    state.phase === "MAIN_PHASE" &&
+    state.config.enableSeafarers &&
+    !player.hasMovedShipThisTurn
+  ) {
+    const moveShips = legalActions.filter(
       (a): a is Extract<CatanAction, { type: "MOVE_SHIP" }> =>
-        a.type === "MOVE_SHIP" &&
-        (state.topology.edges[a.toEdgeId]?.adjacentHexIds ?? []).some(
-          (hId) => state.hexes[hId]?.terrain === "fog"
-        )
+        a.type === "MOVE_SHIP"
     );
-    if (fogShipMove) return fogShipMove;
+    if (moveShips.length > 0) {
+      const curSettleVerts = getLegalSettlementVertices(state, playerId, false);
+      const curSettleMap: Record<string, true> = {};
+      for (const vId of curSettleVerts) curSettleMap[vId] = true;
+      const canAffordSettlementNow = hasResources(
+        player.resources,
+        BUILDING_COSTS.settlement
+      );
+      const neededAwardLen = Math.max(5, state.longestRoadLength + 1);
+
+      let bestMove: Extract<CatanAction, { type: "MOVE_SHIP" }> | null = null;
+      let bestMoveScore = 0;
+
+      for (const mv of moveShips) {
+        const newLen = simulateRouteLengthWithEdge(
+          state,
+          playerId,
+          mv.toEdgeId,
+          "ship",
+          mv.fromEdgeId
+        );
+        // Never surrender Longest Trade Route by detaching a trunk ship!
+        if (
+          state.longestRoadOwnerId === playerId &&
+          newLen < player.longestRoadLength
+        ) {
+          continue;
+        }
+
+        let s = 0;
+        if (
+          state.longestRoadOwnerId !== playerId &&
+          newLen >= neededAwardLen
+        ) {
+          s += 95;
+        } else if (newLen > player.longestRoadLength && newLen >= 5) {
+          s += (newLen - player.longestRoadLength) * 10;
+        }
+
+        // Check if `toEdgeId` immediately unlocks a new legal settlement spot!
+        const toEdge = state.topology.edges[mv.toEdgeId];
+        if (toEdge) {
+          for (const vId of [toEdge.v1, toEdge.v2]) {
+            if (curSettleMap[vId] || state.buildings[vId]) continue;
+            const vNode = state.topology.vertices[vId];
+            if (!vNode) continue;
+            const distOk = vNode.adjacentVertexIds.every(
+              (nb) => !state.buildings[nb]
+            );
+            const touchesLand = vNode.adjacentHexIds.some(
+              (hId) => state.hexes[hId]?.terrain !== "sea"
+            );
+            if (!distOk || !touchesLand) continue;
+            if (grantsNewIslandBonusVp(state, player, vId)) {
+              s += canAffordSettlementNow ? 120 : 52;
+            } else if (canAffordSettlementNow) {
+              s += 38;
+            }
+          }
+        }
+
+        const hopsBefore = seaHopsToForeignIsland(state, playerId, mv.fromEdgeId);
+        const hopsAfter = seaHopsToForeignIsland(state, playerId, mv.toEdgeId);
+        if (hopsAfter < hopsBefore && newLen >= player.longestRoadLength) {
+          s += (hopsBefore - hopsAfter) * 18;
+        }
+
+        const touchesFog = (toEdge?.adjacentHexIds ?? []).some(
+          (hId) => state.hexes[hId]?.terrain === "fog"
+        );
+        if (touchesFog && newLen >= player.longestRoadLength - 1) {
+          s += 30;
+        }
+
+        if (s > bestMoveScore) {
+          bestMoveScore = s;
+          bestMove = mv;
+        }
+      }
+
+      if (bestMove && bestMoveScore >= 16) {
+        return bestMove;
+      }
+    }
   }
 
   const buildSettlements = legalActions.filter(
@@ -3802,13 +4856,44 @@ export function chooseCatanBotAction(
       totalVertexPips >= 8
         ? 9.5
         : 0;
+    // Self-pillage guard in Cities & Knights: building a new City at barbarianPosition >= 5
+    // raises barbarian strength by +1; if we lack active knights to defend it and can't recruit+activate one now, penalize heavily!
+    let ckSelfPillagePen = 0;
+    if (
+      state.config.enableCitiesAndKnights &&
+      difficulty !== "easy" &&
+      state.barbarianPosition >= 5
+    ) {
+      const barbAfterCity = getBarbarianStrength(state) + 1;
+      const totalDef = getTotalActiveKnightStrength(state);
+      const myActStr = getPlayerActiveKnightStrength(state, playerId);
+      const minOtherContrib = state.players.reduce<number>((m, opp) => {
+        if (opp.id === playerId) return m;
+        return getPlayerVulnerableCities(state, opp.id).length > 0
+          ? Math.min(m, getPlayerActiveKnightStrength(state, opp.id))
+          : m;
+      }, Infinity);
+      const canFollowWithKnightAndActivate =
+        player.resources.wool >= 1 &&
+        player.resources.ore >= (player.activeTurnDiscounts.medicine ? 3 : 4) &&
+        player.resources.grain >= (player.activeTurnDiscounts.medicine ? 2 : 3);
+      if (
+        totalDef < barbAfterCity &&
+        myActStr <= minOtherContrib &&
+        !canFollowWithKnightAndActivate
+      ) {
+        ckSelfPillagePen = state.barbarianPosition >= 6 ? 85 : 42;
+      }
+    }
+
     const totalC =
       weights.cityPriority +
       prodGain +
       harborBonus +
       freePieceBonus +
-      earlyEngineBonus;
-    if (totalC > bestBuildScore) {
+      earlyEngineBonus -
+      ckSelfPillagePen;
+    if (totalC > 10 && totalC > bestBuildScore) {
       bestBuildScore = totalC;
       bestBuildAction = act;
     }
@@ -4140,12 +5225,7 @@ export function chooseCatanBotAction(
     }
   }
 
-  // 9e. Smart Maritime / Port Trade
-  if (state.config.enableCitiesAndKnights) {
-    const ckPostBuild = chooseCkPostBuildAction(state, player, legalActions);
-    if (ckPostBuild) return ckPostBuild;
-  }
-
+  // 9e. Smart Maritime / Port Trade (runs BEFORE non-urgent Knight recruitment/promotion so 1-port-trade Cities/Settlements are never cannibalized!)
   const maritimeTrades = legalActions.filter(
     (
       a
@@ -4181,11 +5261,33 @@ export function chooseCatanBotAction(
         const openSpotsNow = getLegalSettlementVertices(state, playerId, false);
         const comboTargets: Partial<ResourceMap>[] = [];
 
+        const ckVulnerable =
+          state.config.enableCitiesAndKnights &&
+          getPlayerVulnerableCities(state, playerId).length > 0 &&
+          getTotalActiveKnightStrength(state) < getBarbarianStrength(state);
+
+        // Urgent C&K Knight defense BEFORE barbarian raid pillages our city!
+        if (ckVulnerable && state.barbarianPosition >= 4) {
+          const hasInact = Object.values(state.knights).some(
+            (k) => k.ownerId === playerId && !k.active
+          );
+          if (hasInact) comboTargets.push({ grain: 1 });
+          comboTargets.push({ wool: 1, ore: 1, grain: 1 });
+          comboTargets.push({ wool: 1, ore: 1 });
+        }
         if (player.citiesRemaining > 0 && hasOwnSettle) {
           comboTargets.push(BUILDING_COSTS.city);
         }
         if (player.settlementsRemaining > 0 && openSpotsNow.length > 0) {
           comboTargets.push(BUILDING_COSTS.settlement);
+        }
+        if (ckVulnerable && state.barbarianPosition < 4) {
+          const hasInact = Object.values(state.knights).some(
+            (k) => k.ownerId === playerId && !k.active
+          );
+          if (hasInact) comboTargets.push({ grain: 1 });
+          comboTargets.push({ wool: 1, ore: 1, grain: 1 });
+          comboTargets.push({ wool: 1, ore: 1 });
         }
         // Claiming Longest Road (+2 VP) via 1 maritime trade
         const neededAwardLen = Math.max(5, state.longestRoadLength + 1);
@@ -4227,6 +5329,24 @@ export function chooseCatanBotAction(
           );
           if (net.bestOneHopVertexScore >= 14) {
             comboTargets.push({ brick: 2, lumber: 2, wool: 1, grain: 1 });
+          }
+        }
+        // Seafarers: port-trade into high-value ship toward fog or unsettled foreign island!
+        if (state.config.enableSeafarers && player.shipsRemaining > 0) {
+          const legalS = getLegalShipEdges(state, playerId, null);
+          const hasHighValueShip = legalS.some(
+            (eId) =>
+              scoreExpansionEdge(
+                state,
+                eId,
+                playerId,
+                "ship",
+                weights,
+                scarcity
+              ) >= 24
+          );
+          if (hasHighValueShip) {
+            comboTargets.push(BUILDING_COSTS.ship);
           }
         }
         if (state.devCardDeck.length > 0) {
@@ -4337,6 +5457,12 @@ export function chooseCatanBotAction(
       }
       if (bestTrade) return bestTrade;
     }
+  }
+
+  // 9e-ck. Cities & Knights Knight Recruitment, Promotion & Commodity Maritime Trades
+  if (state.config.enableCitiesAndKnights) {
+    const ckPostBuild = chooseCkPostBuildAction(state, player, legalActions);
+    if (ckPostBuild) return ckPostBuild;
   }
 
   // 9f. Compare Expansion Road/Ship vs Development Card vs City Wall!
@@ -4465,6 +5591,16 @@ export function chooseCatanBotAction(
   );
   if (moveShipActions.length > 0 && difficulty !== "easy") {
     for (const act of moveShipActions) {
+      if (difficulty === "master" && state.longestRoadOwnerId === playerId) {
+        const nextLen = simulateRouteLengthWithEdge(
+          state,
+          playerId,
+          act.toEdgeId,
+          "ship",
+          act.fromEdgeId
+        );
+        if (nextLen < player.longestRoadLength) continue;
+      }
       const fromScore = scoreExpansionEdge(
         state,
         act.fromEdgeId,

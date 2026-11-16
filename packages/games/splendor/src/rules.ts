@@ -582,7 +582,11 @@ export function applySplendorAction(
         throw new Error("Target card to reserve not found");
       };
 
-      const { card: reservedCard, market, decks } = drawSelection();
+      const { card: rawReservedCard, market, decks } = drawSelection();
+      const fromDeck = Boolean(action.deckTier);
+      const reservedCard: SplendorCard = fromDeck
+        ? { ...rawReservedCard, reservedFromDeck: true }
+        : rawReservedCard;
       const gotGold = currentState.bank.gold > 0;
       const goldDelta = gotGold ? { gold: 1 } : {};
       const updatedPlayer: SplendorPlayerState = {
@@ -601,11 +605,14 @@ export function applySplendorAction(
           updatedPlayer
         ),
       };
+      const reserveDesc = fromDeck
+        ? `blind-reserved from the Tier ${reservedCard.tier} deck`
+        : `reserved a Tier ${reservedCard.tier} ${reservedCard.bonus} card (${reservedCard.points} VP)`;
       const logged = appendSplendorEvent(
         afterReserve,
         [],
         "CARD_RESERVED",
-        `${player.name} reserved a Tier ${reservedCard.tier} card${gotGold ? " and took 1 Gold joker" : ""}.`,
+        `${player.name} ${reserveDesc}${gotGold ? " and took 1 Gold joker" : ""}.`,
         playerId
       );
       return resolvePostMainAction(logged.state, logged.events);
@@ -697,8 +704,8 @@ export function applySplendorAction(
       }
       const excess = totalTokens(player.tokens) - 10;
       const returnSum = totalTokens(action.tokens);
-      if (returnSum !== excess) {
-        throw new Error(`Must return exactly ${excess} tokens`);
+      if (returnSum <= 0 || returnSum > excess) {
+        throw new Error(`Must return between 1 and ${excess} tokens`);
       }
       for (const color of ALL_TOKEN_COLORS) {
         const amt = action.tokens[color] ?? 0;
@@ -724,9 +731,12 @@ export function applySplendorAction(
         afterReturn,
         [],
         "TOKENS_RETURNED",
-        `${player.name} returned ${excess} excess token(s) to stay at 10.`,
+        `${player.name} returned ${returnSum} excess token(s).`,
         playerId
       );
+      if (totalTokens(updatedPlayer.tokens) > 10) {
+        return { state: logged.state, events: [...logged.events] };
+      }
       return resolveNoblesAndAdvanceTurn(logged.state, logged.events);
     }
 
@@ -841,48 +851,113 @@ function finishTurnTransition(
   events: readonly GameEvent[]
 ): { state: SplendorState; events: GameEvent[] } {
   const player = state.players[state.activePlayerIndex]!;
+  const justTriggeredFinalRound =
+    !state.finalRoundTriggered && player.points >= state.config.targetPoints;
   const finalRoundTriggered =
     state.finalRoundTriggered || player.points >= state.config.targetPoints;
 
-  const startIdx = state.startingPlayerIndex ?? 0;
-  const nextIdx = (state.activePlayerIndex + 1) % state.players.length;
+  const baseTransition = justTriggeredFinalRound
+    ? appendSplendorEvent(
+        { ...state, finalRoundTriggered: true },
+        events,
+        "FINAL_ROUND_TRIGGERED",
+        `${player.name} reached ${player.points} Prestige Points — finishing the current round!`,
+        player.id
+      )
+    : { state, events: [...events] };
+
+  const curState = baseTransition.state;
+  const curEvents = baseTransition.events;
+
+  const startIdx = curState.startingPlayerIndex ?? 0;
+  const nextIdx = (curState.activePlayerIndex + 1) % curState.players.length;
   const isLastPlayerInRound = nextIdx === startIdx;
 
   if (
     (finalRoundTriggered && isLastPlayerInRound) ||
-    state.turn >= state.config.maxTurns
+    curState.turn >= curState.config.maxTurns
   ) {
-    const sorted = [...state.players].sort((a, b) =>
+    const sorted = [...curState.players].sort((a, b) =>
       b.points !== a.points
         ? b.points - a.points
         : a.purchasedCards.length - b.purchasedCards.length
     );
     const winner = sorted[0]!;
     const finishedState: SplendorState = {
-      ...state,
+      ...curState,
       finalRoundTriggered,
       winnerId: winner.id,
       phase: "GAME_OVER",
     };
     return appendSplendorEvent(
       finishedState,
-      events,
+      curEvents,
       "GAME_OVER",
-      `🏆 ${winner.name} wins Splendor with ${winner.points} Prestige Points (${winner.purchasedCards.length} cards)!`,
+      `${winner.name} wins Splendor with ${winner.points} Prestige Points (${winner.purchasedCards.length} cards)!`,
       winner.id
     );
   }
 
   return {
     state: {
-      ...state,
+      ...curState,
       finalRoundTriggered,
       activePlayerIndex: nextIdx,
-      turn: state.turn + 1,
-      round: nextIdx === startIdx ? state.round + 1 : state.round,
+      turn: curState.turn + 1,
+      round: nextIdx === startIdx ? curState.round + 1 : curState.round,
       phase: "MAIN_ACTION",
     },
-    events: [...events],
+    events: curEvents,
+  };
+}
+
+export function getSplendorPlayerView(
+  state: SplendorState,
+  viewerPlayerId: string | null
+): SplendorState {
+  if (state.phase === "GAME_OVER") {
+    return state;
+  }
+
+  const redactDeck = (tier: CardTier, cards: readonly SplendorCard[]): SplendorCard[] =>
+    cards.map((_, idx) => ({
+      id: `hidden-deck-t${tier}-${idx}`,
+      tier,
+      bonus: "onyx",
+      points: 0,
+      cost: emptyGemMap(),
+      redacted: true,
+    }));
+
+  return {
+    ...state,
+    rngState: 0,
+    decks: {
+      1: redactDeck(1, state.decks[1]),
+      2: redactDeck(2, state.decks[2]),
+      3: redactDeck(3, state.decks[3]),
+    },
+    players: state.players.map((p) => {
+      if (viewerPlayerId && p.id === viewerPlayerId) {
+        return p;
+      }
+      return {
+        ...p,
+        reservedCards: p.reservedCards.map((c, idx) =>
+          c.reservedFromDeck
+            ? {
+                id: `hidden-reserve-${p.id}-${idx}`,
+                tier: c.tier,
+                bonus: "onyx",
+                points: 0,
+                cost: emptyGemMap(),
+                reservedFromDeck: true,
+                redacted: true,
+              }
+            : c
+        ),
+      };
+    }),
   };
 }
 

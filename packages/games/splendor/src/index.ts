@@ -4,6 +4,7 @@ import {
   applySplendorAction,
   checkSplendorInvariants,
   getSplendorLegalActions,
+  getSplendorPlayerView,
   initSplendorGame,
 } from "./rules.ts";
 import type { SplendorAction, SplendorConfig, SplendorState } from "./types.ts";
@@ -55,8 +56,11 @@ export const SplendorEngine: GameEngine<
     return applySplendorAction(state, playerId, action);
   },
 
-  getPlayerView(state: SplendorState): SplendorState {
-    return state;
+  getPlayerView(
+    state: SplendorState,
+    viewerPlayerId: string | null = null
+  ): SplendorState {
+    return getSplendorPlayerView(state, viewerPlayerId);
   },
 
   getWinner(state: SplendorState): string | null {
@@ -77,6 +81,7 @@ export const SplendorEngine: GameEngine<
     nextState: SplendorState
   ): boolean {
     if (nextState.phase === "GAME_OVER") return false;
+    if (prevState.turn !== nextState.turn) return false;
     if (action.type === "RESERVE_CARD" || action.type === "PURCHASE_CARD") {
       return false;
     }
