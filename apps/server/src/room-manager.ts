@@ -1086,6 +1086,83 @@ export function signOutGuestEverywherePure(
   );
 }
 
+export function renameGuestEverywherePure(
+  managerState: RoomManagerState,
+  playerId: string,
+  rawNewName: string
+): {
+  state: RoomManagerState;
+  cleanName: string;
+  updatedRoomIds: string[];
+} {
+  const cleanName = rawNewName.trim().slice(0, 28);
+  if (!cleanName) {
+    throw new Error("Enter a guest display name");
+  }
+  if (!playerId) {
+    return { state: managerState, cleanName, updatedRoomIds: [] };
+  }
+
+  return managerState.roomOrder.reduce<{
+    state: RoomManagerState;
+    cleanName: string;
+    updatedRoomIds: string[];
+  }>(
+    (acc, roomId) => {
+      const room = acc.state.rooms[roomId];
+      if (!room) return acc;
+
+      const matchesRoom =
+        room.ownerId === playerId ||
+        room.humanPlayers.some((p) => p.id === playerId) ||
+        room.players.some((p) => !p.isBot && p.id === playerId);
+
+      if (!matchesRoom) return acc;
+
+      const nextOwnerName =
+        room.ownerId === playerId ? cleanName : room.ownerName;
+      const nextHumans = room.humanPlayers.map((p) =>
+        p.id === playerId ? { ...p, name: cleanName } : p
+      );
+      const nextPlayers = room.players.map((p) =>
+        !p.isBot && p.id === playerId ? { ...p, name: cleanName } : p
+      );
+      const nextSessionState = room.sessionState
+        ? {
+            ...room.sessionState,
+            snapshots: room.sessionState.snapshots.map((snap) =>
+              snap && Array.isArray(snap.players)
+                ? {
+                    ...snap,
+                    players: snap.players.map((sp: any) =>
+                      !sp.isBot && sp.id === playerId
+                        ? { ...sp, name: cleanName }
+                        : sp
+                    ),
+                  }
+                : snap
+            ),
+          }
+        : null;
+
+      const updatedRoom: RoomRecord = {
+        ...room,
+        ownerName: nextOwnerName,
+        humanPlayers: nextHumans,
+        players: nextPlayers,
+        sessionState: nextSessionState,
+      };
+
+      return {
+        state: setRoomRecordInState(acc.state, updatedRoom),
+        cleanName,
+        updatedRoomIds: [...acc.updatedRoomIds, roomId],
+      };
+    },
+    { state: managerState, cleanName, updatedRoomIds: [] }
+  );
+}
+
 export function startGamePure(
   managerState: RoomManagerState,
   roomId: string,
@@ -1421,6 +1498,13 @@ export interface PlatformRoomManager {
     closedRoomIds: string[];
     updatedRoomIds: string[];
   };
+  renameGuest(
+    playerId: string,
+    newName: string
+  ): {
+    cleanName: string;
+    updatedRoomIds: string[];
+  };
   startGame(roomId: string, requesterId?: string): any;
   dispatchAction(roomId: string, playerId: string, action: any): any;
   undoAction(roomId: string, requesterId?: string | null): any;
@@ -1736,6 +1820,14 @@ export function createPlatformRoomManager(): PlatformRoomManager {
       return {
         closedRoomIds: signedOut.closedRoomIds,
         updatedRoomIds: signedOut.updatedRoomIds,
+      };
+    },
+    renameGuest(playerId, newName) {
+      const renamed = renameGuestEverywherePure(state, playerId, newName);
+      state = renamed.state;
+      return {
+        cleanName: renamed.cleanName,
+        updatedRoomIds: renamed.updatedRoomIds,
       };
     },
     startGame(roomId, requesterId) {

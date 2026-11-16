@@ -485,6 +485,26 @@ export function createPlatformServer(): {
         return;
       }
 
+      if (pathname === "/api/guests/rename" && req.method === "POST") {
+        const body = await readJsonBody(req);
+        const playerId =
+          typeof body.playerId === "string" ? body.playerId.trim() : "";
+        const rawName = typeof body.newName === "string" ? body.newName : "";
+        if (!playerId) {
+          sendJson(res, 400, { error: "Missing playerId" });
+          return;
+        }
+        const renamed = roomManager.renameGuest(playerId, rawName);
+        renamed.updatedRoomIds.forEach((id) => broadcastRoomState(id));
+        broadcastLobbyRooms();
+        sendJson(res, 200, {
+          ok: true,
+          name: renamed.cleanName,
+          updatedRoomIds: renamed.updatedRoomIds,
+        });
+        return;
+      }
+
       if (pathname === "/api/rooms" && req.method === "POST") {
         const body = await readJsonBody(req);
         const room = roomManager.createRoom(body);

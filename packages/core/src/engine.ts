@@ -469,6 +469,9 @@ export interface MatchSession<
   undo(): TState;
   redo(): TState;
   jumpToStep(step: number): TState;
+  cloneWithMappedSnapshots?(
+    mapper: (snapshot: TState) => TState
+  ): MatchSession<TState, TConfig, TAction, TEvent, TView>;
 }
 
 export interface MatchSessionConstructor {
@@ -505,9 +508,12 @@ export function createMatchSession<
 >(
   engine: GameEngine<TState, TConfig, TAction, TEvent, TView>,
   initialState: TState,
-  enforceInvariants = true
+  enforceInvariants = true,
+  existingSessionState?: MatchSessionState<TState, TAction>
 ): MatchSession<TState, TConfig, TAction, TEvent, TView> {
-  let session = createMatchSessionState(engine, initialState, enforceInvariants);
+  let session =
+    existingSessionState ??
+    createMatchSessionState(engine, initialState, enforceInvariants);
 
   return {
     engine,
@@ -548,6 +554,19 @@ export function createMatchSession<
     jumpToStep: (step) => {
       session = jumpSessionToStepPure(session, step);
       return getSessionState(session);
+    },
+    cloneWithMappedSnapshots: (mapper) => {
+      const mappedSnapshots = session.snapshots.map((snap) => mapper(snap));
+      const mappedState: MatchSessionState<TState, TAction> = {
+        ...session,
+        snapshots: mappedSnapshots,
+      };
+      return createMatchSession(
+        engine,
+        getSessionState(mappedState),
+        enforceInvariants,
+        mappedState
+      );
     },
   };
 }

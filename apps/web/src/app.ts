@@ -247,6 +247,8 @@ export interface AppModel {
   readonly loginErrorMsg: string;
   readonly currentUserId: string;
   readonly currentUserName: string;
+  readonly editingGuestName: boolean;
+  readonly guestRenameDraft: string;
   readonly deviceGuests: GuestSession[];
   readonly localFriendDraftName: string;
   readonly hidePassAndPlayHand: boolean;
@@ -1288,6 +1290,8 @@ export function createInitialAppModelPure(
     loginErrorMsg: "",
     currentUserId: authInit.currentUserId,
     currentUserName: authInit.currentUserName,
+    editingGuestName: false,
+    guestRenameDraft: "",
     deviceGuests: authInit.deviceGuests,
     localFriendDraftName: "",
     hidePassAndPlayHand: false,
@@ -1793,6 +1797,94 @@ export function signOutGuestFromModelPure(
   };
 }
 
+export function renameGuestInModelPure(
+  model: Readonly<AppModel>,
+  guestId: string,
+  rawNewName: string
+):
+  | { readonly ok: false; readonly model: AppModel }
+  | {
+      readonly ok: true;
+      readonly model: AppModel;
+      readonly session: GuestSession;
+    } {
+  const cleanName = rawNewName.trim().slice(0, 28);
+  if (!cleanName || !guestId) {
+    return { ok: false, model };
+  }
+
+  const session: GuestSession = {
+    id: guestId,
+    name: cleanName,
+    mode: "guest",
+  };
+
+  const withProfile: AppModel = {
+    ...model,
+    currentUserName:
+      model.currentUserId === guestId ? cleanName : model.currentUserName,
+    loginDraftName:
+      model.currentUserId === guestId ? cleanName : model.loginDraftName,
+    editingGuestName: false,
+    guestRenameDraft: "",
+    deviceGuests: upsertDeviceGuestListPure(model.deviceGuests, session),
+  };
+
+  const mapStatePlayerName = (snap: any): any =>
+    snap && Array.isArray(snap.players)
+      ? {
+          ...snap,
+          players: snap.players.map((sp: any) =>
+            !sp.isBot && sp.id === guestId ? { ...sp, name: cleanName } : sp
+          ),
+        }
+      : snap;
+
+  const updatedModel = withProfile.roomOrder.reduce<AppModel>((acc, roomId) => {
+    const room = acc.rooms[roomId];
+    if (!room) return acc;
+
+    const matchesRoom =
+      room.ownerId === guestId ||
+      room.humanPlayers.some((p) => p.id === guestId) ||
+      room.players.some((p) => !p.isBot && p.id === guestId);
+
+    if (!matchesRoom) return acc;
+
+    const nextOwnerName =
+      room.ownerId === guestId ? cleanName : room.ownerName;
+    const nextHumans = room.humanPlayers.map((p) =>
+      p.id === guestId ? { ...p, name: cleanName } : p
+    );
+    const nextPlayers = room.players.map((p) =>
+      !p.isBot && p.id === guestId ? { ...p, name: cleanName } : p
+    );
+    const nextSession = room.session
+      ? room.session.cloneWithMappedSnapshots
+        ? room.session.cloneWithMappedSnapshots(mapStatePlayerName)
+        : createMatchSession(
+            getEngineForGamePure(room.gameId),
+            mapStatePlayerName(room.session.getState()),
+            true
+          )
+      : null;
+    const nextRemoteState = room.remoteState
+      ? mapStatePlayerName(room.remoteState)
+      : null;
+
+    return setRoomInModelPure(acc, {
+      ...room,
+      ownerName: nextOwnerName,
+      humanPlayers: nextHumans,
+      players: nextPlayers,
+      session: nextSession,
+      remoteState: nextRemoteState,
+    });
+  }, withProfile);
+
+  return { ok: true, model: updatedModel, session };
+}
+
 export function startOfflineRoomMatchPure(
   model: Readonly<AppModel>,
   roomId: string
@@ -2147,15 +2239,33 @@ export function renderTopbarUserSelectorPure(model: Readonly<AppModel>): string 
               : ""
         }
         <label class="ga-inline-label" for="sel-user-identity-btn">Guest</label>
-        ${renderDropdown({
-          id: "sel-user-identity",
-          value: model.currentUserId,
-          size: "sm",
-          inline: true,
-          align: "end",
-          title: "Switch between guest profiles on this computer",
-          options,
-        })}
+        ${
+          model.editingGuestName
+            ? `<form id="form-rename-guest" style="display: inline-flex; align-items: center; gap: 4px; margin: 0;">
+                 <input
+                   type="text"
+                   id="inp-rename-guest"
+                   class="ga-input"
+                   maxlength="28"
+                   value="${escapeAttr(model.guestRenameDraft)}"
+                   aria-label="Guest display name"
+                   placeholder="Display name"
+                   style="height: 30px; width: 144px; padding: 0 8px; font-size: 13px;"
+                 />
+                 <button type="submit" id="btn-save-guest-name" class="btn btn--primary btn--sm">Save</button>
+                 <button type="button" id="btn-cancel-guest-name" class="btn btn--secondary btn--sm">Cancel</button>
+               </form>`
+            : `${renderDropdown({
+                id: "sel-user-identity",
+                value: model.currentUserId,
+                size: "sm",
+                inline: true,
+                align: "end",
+                title: "Switch between guest profiles on this computer",
+                options,
+              })}
+              <button type="button" id="btn-edit-guest-name" class="btn btn--secondary btn--sm" title="Rename ${escapeAttr(model.currentUserName)}">Rename</button>`
+        }
         <button type="button" id="btn-add-guest" class="btn btn--secondary btn--sm">New guest</button>
         <button type="button" id="btn-sign-out" class="btn btn--secondary btn--sm" title="End ${escapeAttr(model.currentUserName)}'s guest session and clean up their rooms">Sign out</button>
       </div>
@@ -7055,6 +7165,7 @@ export interface MultiGamePlatformApp {
   startOfflineLocalFromLogin(rawName?: string): boolean;
   openAddGuestView(): void;
   switchActiveGuest(guestId: string): void;
+  renameCurrentGuest(rawNewName: string): boolean;
   signOutGuest(): void;
   removeDeviceGuest(guestId: string): void;
   getRoomBounds(room: {
@@ -7701,6 +7812,34 @@ export function createMultiGamePlatformApp(
 
   const removeDeviceGuest = (guestId: string): void => {
     performGuestCleanup(guestId);
+  };
+
+  const renameCurrentGuest = (rawNewName: string): boolean => {
+    const res = renameGuestInModelPure(
+      model,
+      model.currentUserId,
+      rawNewName
+    );
+    if (!res.ok) {
+      return false;
+    }
+    model = res.model;
+    saveGuestSessionToStorage(res.session);
+    saveDeviceGuestsToStorage(model.deviceGuests);
+
+    if (model.useServerBackend) {
+      void fetch("/api/guests/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerId: res.session.id,
+          newName: res.session.name,
+        }),
+      }).catch(() => {});
+    }
+
+    render();
+    return true;
   };
 
   const getActiveRoom = (): ClientRoom => {
@@ -8677,6 +8816,62 @@ export function createMultiGamePlatformApp(
       ?.addEventListener("change", (e) => {
         const selectedId = (e.target as HTMLSelectElement).value;
         switchActiveGuest(selectedId);
+      });
+
+    root
+      .querySelector("#btn-edit-guest-name")
+      ?.addEventListener("click", () => {
+        model = {
+          ...model,
+          editingGuestName: true,
+          guestRenameDraft: model.currentUserName,
+        };
+        render();
+        const inp = root.querySelector?.(
+          "#inp-rename-guest"
+        ) as HTMLInputElement | null;
+        inp?.focus?.();
+        inp?.select?.();
+      });
+
+    root
+      .querySelector("#inp-rename-guest")
+      ?.addEventListener("input", (e) => {
+        model = {
+          ...model,
+          guestRenameDraft: (e.target as HTMLInputElement).value,
+        };
+      });
+
+    root
+      .querySelector("#inp-rename-guest")
+      ?.addEventListener("keydown", (e: any) => {
+        if (e.key === "Escape") {
+          model = {
+            ...model,
+            editingGuestName: false,
+            guestRenameDraft: "",
+          };
+          render();
+        }
+      });
+
+    root
+      .querySelector("#form-rename-guest")
+      ?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        renameCurrentGuest(model.guestRenameDraft);
+      });
+
+    root
+      .querySelector("#btn-cancel-guest-name")
+      ?.addEventListener("click", () => {
+        model = {
+          ...model,
+          editingGuestName: false,
+          guestRenameDraft: "",
+        };
+        render();
       });
 
     root.querySelector("#btn-add-guest")?.addEventListener("click", () => {
@@ -11883,6 +12078,7 @@ export function createMultiGamePlatformApp(
     startOfflineLocalFromLogin,
     openAddGuestView,
     switchActiveGuest,
+    renameCurrentGuest,
     signOutGuest,
     removeDeviceGuest,
     getRoomBounds: getRoomBoundsPure,

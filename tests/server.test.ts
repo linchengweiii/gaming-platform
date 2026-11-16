@@ -1622,4 +1622,145 @@ describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", ()
       srv.server.close();
     }
   });
+
+  test("lets guests rename their display name across Lobby, Room Setup, and active matches while preserving Undo history", async () => {
+    const fakeRoot: any = {
+      innerHTML: "",
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener: () => {},
+    };
+    const app = new MultiGamePlatformApp(fakeRoot, {
+      forceLocalMode: true,
+      startAtLogin: true,
+    });
+    app.autoRespondBotsToHuman = false;
+
+    app.signInAsGuest("InitialName");
+    const guestId = app.currentUserId;
+    expect(fakeRoot.innerHTML).toContain('id="btn-edit-guest-name"');
+
+    const room = app.createLocalRoom({
+      name: "Rename Test Table",
+      gameId: "seven_wonders",
+      ownerId: guestId,
+      ownerName: "InitialName",
+      isOfflineLocal: true,
+      botCount: 2,
+      autoStart: true,
+    });
+    app.enterOrJoinRoom(room.roomId);
+
+    // Lock a reversible draft pick first so Undo history has 1 step
+    const st0 = app.getRoomState(room);
+    const act0 = room.session!.engine.getLegalActions(st0, guestId)[0]!;
+    app.dispatchUiAction(guestId, act0);
+    expect(room.session!.canPlayerUndo(guestId)).toBe(true);
+
+    // Reject empty whitespace rename
+    expect(app.renameCurrentGuest("   ")).toBe(false);
+    expect(app.currentUserName).toBe("InitialName");
+
+    // Valid rename updates identity, deviceGuests, room owner/seats, and live match state without losing Undo!
+    expect(app.renameCurrentGuest("Captain Nemo")).toBe(true);
+    expect(app.currentUserName).toBe("Captain Nemo");
+    expect(app.deviceGuests.find((g) => g.id === guestId)?.name).toBe(
+      "Captain Nemo"
+    );
+    expect(room.ownerName).toBe("Captain Nemo");
+    expect(room.players.find((p) => p.id === guestId)?.name).toBe(
+      "Captain Nemo"
+    );
+    expect(
+      app.getRoomState(room).players.find((p: any) => p.id === guestId)?.name
+    ).toBe("Captain Nemo");
+    expect(room.session!.canPlayerUndo(guestId)).toBe(true);
+
+    // Undoing still keeps the renamed display name across previous snapshots!
+    app.undoMatch();
+    expect(
+      app.getRoomState(room).players.find((p: any) => p.id === guestId)?.name
+    ).toBe("Captain Nemo");
+
+    // Live server POST /api/guests/rename updates room summary & active match snapshots and broadcasts WS ROOM_STATE
+    const srv = createPlatformServer();
+    await new Promise<void>((resolve) =>
+      srv.server.listen(0, "127.0.0.1", () => resolve())
+    );
+    try {
+      const port = (srv.server.address() as { port: number }).port;
+      const base = `http://127.0.0.1:${port}`;
+
+      const createdRes = await fetch(`${base}/api/rooms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Online Rename Room",
+          gameId: "splendor",
+          ownerId: "g-host",
+          hostName: "OldHost",
+          botCount: 1,
+          autoStart: true,
+        }),
+      });
+      const { room: created } = await createdRes.json();
+
+      const wsMessages: any[] = [];
+      const listeners: Record<string, Array<(arg?: any) => void>> = {};
+      const fakeSocket: any = {
+        destroyed: false,
+        writable: true,
+        on: (ev: string, fn: (arg?: any) => void) => {
+          listeners[ev] = [...(listeners[ev] ?? []), fn];
+        },
+        write: (chunk: Buffer | string) => {
+          if (Buffer.isBuffer(chunk)) {
+            for (const frame of decodeWsFramesPure(chunk)) {
+              if (frame.opcode === 0x01 && frame.text) {
+                wsMessages.push(JSON.parse(frame.text));
+              }
+            }
+          }
+        },
+        destroy: () => {
+          fakeSocket.destroyed = true;
+        },
+      };
+      srv.server.emit(
+        "upgrade",
+        { headers: { "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==" } },
+        fakeSocket
+      );
+      for (const fn of listeners.data ?? []) {
+        fn(
+          encodeWsTextFramePure({
+            type: "SUBSCRIBE_ROOM",
+            roomId: created.roomId,
+            playerId: "g-host",
+          })
+        );
+      }
+      wsMessages.length = 0;
+
+      const renameRes = await fetch(`${base}/api/guests/rename`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId: "g-host", newName: "Admiral Yi" }),
+      });
+      const renameData = await renameRes.json();
+      expect(renameRes.ok).toBe(true);
+      expect(renameData.name).toBe("Admiral Yi");
+      expect(renameData.updatedRoomIds).toEqual([created.roomId]);
+
+      const roomBroadcast = wsMessages.find((m) => m.type === "ROOM_STATE");
+      expect(roomBroadcast).toBeDefined();
+      expect(roomBroadcast.room.ownerName).toBe("Admiral Yi");
+      expect(
+        roomBroadcast.state.players.find((p: any) => p.id === "g-host")?.name
+      ).toBe("Admiral Yi");
+    } finally {
+      (srv.server as any).closeAllConnections?.();
+      srv.server.close();
+    }
+  });
 });
