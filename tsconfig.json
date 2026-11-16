@@ -24,7 +24,9 @@
       "@gaming-platform/splendor": ["packages/games/splendor/src/index.ts"],
       "@gaming-platform/splendor/*": ["packages/games/splendor/src/*"],
       "@gaming-platform/azul": ["packages/games/azul/src/index.ts"],
-      "@gaming-platform/azul/*": ["packages/games/azul/src/*"]
+      "@gaming-platform/azul/*": ["packages/games/azul/src/*"],
+      "@gaming-platform/seven-wonders": ["packages/games/seven-wonders/src/index.ts"],
+      "@gaming-platform/seven-wonders/*": ["packages/games/seven-wonders/src/*"]
     }
   },
   "include": [
