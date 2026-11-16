@@ -14,6 +14,21 @@ import type {
   SevenWondersState,
 } from "@gaming-platform/seven-wonders";
 import { SevenWondersEngine } from "@gaming-platform/seven-wonders";
+import { renderAzulTile } from "./azul-view.ts";
+import {
+  renderActionPieceIconSvg,
+  renderDevCardIllustrationSvg,
+  renderDieSvg,
+  renderEventDieSvg,
+  renderMiniTradeGoodCardSvg,
+} from "./catan-graphics.ts";
+import {
+  renderSwCoinSvg,
+  renderSwResourceBadge,
+  renderSwScienceIconSvg,
+  renderSwShieldSvg,
+} from "./seven-wonders-view.ts";
+import { renderSplendorGemToken } from "./splendor-view.ts";
 
 export type TutorialGameId = "catan" | "splendor" | "azul" | "seven_wonders";
 
@@ -36,7 +51,6 @@ export interface GameReferenceGuide {
   readonly durationBadge: string;
   readonly objective: string;
   readonly sections: readonly GameGuideSection[];
-  readonly tips: readonly string[];
 }
 
 export const TUTORIAL_SEEDS: Readonly<Record<TutorialGameId, string>> = {
@@ -214,43 +228,72 @@ export const GAME_REFERENCE_GUIDES: Readonly<
     playersBadge: "2–6 players",
     durationBadge: "25–45 min",
     objective:
-      "First player to reach the target Victory Points (10 VP Base, 12–14 VP in Seafarers / Cities & Knights) on their turn wins immediately.",
+      "First player to reach 10 Victory Points on their turn wins immediately (12 VP in Seafarers · 13 VP in Cities & Knights; custom VP supported in Setup).",
     sections: [
       {
-        heading: "Base turn flow & building costs",
+        heading: "1. Setup & Snake Draft",
         items: [
-          "Roll 2d6: Every terrain hex matching the sum yields 1 card per Settlement and 2 per City. On a 7, hands >7 (>9 with City Walls) discard half and the active player moves the Robber/Pirate.",
-          "Road (Brick+Lumber) · Settlement 1 VP (Brick+Lumber+Wool+Grain) · City 2 VP (2 Grain+3 Ore) · Dev Card (Wool+Grain+Ore).",
-          "Awards: Longest Route (5+ connected roads/ships = +2 VP) · Largest Army (3+ Knights = +2 VP).",
+          "Players draft in turn order (1→2→…→N) placing 1 Settlement + 1 attached Road/Ship, then reverse order (N→…→1) to place their 2nd Settlement + Road/Ship (2nd piece is a City in Cities & Knights).",
+          "Starting resources: receive 1 resource card from every fertile terrain hex touching your 2nd placement (Hills=Brick, Forest=Lumber, Pasture=Wool, Fields=Grain, Mountains=Ore; Desert/Sea=none).",
+          "Distance Rule: No two Settlements or Cities (yours or opponents') may ever occupy adjacent intersections — at least 2 edges must separate every building.",
         ],
       },
       {
-        heading: "5–6 Player automatic scaling",
+        heading: "2. What You Can Do on Your Turn",
         items: [
-          "Seating 5 or 6 players automatically expands the map, enlarges the bank (24/resource, 18/commodity), and enables the between-turn Special Building Phase.",
-          "During Special Building, non-active players may build pieces using cards already in hand (no trading or rolling).",
+          "Before rolling: You may optionally play 1 Development Card bought on an earlier turn (e.g. Knight to clear the Robber before production, or Alchemist in Cities & Knights).",
+          "Step 1 — Roll Dice (2d6): Every player with a Settlement (+1 card) or City (+2 cards) touching hexes with that number collects resources. If the bank cannot fulfill everyone owed a specific resource (and >1 player is owed), nobody receives that resource on that roll.",
+          "Step 2 — Main Phase (Trade, Build & Play Cards in any order): Make any number of Bank/Harbor or Player trades, construct Roads/Ships/Settlements/Cities/Walls/Dev Cards, and play at most 1 non-VP Dev Card per turn. Click End turn when done.",
         ],
       },
       {
-        heading: "Seafarers scenarios",
+        heading: "3. Rolling a 7, Robber & Trading",
         items: [
-          "Ships (Wool+Lumber): Span sea or coastal hex edges. Roads and Ships only connect through a coastal Settlement or City!",
-          "Open Ships: Once per turn, you may move the open end of an unpinned Ship built on an earlier turn. Settling a new foreign island awards +2 bonus VP; Gold River yields any 1 resource of choice.",
+          "Rolling a 7: No terrain produces. Every player holding more than 7 cards (+2 per City Wall, max 13) must choose half their hand (rounded down) to discard.",
+          "Move Robber (or Pirate): The roller MUST move the Robber to a different land hex (blocking all production on that hex while there) and steal 1 random card from 1 player with a building on it. With Friendly Robber enabled, you cannot place the Robber on a hex touching a player with ≤2 visible VP.",
+          "Maritime & Domestic Trade: Trade 4 identical resources for any 1 with the Bank (4:1), 3:1 with a Generic Harbor, or 2:1 matching a Specialty Harbor. Player trades must involve the active player (rivals cannot trade with each other, and 0-card gifts are illegal).",
         ],
       },
       {
-        heading: "Cities & Knights toggle",
+        heading: "4. Piece Supply, Networks & +2 VP Awards",
         items: [
-          "2nd setup piece is a City! Cities on Forest/Pasture/Mountains yield 1 resource + 1 Commodity (Paper/Cloth/Coin) to upgrade Trade, Politics, and Science.",
-          "Level 3 Perks: Trading House (2:1 commodity bank trade), Fortress (Lv 3 Mighty Knights), Aqueduct (1 free resource on dry non-7 rolls). Level 4 claims a +2 VP pillage-immune Metropolis (stealable at Lv 5!).",
-          "Barbarians advance on Ship event rolls and raid at 7/7: if Island Active Knights < Total Cities, lowest contributor(s) lose a City; otherwise top defender earns +1 VP.",
+          "Piece limits per player: 5 Settlements (1 VP each), 4 Cities (2 VP each; upgrades a Settlement and returns the Settlement piece to your supply), 15 Roads, 15 Ships (Seafarers), 3 City Walls.",
+          "Network rules: New Roads must connect to your existing Road, Settlement, or City (unless blocked by a rival building). New Settlements must sit on your own Road/Ship network and obey the Distance Rule. An opponent building on an open intersection breaks an unbroken route!",
+          "Special Awards (+2 VP each): Longest Route goes to the first player with 5+ continuous unbroken Roads/Ships (passes only when strictly exceeded). Largest Army goes to the first with 3+ played Knights (passes when strictly exceeded). Optional Harbormaster awards +2 VP at 3+ Harbor Points (+1 per Harbor Settlement, +2 per Harbor City).",
         ],
       },
-    ],
-    tips: [
-      "Prioritize high-pip intersections (6, 8, 5, 9) with balanced Brick+Lumber OR Ore+Grain synergy (and Forest Paper in Cities & Knights for Aqueduct).",
-      "Securing a 2:1 or 3:1 harbor early prevents hand clogs on 7s.",
-      "Never accept trades with an opponent sitting within 2–3 VP of victory.",
+      {
+        heading: "5. Base Development Cards (25 Cards; 34 in 5–6P)",
+        items: [
+          "Buy for 1 Wool + 1 Grain + 1 Ore (drawn blind from deck; played cards stay out of the deck). You may play at most 1 action Dev Card per turn, and NEVER on the same turn you bought it.",
+          "Knight (×14, or ×20 in 5–6P): Move the Robber (or Pirate) and steal 1 random card; stays face-up toward Largest Army (3+).",
+          "Road Building (×2 / ×3): Immediately place up to 2 free Roads or Ships. Year of Plenty (×2 / ×3): Take any 2 resource cards of your choice from the bank. Monopoly (×2 / ×3): Name 1 resource; all opponents hand you every card of that resource they hold. Victory Point (×5): Worth +1 VP immediately (kept hidden from rivals until you win).",
+        ],
+      },
+      {
+        heading: "6. 5–6 Player Extension & City Walls",
+        items: [
+          "5–6 Players: Automatically uses larger 30-hex islands, larger resource/commodity/dev decks, and enables the between-turn Special Building Phase.",
+          "Special Building Phase: After the active player ends their turn, each other player in clockwise order may build pieces or buy Dev Cards strictly from cards already in hand — NO Maritime/Player trading and NO playing Dev/Progress cards until your own turn.",
+          "City Walls (2 Brick, max 3): Placed under any of your Cities; each Wall raises your safe hand limit on a 7 by +2 cards (9 / 11 / 13). If that City is pillaged, its Wall is destroyed too.",
+        ],
+      },
+      {
+        heading: "7. Seafarers Expansion (12 VP Target)",
+        items: [
+          "Ships (1 Lumber + 1 Wool): Placed on sea or coastal edges connected to your coastal Settlement/City or another Ship. Roads and Ships NEVER link directly — only a coastal Settlement/City connects a Road chain to a Ship chain.",
+          "Moving Ships: Once per turn in Main Phase, you may move 1 open Ship (unattached at one end, not built this turn, and not pinned by the Pirate) to any legal sea/coastal edge.",
+          "Pirate, Gold & Fog: Move the Pirate onto a sea hex on a 7 or Knight to block building/moving Ships on its 6 edges and steal 1 card from an adjacent ship owner. Gold Rivers produce any resource of your choice; reaching a Fog edge flips the tile (+1 reward if fertile); your 1st Settlement on each foreign island scores +2 bonus VP.",
+        ],
+      },
+      {
+        heading: "8. Cities & Knights Expansion (13 VP Target)",
+        items: [
+          "Commodities & Improvements: Replaces Base Dev Cards & Largest Army; 2nd setup piece is a City. Cities on Forest, Pasture, and Mountains yield 1 Resource + 1 Commodity (Paper, Cloth, Coin). Spend 1→5 matching Commodities to upgrade Science (Paper), Trade (Cloth), or Politics (Coin); Lv 4–5 requires owning a City.",
+          "Lv 3 Perks & Metropolises (+2 VP): Lv 3 Trade unlocks 2:1 bank trade on all commodities; Lv 3 Politics unlocks Mighty (Lv 3) Knights; Lv 3 Science (Aqueduct) grants 1 chosen resource whenever a non-7 roll gives you nothing. First to Lv 4 claims that track's Metropolis (+2 VP, immune to pillage; stolen only by reaching Lv 5 first).",
+          "Event Die, Barbarians, Knights & Progress Cards: Event Die has 3 Barbarian Ships (advances raid 0→7) and 3 colored City Gates (if Red Die ≤ your level in that gate's track, draw 1 Progress Card; max 4 in hand). At 7/7 Barbarians raid: if total Active Knight strength < total Cities, player(s) with lowest active strength lose 1 un-metropolised City to a Settlement; if Knights ≥ Cities, top defender gains +1 VP (ties draw 1 Progress Card). Robber stays dormant until the 1st raid. Recruit/Promote Knights (1 Wool + 1 Ore, max 2 Basic / 2 Strong / 2 Mighty) and Activate (1 Grain); active Knights can Move, Displace weaker rival Knights, or Chase the Robber on a later turn.",
+        ],
+      },
     ],
   },
   splendor: {
@@ -259,29 +302,41 @@ export const GAME_REFERENCE_GUIDES: Readonly<
     playersBadge: "2–4 players",
     durationBadge: "15–25 min",
     objective:
-      "Reach 15 or more Prestige Points to trigger the final round; highest total after equal turns wins (tiebreaker: fewest purchased cards).",
+      "Reach 15+ Prestige Points to trigger the final round; after every player completes an equal number of turns, highest Prestige wins (tiebreaker: fewest purchased Development Cards).",
     sections: [
       {
-        heading: "Choose 1 action on your turn",
+        heading: "1. Setup & Player Scaling (2–4 Players)",
         items: [
-          "Take 3 gem tokens of 3 different colors from the bank.",
-          "Take 2 gem tokens of the SAME color (only legal if at least 4 tokens of that color are in the bank).",
-          "Reserve 1 face-up market card or blind deck card (max 3 reserved) and gain 1 Gold joker token.",
-          "Buy 1 face-up market card or 1 of your reserved cards using tokens + permanent card bonuses.",
+          "Gem Bank scaling: 4 tokens per gem color in 2P, 5 per color in 3P, or 7 per color in 4P (Emerald, Sapphire, Ruby, Diamond, Onyx), plus always 5 Gold wild tokens.",
+          "Card Market: Shuffle Tier 1 (40 cards), Tier 2 (30 cards), and Tier 3 (20 cards) separately and reveal 4 face-up cards per row (12 open market cards; refilled immediately whenever bought or held).",
+          "Royal Nobles: Reveal Players + 1 Noble tiles (3 in 2P, 4 in 3P, 5 in 4P), each worth +3 Prestige Points.",
         ],
       },
       {
-        heading: "Key rules",
+        heading: "2. What You Can Do on Your Turn (Pick 1 of 4)",
         items: [
-          "10-Token Hand Cap: If you end an action above 10 tokens (including Gold), return excess tokens down to 10.",
-          "Permanent Discounts: Every purchased card reduces future costs of its gem color by 1 permanently.",
-          "Royal Nobles (+3 pts): Automatically visit at end of turn (max 1 per turn) once your card bonuses meet their requirement.",
+          "Option A — Take 3 Distinct Gems: Take 1 token each of 3 different non-Gold colors (if only 1 or 2 non-Gold stacks remain in the bank, you may take 1 each from the remaining stacks).",
+          "Option B — Take 2 Same-Color Gems: Take 2 tokens of a single non-Gold color — ONLY legal when that stack currently holds at least 4 tokens before you take.",
+          "Option C — Hold (Reserve) 1 Card: Take any 1 face-up market card OR draw the blind top card of Tier 1/2/3 into your private reserve (max 3 reserved cards at once), and take +1 Gold joker if any Gold remains in the bank.",
+          "Option D — Buy 1 Card: Purchase 1 face-up market card or 1 of your reserved cards by returning its required gems (minus your permanent bonuses) to the bank; Gold jokers pay for any missing color.",
         ],
       },
-    ],
-    tips: [
-      "Focus your first 4–5 mines on 2–3 colors that overlap with at least two Nobles and high-efficiency Tier 2/3 cards.",
-      "Reserving a key 3–5 VP Tier 2/3 card denies it to opponents while banking a flexible Gold joker.",
+      {
+        heading: "3. 10-Token Hand Cap & Engine Discounts",
+        items: [
+          "10-token limit: You may hold at most 10 tokens total (gems + Gold) at the end of your turn. If taking gems or Gold puts you above 10, immediately choose excess tokens to return down to 10.",
+          "Permanent card bonuses: Every purchased Development Card stays in your tableau and provides a permanent -1 cost discount of its top-right gem icon on every future card you buy.",
+          "Reserve rules: Reserved cards cannot be discarded — slots only free up when you buy those cards. Blind deck draws remain hidden from opponents until purchased.",
+        ],
+      },
+      {
+        heading: "4. Royal Nobles (+3 VP) & Endgame Tiebreaker",
+        items: [
+          "Automatic Noble check: At the end of your turn, if your permanent card bonuses (gem/Gold tokens do NOT count!) match a Noble tile, that Noble automatically visits you for +3 Prestige.",
+          "One per turn: Attracting a Noble is free (not an action), and at most 1 Noble can visit per turn (if you qualify for multiple simultaneously, you choose which 1 visits).",
+          "Equal-turn finish: Once anyone hits 15+ Prestige, play continues until the last player in turn order finishes the round. Most Prestige wins; ties go to whoever bought fewer Development Cards.",
+        ],
+      },
     ],
   },
   azul: {
@@ -290,28 +345,40 @@ export const GAME_REFERENCE_GUIDES: Readonly<
     playersBadge: "2–4 players",
     durationBadge: "15–25 min",
     objective:
-      "Score the most points tiling your 5×5 palace wall; game ends at the end of the round in which any player completes 1 horizontal row of 5 tiles (tiebreaker: most completed horizontal rows).",
+      "Score the most points tiling your 5×5 Palace Wall; the match ends after the Wall-tiling phase in which any player completes at least 1 horizontal row of 5 tiles.",
     sections: [
       {
-        heading: "Round phases",
+        heading: "1. Setup & Factory Scaling (2–4 Players)",
         items: [
-          "1. Factory Offer: Pick all tiles of 1 color from either a Factory (pushing leftovers to Center) or the Center Pool (first taker also claims the -1 First-Player marker).",
-          "2. Pattern Placement: Place all drafted tiles onto 1 Pattern Line (capacities 1–5); any overflow drops onto your Floor Line (-1, -1, -2, -2, -2, -3, -3).",
-          "3. Wall-Tiling: Completed Pattern Lines move 1 tile right onto the matching Wall slot and clear remaining tiles; incomplete lines carry over to next round.",
+          "100 resin tiles in the bag (20 each of Blue, Yellow, Red, Black, and Teal). Whenever the bag empties, discarded tiles from the lid reshuffle into the bag automatically.",
+          "Factory Displays: Use 5 Factories in 2P, 7 in 3P, or 9 in 4P. At the start of each round, deal 4 tiles onto each Factory and place the '1st' Player marker in the Center Pool.",
+          "Player Board: 5 Pattern Lines on the left (Row 1 holds 1 tile … Row 5 holds 5 tiles), a 5×5 colored Wall on the right, and a 7-slot penalty Floor Line at the bottom.",
         ],
       },
       {
-        heading: "Chain & endgame scoring",
+        heading: "2. Phase 1 — Factory Offer (Drafting)",
         items: [
-          "Isolated Wall tile: +1 pt.",
-          "Horizontal and/or Vertical chain: Count ALL contiguously linked tiles horizontally + vertically!",
-          "Endgame Bonuses: +2 pts per full horizontal row · +7 pts per full vertical column · +10 pts per complete set of 5 tiles of one color.",
+          "Starting with the holder of the '1st' marker, players take turns drafting until ALL Factories and the Center Pool are completely empty.",
+          "Pick from a Factory: Choose 1 color on 1 Factory, take ALL tiles of that color, and push the remaining tiles on that Factory into the Center Pool.",
+          "OR Pick from the Center Pool: Choose 1 color in the Center and take ALL tiles of that color. If you are the first player to take from Center this round, you also take the '1st' marker onto your Floor Line (-1 pt this round, and you draft 1st next round!).",
         ],
       },
-    ],
-    tips: [
-      "Build outward from the center columns (columns 2–4) so every new tile scores both horizontal and vertical chains.",
-      "Count remaining tiles in Factories + Center so you don't get stuck eating 4+ overflow tiles (-8 pts) at the end of a round!",
+      {
+        heading: "3. Pattern Line Placement & Floor Penalties",
+        items: [
+          "All tiles drafted on your turn must be placed into ONE chosen Pattern Line (or dropped directly onto your Floor Line).",
+          "Color & Wall restrictions: A Pattern Line may only hold 1 color at a time, and you CANNOT place a color into a Pattern Line if that same Wall row already has that color tiled.",
+          "Overflow & Floor track: Extra tiles that do not fit in your chosen Pattern Line fall onto your Floor Line from left to right (-1, -1, -2, -2, -2, -3, -3 = max -14 pts; tiles beyond 7 slots go to the lid). Your total score never drops below 0.",
+        ],
+      },
+      {
+        heading: "4. Phase 2 — Wall-Tiling, Chain Scoring & Bonuses",
+        items: [
+          "Resolving rows (Row 1 → Row 5): Every FULL Pattern Line moves 1 tile across to its matching color slot on that Wall row (remaining tiles of that completed row discard to the lid). Incomplete Pattern Lines keep their tiles for next round!",
+          "Adjacency chain scoring (scored immediately as each tile moves): Isolated tile (no orthogonal neighbors) = +1 pt. Connected tile = count ALL contiguous horizontal tiles (including the new tile) if linked horizontally, PLUS ALL contiguous vertical tiles (including the new tile) if linked vertically! Then subtract Floor Line penalties and clear the Floor.",
+          "Endgame & Bonuses: If anyone has ≥1 full horizontal Wall row of 5 after Wall-tiling, add endgame bonuses: +2 pts per full horizontal row, +7 pts per full vertical column, and +10 pts per color with all 5 tiles on your Wall. Tiebreaker: most completed horizontal rows.",
+        ],
+      },
     ],
   },
   seven_wonders: {
@@ -320,33 +387,54 @@ export const GAME_REFERENCE_GUIDES: Readonly<
     playersBadge: "3–7 players",
     durationBadge: "20–30 min",
     objective:
-      "Amass the highest combined Victory Points across 7 categories after Age III (tiebreaker: most Treasury coins).",
+      "Lead your ancient city across Ages I, II, and III; highest total Victory Points across all 7 scoring categories after Age III wins (tiebreaker: most Treasury coins).",
     sections: [
       {
-        heading: "Simultaneous Age drafting",
+        heading: "1. Setup, Wonders & Age Decks (3–7 Players)",
         items: [
-          "Each of the 3 Ages deals 7 cards per player. Everyone simultaneously chooses 1 card and passes the rest (Age I Clockwise, Age II Counter-Clockwise, Age III Clockwise).",
-          "On Round 6 (2 cards left), play 1 card and discard the 7th card face-down (unless Babylon Side B Stage 2 lets you play it!).",
-          "3 Ways to Use a Card: Build structure (pay cost or free chain) · Tuck face-down to build next Wonder stage · Sell for +3 coins.",
-          "Neighbor Commerce: Buy missing Brown/Gray resources produced by West or East neighbor for 2 coins each (1 coin with Trading Post / Marketplace). Duplicate card names cannot be built twice.",
+          "Each player receives 1 Wonder board (Day A or Night B side) producing 1 starting resource, plus 3 starting Treasury coins. Your immediate left and right players are your West and East neighbors.",
+          "Age I, II, and III decks scale to exact player count (7 cards per player per Age). Age III removes Gray cards and shuffles in Players + 2 random Purple Guilds.",
         ],
       },
       {
-        heading: "All 7 scoring categories",
+        heading: "2. Simultaneous Round Flow (6 Turns per Age)",
         items: [
-          "1. Military (Red): Compare Shields vs West & East at end of each Age (+1/+3/+5 wins, -1 defeats).",
-          "2. Treasury: +1 VP per 3 coins held at game end.",
-          "3. Wonder: Direct VP printed on completed Wonder stages.",
-          "4. Civilian (Blue): Direct flat VP (2–8 VP).",
-          "5. Science (Green): (Compasses² + Gears² + Tablets²) + 7 × complete sets of all 3 symbols!",
-          "6. Commerce (Yellow) & 7. Guilds (Purple): Bonus VP scaling with your or your neighbors' cards & stages.",
+          "Each Age deals 7 cards per player. Everyone picks 1 card + action simultaneously (you can click Change pick freely until the final player locks in), then all choices resolve together.",
+          "Hand passing direction: Pass remaining cards Clockwise (↻, to West) in Age I, Counter-Clockwise (↺, to East) in Age II, and Clockwise (↻) again in Age III.",
+          "6th turn of each Age: From the final 2-card hand, everyone plays 1 card and discards the unplayed 7th card face-down (unless Babylon Night B Stage 2 is built).",
         ],
       },
-    ],
-    tips: [
-      "Secure missing raw/manufactured resources or Trading Posts in Age I — starving for resources in Age III locks you out of 6–8 VP cards.",
-      "Winning a 1-shield military lead over a tied neighbor in Age III is a +6 VP swing (+5 instead of 0, while handing them -1).",
-      "Tucking a high-scoring Science or Guild card under your Wonder denies it to the neighbor receiving your hand!",
+      {
+        heading: "3. Three Ways to Play Any Card",
+        items: [
+          "1. Build Structure: Place the card face-up in your city by paying its coin/resource cost — OR build for 0 cost if you already own the prerequisite card named under 'Chain →'! Duplicate rule: You can NEVER build two structures with the exact same name.",
+          "2. Construct Wonder Stage: Tuck ANY card from hand face-down under your next unbuilt left-to-right Wonder Stage, paying the STAGE's resource cost (ignore the tucked card's printed cost). Stages are optional.",
+          "3. Sell for Coins (+3c): Discard ANY card from hand face-down to gain +3 Treasury coins from the bank.",
+        ],
+      },
+      {
+        heading: "4. Resources & Neighbor Commerce (West & East)",
+        items: [
+          "Reusable goods: Brown raw materials (Wood, Stone, Clay, Ore) and Gray manufactured goods (Glass, Loom, Papyrus) produce every turn and are NEVER spent. Slash cards (e.g. Wood/Clay, Caravansery, Forum) provide 1 of the shown resources per turn.",
+          "Buying from neighbors: Missing resources are automatically bought from your West or East neighbor for 2 coins per unit — or 1 coin with East/West Trading Post (Brown) or Marketplace (Gray). Neighbors CANNOT refuse a trade, and multiple players can buy the same resource on the same turn!",
+          "Tradeable sources: Only Brown cards, Gray cards, and a neighbor's printed starting Wonder resource can be bought (Yellow/Wonder wildcard goods cannot be traded). Coins paid to a neighbor enter their Treasury at end of turn (usable next turn).",
+        ],
+      },
+      {
+        heading: "5. Military Conflicts & Special Wonder Powers",
+        items: [
+          "End-of-Age Wars: After Ages I, II, and III, compare your Red Shield total separately against West and against East. Higher Shields wins a +1 (Age I) / +3 (Age II) / +5 (Age III) Victory Token; lower Shields takes a -1 Defeat Token; ties award nothing.",
+          "Special Wonders: Olympia A2 builds 1 card free per Age (B1 discounts West & East Brown trades to 1c; B3 copies a neighbor Guild); Halikarnassus builds 1 card free from the discard pile; Babylon B2 plays the 7th card each Age; Alexandria, Rhodes, Giza, and Ephesus grant wild goods, Shields, VP, and coins.",
+        ],
+      },
+      {
+        heading: "6. All 7 Endgame Scoring Categories",
+        items: [
+          "1. Military: Net sum of War Victory (+1/+3/+5) and Defeat (-1) tokens. 2. Treasury: +1 VP per complete set of 3 coins held (⌊coins / 3⌋). 3. Wonder: Printed Stage VP. 4. Civilian (Blue): Printed 2–8 VP.",
+          "5. Science (Green): Count Compass (C), Gear (G), and Tablet (T) symbols (wildcards auto-optimized): score C² + G² + T² + 7 VP per (C, G, T) set of all three symbols!",
+          "6. Commercial (Yellow) & 7. Guilds (Purple): Conditional VP based on card colors, stages, or tokens in your city or West/East neighbors. Tiebreaker: player with the most Treasury coins wins.",
+        ],
+      },
     ],
   },
 };
@@ -679,46 +767,312 @@ export function renderTutorialCoachBannerPure(
   `;
 }
 
+function renderGameVisualReferenceHtml(gameId: TutorialGameId): string {
+  if (gameId === "catan") {
+    const mini = (good: Parameters<typeof renderMiniTradeGoodCardSvg>[0]) =>
+      renderMiniTradeGoodCardSvg(good, 28, 18);
+    return `
+      <div class="ga-guide-visual">
+        <div class="ga-guide-section-label">Round structure (on your turn)</div>
+        <div class="ga-guide-flow">
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderActionPieceIconSvg("knight", "#dc2626", 22)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>0. Pre-roll (optional)</strong>
+              <span>Play 1 earlier Dev / Alchemist card</span>
+            </div>
+          </div>
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderDieSvg(3, 22)}${renderDieSvg(5, 22)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>1. Roll 2d6</strong>
+              <span>+1 Settle · +2 City · 7 = &gt;7 discard &amp; Robber</span>
+            </div>
+          </div>
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderActionPieceIconSvg("maritime_trade", "#38bdf8", 22)}${renderActionPieceIconSvg("domestic_trade", "#fde047", 22)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>2. Trade</strong>
+              <span>4:1 Bank · 3:1 / 2:1 Harbors · Players</span>
+            </div>
+          </div>
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderActionPieceIconSvg("settlement", "#ff4a1f", 22)}${renderActionPieceIconSvg("city", "#ff4a1f", 22)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>3. Build &amp; play</strong>
+              <span>Build pieces &amp; play ≤1 Dev Card</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="ga-guide-section-label">Building costs &amp; per-player limits</div>
+        <div class="ga-guide-recipes">
+          <div class="ga-guide-recipe">
+            <span class="ga-guide-recipe__left">${renderActionPieceIconSvg("road", "#ff4a1f", 20)}<strong style="font-size:12px;">Road (×15)</strong></span>
+            <span class="ga-guide-recipe__cards">${mini("brick")}${mini("lumber")}</span>
+          </div>
+          <div class="ga-guide-recipe">
+            <span class="ga-guide-recipe__left">${renderActionPieceIconSvg("ship", "#38bdf8", 20)}<strong style="font-size:12px;">Ship (×15)</strong></span>
+            <span class="ga-guide-recipe__cards">${mini("lumber")}${mini("wool")}</span>
+          </div>
+          <div class="ga-guide-recipe">
+            <span class="ga-guide-recipe__left">${renderActionPieceIconSvg("settlement", "#ff4a1f", 20)}<strong style="font-size:12px;">Settle (×5 · 1 VP)</strong></span>
+            <span class="ga-guide-recipe__cards">${mini("brick")}${mini("lumber")}${mini("wool")}${mini("grain")}</span>
+          </div>
+          <div class="ga-guide-recipe">
+            <span class="ga-guide-recipe__left">${renderActionPieceIconSvg("city", "#ff4a1f", 20)}<strong style="font-size:12px;">City (×4 · 2 VP)</strong></span>
+            <span class="ga-guide-recipe__cards"><span class="t-label ga-num">2×</span>${mini("grain")}<span class="t-label ga-num">3×</span>${mini("ore")}</span>
+          </div>
+          <div class="ga-guide-recipe">
+            <span class="ga-guide-recipe__left">${renderActionPieceIconSvg("dev_card", "#fbbf24", 20)}<strong style="font-size:12px;">Dev Card</strong></span>
+            <span class="ga-guide-recipe__cards">${mini("wool")}${mini("grain")}${mini("ore")}</span>
+          </div>
+          <div class="ga-guide-recipe">
+            <span class="ga-guide-recipe__left">${renderActionPieceIconSvg("wall", "#fde68a", 20)}<strong style="font-size:12px;">Wall (×3 · +2 cap)</strong></span>
+            <span class="ga-guide-recipe__cards"><span class="t-label ga-num">2×</span>${mini("brick")}</span>
+          </div>
+        </div>
+
+        <div class="ga-guide-section-label">Base Development Card deck (25 cards · 34 in 5–6P · play on a later turn)</div>
+        <div class="ga-guide-dev-grid">
+          <div class="ga-guide-dev-card">
+            <div class="ga-guide-dev-card__head">
+              <strong style="font-size:11.5px;color:var(--ink);">Knight</strong>
+              <span class="ga-chip ga-num" style="height:20px;padding:0 6px;">×14</span>
+            </div>
+            <div class="ga-guide-dev-card__art">${renderDevCardIllustrationSvg("knight")}</div>
+            <span class="ga-guide-dev-card__desc">Move Robber/Pirate &amp; steal 1; 3+ = Largest Army (+2 VP).</span>
+          </div>
+          <div class="ga-guide-dev-card">
+            <div class="ga-guide-dev-card__head">
+              <strong style="font-size:11.5px;color:var(--ink);">Road Building</strong>
+              <span class="ga-chip ga-num" style="height:20px;padding:0 6px;">×2</span>
+            </div>
+            <div class="ga-guide-dev-card__art">${renderDevCardIllustrationSvg("road_building")}</div>
+            <span class="ga-guide-dev-card__desc">Place up to 2 free Roads or Ships immediately.</span>
+          </div>
+          <div class="ga-guide-dev-card">
+            <div class="ga-guide-dev-card__head">
+              <strong style="font-size:11.5px;color:var(--ink);">Year of Plenty</strong>
+              <span class="ga-chip ga-num" style="height:20px;padding:0 6px;">×2</span>
+            </div>
+            <div class="ga-guide-dev-card__art">${renderDevCardIllustrationSvg("year_of_plenty")}</div>
+            <span class="ga-guide-dev-card__desc">Take any 2 resource cards directly from the bank.</span>
+          </div>
+          <div class="ga-guide-dev-card">
+            <div class="ga-guide-dev-card__head">
+              <strong style="font-size:11.5px;color:var(--ink);">Monopoly</strong>
+              <span class="ga-chip ga-num" style="height:20px;padding:0 6px;">×2</span>
+            </div>
+            <div class="ga-guide-dev-card__art">${renderDevCardIllustrationSvg("monopoly")}</div>
+            <span class="ga-guide-dev-card__desc">Name 1 resource; rivals give you ALL they hold.</span>
+          </div>
+          <div class="ga-guide-dev-card">
+            <div class="ga-guide-dev-card__head">
+              <strong style="font-size:11.5px;color:var(--ink);">Victory Point</strong>
+              <span class="ga-chip ga-chip--warn ga-num" style="height:20px;padding:0 6px;">×5</span>
+            </div>
+            <div class="ga-guide-dev-card__art">${renderDevCardIllustrationSvg("victory_point")}</div>
+            <span class="ga-guide-dev-card__desc">Counts +1 VP immediately (hidden from rivals).</span>
+          </div>
+        </div>
+
+        <div class="ga-guide-section-label">Cities &amp; Knights — City commodities, Event Die &amp; Knights</div>
+        <div class="ga-guide-recipes">
+          <div class="ga-guide-recipe" title="Forest cities produce 1 Lumber + 1 Paper (upgrades Science)">
+            <span class="ga-guide-recipe__cards">${mini("lumber")}<span class="t-label muted">+</span>${mini("paper")}</span>
+            <span class="t-label" style="color:#4ade80;">Forest → Paper (Science)</span>
+          </div>
+          <div class="ga-guide-recipe" title="Pasture cities produce 1 Wool + 1 Cloth (upgrades Trade)">
+            <span class="ga-guide-recipe__cards">${mini("wool")}<span class="t-label muted">+</span>${mini("cloth")}</span>
+            <span class="t-label" style="color:#a3e635;">Pasture → Cloth (Trade)</span>
+          </div>
+          <div class="ga-guide-recipe" title="Mountain cities produce 1 Ore + 1 Coin (upgrades Politics)">
+            <span class="ga-guide-recipe__cards">${mini("ore")}<span class="t-label muted">+</span>${mini("coin")}</span>
+            <span class="t-label" style="color:#cbd5e1;">Mountain → Coin (Politics)</span>
+          </div>
+          <div class="ga-guide-recipe" title="Barbarian Ship on Event Die (3 of 6 faces) advances the raid counter toward 7/7">
+            <span class="ga-guide-recipe__left">${renderEventDieSvg("barbarian", 22)}<strong style="font-size:12px;">Barbarian Ship</strong></span>
+            <span class="t-label ga-num">Raid at 7/7</span>
+          </div>
+          <div class="ga-guide-recipe" title="City Gate on Event Die + Red Die ≤ your Improvement level draws 1 Progress Card">
+            <span class="ga-guide-recipe__cards">${renderEventDieSvg("trade", 20)}${renderEventDieSvg("politics", 20)}${renderEventDieSvg("science", 20)}</span>
+            <span class="t-label">Red Die ≤ Lv → Progress</span>
+          </div>
+          <div class="ga-guide-recipe" title="Recruit/Promote Knight: 1 Wool + 1 Ore · Activate: 1 Grain · Lv 4 City = Metropolis (+2 VP)">
+            <span class="ga-guide-recipe__left">${renderActionPieceIconSvg("knight_piece", "#38bdf8", 20)}${renderActionPieceIconSvg("metropolis", "#f59e0b", 20)}</span>
+            <span class="t-label">${mini("wool")}${mini("ore")} · Act ${mini("grain")}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (gameId === "splendor") {
+    return `
+      <div class="ga-guide-visual">
+        <div class="ga-guide-section-label">On your turn — choose 1 of 4 actions</div>
+        <div class="ga-guide-flow">
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderSplendorGemToken("emerald", 1, 24)}${renderSplendorGemToken("sapphire", 1, 24)}${renderSplendorGemToken("ruby", 1, 24)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>Take 3 distinct</strong>
+              <span>1 each of 3 non-Gold colors</span>
+            </div>
+          </div>
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderSplendorGemToken("diamond", 2, 26)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>OR Take 2 same</strong>
+              <span>Requires ≥4 in that stack</span>
+            </div>
+          </div>
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderSplendorGemToken("gold", 1, 26)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>OR Hold 1 card</strong>
+              <span>Market or blind deck (≤3) + 1 Gold</span>
+            </div>
+          </div>
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon"><span class="ga-chip ga-chip--accent ga-num">+VP</span></span>
+            <div class="ga-guide-flow__copy">
+              <strong>OR Buy 1 card</strong>
+              <span>Permanent -1 gem cost bonus</span>
+            </div>
+          </div>
+        </div>
+        <div class="ga-guide-recipes">
+          <div class="ga-guide-recipe">
+            <strong style="font-size:12px;">Gem stacks by players</strong>
+            <span class="t-label ga-num">2P: 4 · 3P: 5 · 4P: 7 (+5 Gold)</span>
+          </div>
+          <div class="ga-guide-recipe">
+            <strong style="font-size:12px;">End-of-turn limits</strong>
+            <span class="t-label ga-num">≤10 tokens · ≤3 held cards</span>
+          </div>
+          <div class="ga-guide-recipe">
+            <strong style="font-size:12px;">Nobles &amp; Finish</strong>
+            <span class="ga-chip ga-chip--warn ga-num">+3 VP auto · 15+ VP end</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (gameId === "azul") {
+    return `
+      <div class="ga-guide-visual">
+        <div class="ga-guide-section-label">Round phases</div>
+        <div class="ga-guide-flow">
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderAzulTile("blue", 22)}${renderAzulTile("blue", 22)}${renderAzulTile("yellow", 22, false, true)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>1. Pick 1 color</strong>
+              <span>Take all matching; rest → Center</span>
+            </div>
+          </div>
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderAzulTile("red", 22)}${renderAzulTile("red", 22)}${renderAzulTile("red", 22, false, false, "", true)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>2. Fill 1 row (1–5)</strong>
+              <span>1 color/row · excess → Floor</span>
+            </div>
+          </div>
+          <div class="ga-guide-flow__step">
+            <span class="ga-guide-flow__icon">${renderAzulTile("teal", 22)}${renderAzulTile("black", 22)}</span>
+            <div class="ga-guide-flow__copy">
+              <strong>3. Tile Wall chains</strong>
+              <span>Full rows move 1 tile &amp; score H+V</span>
+            </div>
+          </div>
+        </div>
+        <div class="ga-guide-recipes">
+          <div class="ga-guide-recipe">
+            <strong style="font-size:12px;">Factories &amp; Floor</strong>
+            <span class="t-label ga-num">2P:5 3P:7 4P:9 · -1,-1,-2,-2,-2,-3,-3</span>
+          </div>
+          <div class="ga-guide-recipe">
+            <strong style="font-size:12px;">Row / Column bonus</strong>
+            <span class="ga-chip ga-chip--ok ga-num">+2 Row (ends) · +7 Col</span>
+          </div>
+          <div class="ga-guide-recipe">
+            <strong style="font-size:12px;">All 5 of 1 Color</strong>
+            <span class="ga-chip ga-chip--warn ga-num">+10 pts</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="ga-guide-visual">
+      <div class="ga-guide-section-label">Simultaneous turn — pick 1 card, then pass hand (↻ Age I/III · ↺ Age II)</div>
+      <div class="ga-guide-flow">
+        <div class="ga-guide-flow__step">
+          <span class="ga-guide-flow__icon">${renderSwResourceBadge("wood", 1, true)}${renderSwResourceBadge("glass", 1, true)}</span>
+          <div class="ga-guide-flow__copy">
+            <strong>1. Build structure</strong>
+            <span>Own goods, Chain →, or neighbor 2c/1c</span>
+          </div>
+        </div>
+        <div class="ga-guide-flow__step">
+          <span class="ga-guide-flow__icon"><span class="ga-chip ga-chip--warn">▲ Stage</span></span>
+          <div class="ga-guide-flow__copy">
+            <strong>2. Build Wonder</strong>
+            <span>Pay stage cost; tuck card face-down</span>
+          </div>
+        </div>
+        <div class="ga-guide-flow__step">
+          <span class="ga-guide-flow__icon">${renderSwCoinSvg(20)}<span class="t-label ga-num" style="color:#fde047;">+3c</span></span>
+          <div class="ga-guide-flow__copy">
+            <strong>3. Sell card</strong>
+            <span>Discard any card for 3 coins</span>
+          </div>
+        </div>
+      </div>
+      <div class="ga-guide-recipes">
+        <div class="ga-guide-recipe">
+          <span class="ga-guide-recipe__left">${renderSwShieldSvg(18)}<strong style="font-size:12px;">Military (Age I/II/III)</strong></span>
+          <span class="t-label ga-num">+1/+3/+5 win · -1 loss</span>
+        </div>
+        <div class="ga-guide-recipe">
+          <span class="ga-guide-recipe__left">${renderSwScienceIconSvg("compass", 16)}${renderSwScienceIconSvg("gear", 16)}${renderSwScienceIconSvg("tablet", 16)}</span>
+          <span class="t-label ga-num">C²+G²+T² + 7×sets</span>
+        </div>
+        <div class="ga-guide-recipe">
+          <span class="ga-guide-recipe__left">${renderSwCoinSvg(17)}<strong style="font-size:12px;">7 VP Categories</strong></span>
+          <span class="t-label ga-num">3c=+1 · Blue · Yellow · Guilds</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderReferenceGuideModalPure(
   activeGameId: TutorialGameId,
   inActiveMatch: boolean
 ): string {
   const guide = GAME_REFERENCE_GUIDES[activeGameId];
-  const allTabs: readonly { id: TutorialGameId; label: string }[] = [
-    { id: "catan", label: "Settlers of Catan" },
-    { id: "splendor", label: "Splendor" },
-    { id: "azul", label: "Azul" },
-    { id: "seven_wonders", label: "7 Wonders" },
-  ];
 
   return `
     <div class="ga-guide-backdrop" id="ga-guide-backdrop" role="dialog" aria-modal="true" aria-label="${escapeHtml(guide.title)} how to play">
       <div class="ga-guide-dialog">
         <div class="ga-guide-dialog__head">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <strong style="font-family:var(--font-display);font-size:18px;font-weight:500;">How to play &amp; strategy guide</strong>
+            <strong style="font-family:var(--font-display);font-size:18px;font-weight:500;">${escapeHtml(guide.title)} — How to play</strong>
             <span class="ga-chip">${escapeHtml(guide.playersBadge)}</span>
             <span class="ga-chip">${escapeHtml(guide.durationBadge)}</span>
           </div>
           <button type="button" id="btn-close-guide" class="btn btn--secondary btn--sm">Close</button>
         </div>
 
-        <div class="ga-tabs" style="align-self:flex-start;">
-          ${allTabs
-            .map(
-              (t) => `
-              <button type="button" data-guide-tab="${t.id}" class="ga-tab ${
-                t.id === activeGameId ? "is-active" : ""
-              }">${escapeHtml(t.label)}</button>
-            `
-            )
-            .join("")}
+        <div class="ga-guide-objective">
+          <span class="t-label muted">Goal</span>
+          <p class="t-small" style="margin:2px 0 0;color:var(--ink);">${escapeHtml(guide.objective)}</p>
         </div>
 
-        <div class="ga-guide-objective">
-          <span class="t-label muted">Objective</span>
-          <p class="t-small" style="margin:4px 0 0;color:var(--ink);">${escapeHtml(guide.objective)}</p>
-        </div>
+        ${renderGameVisualReferenceHtml(activeGameId)}
 
         <div class="ga-guide-grid">
           ${guide.sections
@@ -735,13 +1089,6 @@ export function renderReferenceGuideModalPure(
             `
             )
             .join("")}
-        </div>
-
-        <div class="ga-guide-card">
-          <strong style="font-size:13px;font-weight:500;color:var(--ink);">Grandmaster table tips</strong>
-          <ul class="ga-guide-list">
-            ${guide.tips.map((tip) => `<li>${escapeHtml(tip)}</li>`).join("")}
-          </ul>
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-top:4px;border-top:1px solid var(--line);">

@@ -250,27 +250,27 @@ export const COMMODITY_META: Record<
 > = {
   paper: {
     label: "Paper",
-    subtitle: "Parchment mill",
-    accent: "#10b981",
-    bgTop: "#064e3b",
-    bgBottom: "#022c22",
-    border: "#34d399",
+    subtitle: "Forest city",
+    accent: "#16a34a",
+    bgTop: "#14532d",
+    bgBottom: "#052814",
+    border: "#4ade80",
   },
   cloth: {
     label: "Cloth",
-    subtitle: "Weaver guild",
-    accent: "#f59e0b",
-    bgTop: "#78350f",
-    bgBottom: "#351505",
-    border: "#fbbf24",
+    subtitle: "Pasture city",
+    accent: "#65a30d",
+    bgTop: "#365314",
+    bgBottom: "#172606",
+    border: "#a3e635",
   },
   coin: {
     label: "Coin",
-    subtitle: "Royal mint",
-    accent: "#3b82f6",
-    bgTop: "#1e3a8a",
+    subtitle: "Mountain city",
+    accent: "#64748b",
+    bgTop: "#334155",
     bgBottom: "#0f172a",
-    border: "#60a5fa",
+    border: "#94a3b8",
   },
 };
 
@@ -2249,35 +2249,39 @@ export function renderCommodityCardIllustrationSvg(
     case "paper":
       return `
         <svg viewBox="0 0 80 52" width="76" height="48" aria-hidden="true">
-          <rect width="80" height="52" rx="6" fill="#022c22" />
-          <path d="M0,38 Q28,28 56,35 T80,32 L80,52 L0,52 Z" fill="#064e3b" />
-          <rect x="20" y="9" width="36" height="34" rx="3" fill="#fef3c7" stroke="#34d399" stroke-width="1.4" />
-          <line x1="27" y1="18" x2="49" y2="18" stroke="#065f46" stroke-width="2" stroke-linecap="round" />
-          <line x1="27" y1="25" x2="49" y2="25" stroke="#065f46" stroke-width="2" stroke-linecap="round" />
-          <line x1="27" y1="32" x2="42" y2="32" stroke="#065f46" stroke-width="2" stroke-linecap="round" />
-          <circle cx="52" cy="36" r="5" fill="#10b981" stroke="#ecfdf5" stroke-width="1.1" />
+          <rect width="80" height="52" rx="6" fill="#052e16" />
+          <path d="M0,38 Q26,26 54,34 T80,32 L80,52 L0,52 Z" fill="#14532d" />
+          <polygon points="8,38 18,16 28,38" fill="#15803d" opacity="0.65" />
+          <polygon points="54,38 64,17 74,38" fill="#16a34a" opacity="0.65" />
+          <rect x="22" y="9" width="36" height="34" rx="3" fill="#fef3c7" stroke="#86efac" stroke-width="1.4" />
+          <line x1="29" y1="18" x2="51" y2="18" stroke="#14532d" stroke-width="2" stroke-linecap="round" />
+          <line x1="29" y1="25" x2="51" y2="25" stroke="#14532d" stroke-width="2" stroke-linecap="round" />
+          <line x1="29" y1="32" x2="43" y2="32" stroke="#14532d" stroke-width="2" stroke-linecap="round" />
+          <circle cx="53" cy="36" r="5" fill="#16a34a" stroke="#dcfce7" stroke-width="1.1" />
         </svg>
       `;
     case "cloth":
       return `
         <svg viewBox="0 0 80 52" width="76" height="48" aria-hidden="true">
-          <rect width="80" height="52" rx="6" fill="#351505" />
-          <path d="M0,38 Q26,28 54,35 T80,32 L80,52 L0,52 Z" fill="#78350f" />
+          <rect width="80" height="52" rx="6" fill="#1a2e05" />
+          <path d="M0,32 Q28,18 56,28 T80,26 L80,52 L0,52 Z" fill="#4d7c0f" />
+          <path d="M0,41 Q36,32 80,40 L80,52 L0,52 Z" fill="#365314" />
           <path d="M16,15 C28,9 38,21 50,15 C56,12 62,14 64,16 V37 C54,41 44,30 32,36 C24,40 18,38 16,36 Z"
-                fill="#f59e0b" stroke="#fef08a" stroke-width="1.4" />
-          <path d="M22,22 C32,18 42,27 56,21" fill="none" stroke="#fffbeb" stroke-width="1.5" stroke-dasharray="3,2.5" />
-          <path d="M22,30 C32,26 42,35 56,29" fill="none" stroke="#78350f" stroke-width="1.5" />
+                fill="#fef3c7" stroke="#bef264" stroke-width="1.5" />
+          <path d="M22,22 C32,18 42,27 56,21" fill="none" stroke="#65a30d" stroke-width="1.7" stroke-dasharray="3,2.5" />
+          <path d="M22,30 C32,26 42,35 56,29" fill="none" stroke="#365314" stroke-width="1.7" />
         </svg>
       `;
     case "coin":
       return `
         <svg viewBox="0 0 80 52" width="76" height="48" aria-hidden="true">
           <rect width="80" height="52" rx="6" fill="#0f172a" />
-          <path d="M0,38 Q30,28 58,35 T80,33 L80,52 L0,52 Z" fill="#1e3a8a" />
-          <circle cx="31" cy="28" r="12" fill="#d97706" stroke="#fef08a" stroke-width="1.4" />
-          <circle cx="47" cy="23" r="13" fill="#facc15" stroke="#ffffff" stroke-width="1.5" />
-          <circle cx="47" cy="23" r="8.5" fill="none" stroke="#92400e" stroke-width="1.3" />
-          <polygon points="47,17.5 49,21.5 53,22 50,25 50.8,29 47,27 43.2,29 44,25 41,22 45,21.5" fill="#92400e" />
+          <polygon points="6,46 24,14 42,46" fill="#334155" opacity="0.85" />
+          <polygon points="38,46 58,12 76,46" fill="#475569" opacity="0.85" />
+          <circle cx="31" cy="29" r="11.5" fill="#cbd5e1" stroke="#f8fafc" stroke-width="1.3" />
+          <circle cx="47" cy="23.5" r="12.5" fill="#facc15" stroke="#ffffff" stroke-width="1.5" />
+          <circle cx="47" cy="23.5" r="8.2" fill="none" stroke="#92400e" stroke-width="1.3" />
+          <polygon points="47,18 49,22 53,22.5 50,25.5 50.8,29.5 47,27.5 43.2,29.5 44,25.5 41,22.5 45,22" fill="#92400e" />
         </svg>
       `;
   }

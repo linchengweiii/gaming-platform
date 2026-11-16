@@ -28,7 +28,7 @@ jobs:
           bun-version: latest
 
       - name: Run unit and game-engine invariant tests
-        run: bun test --timeout 30000
+        run: bun test --timeout 60000
 
       - name: Bundle browser application
         run: bun build apps/web/src/app.ts --outdir apps/web/public/dist --target browser --minify

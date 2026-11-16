@@ -527,11 +527,11 @@ export function renderSplendorPlayerCard(
         <span class="ga-chip ga-chip--warn ga-num">${p.points}/${state.config.targetPoints} VP</span>
       </div>
 
-      <div style="display: flex; gap: 3px; flex-wrap: wrap; align-items: center;">
+      <div style="display: flex; gap: 5px; flex-wrap: wrap; align-items: center;">
         ${ALL_TOKEN_COLORS.map((c) => {
           const st = GEM_STYLES[c];
           return `<span class="ga-num" title="${st.label} tokens" style="
-            padding: 1px 5px;
+            padding: 2px 7px;
             border-radius: 999px;
             background: ${st.bg};
             border: 1px solid ${st.border};
@@ -543,13 +543,13 @@ export function renderSplendorPlayerCard(
         <span class="ga-chip ga-num" title="Tokens in hand">${totalTokens(p.tokens)}/10</span>
       </div>
 
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap;">
-        <div style="display: flex; gap: 3px; flex-wrap: wrap;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
           ${GEM_COLORS.map((c) => {
             const st = GEM_STYLES[c];
             return `<span class="ga-num" title="${st.label} permanent discount" style="
-              padding: 1px 5px;
-              border-radius: 4px;
+              padding: 2px 6px;
+              border-radius: 5px;
               background: ${st.bg};
               border: 1px solid ${st.border};
               color: ${st.text};

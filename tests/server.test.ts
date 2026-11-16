@@ -17,7 +17,14 @@ import {
   renderCatanBoardSvg,
   renderCatanVisualHandTray,
 } from "../apps/web/src/catan-graphics.ts";
-import { MultiGamePlatformApp } from "../apps/web/src/app.ts";
+import {
+  MultiGamePlatformApp,
+  buildRoomShareUrlPure,
+  createInitialAppModelPure,
+  extractInviteRoomHashFromLocationPure,
+  formatRoomHashLabelPure,
+  renderLoginViewPure,
+} from "../apps/web/src/app.ts";
 import {
   runHumanMimicIterations,
   runRobotIterations,
@@ -299,7 +306,9 @@ describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", ()
     expect(root.innerHTML).toContain("ga-dropdown__menu");
     expect(root.innerHTML).toContain("ga-dropdown--end");
     expect(root.innerHTML).not.toContain('class="ga-select');
-    expect(root.innerHTML).toContain("Tabletop board games in one room.");
+    expect(root.innerHTML).not.toContain("Tabletop board games in one room.");
+    expect(root.innerHTML).not.toContain('data-lobby-filter="all"');
+    expect(root.innerHTML).toContain("Open rooms");
 
     // 2. Owner Setup page is editable before start and uses unified zero-jump room shell
     app.enterOrJoinRoom("room-1");
@@ -407,7 +416,9 @@ describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", ()
     expect(app.isAuthenticated).toBe(true);
     expect(app.currentUserName).toBe("Maya");
     expect(app.viewMode).toBe("lobby");
-    expect(root.innerHTML).toContain("Tabletop board games in one room.");
+    expect(root.innerHTML).not.toContain("Tabletop board games in one room.");
+    expect(root.innerHTML).toContain("Open rooms");
+    expect(root.innerHTML).toContain('id="btn-create-room"');
     expect(root.innerHTML).toContain('id="btn-sign-out"');
 
     // Sign out returns to Guest Login page
@@ -1150,7 +1161,7 @@ describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", ()
       uiApp.dispatch(actId, CatanEngine.chooseBotAction(cur, actId)!);
     }
 
-    // 1. Canvas layout: no inline overflow-y on .board-svg-wrap, and all HUD panels rendered together
+    // 1. Canvas layout: no inline overflow-y on .board-svg-wrap, Standings prioritized first & last to scroll, and Game settings folded by default
     expect(uiRoot.innerHTML).toContain('class="ga-game-canvas"');
     expect(uiRoot.innerHTML).not.toContain(
       'class="board-svg-wrap" style="overflow-y: auto;"'
@@ -1158,6 +1169,23 @@ describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", ()
     expect(uiRoot.innerHTML).toContain('class="ga-standings-list"');
     expect(uiRoot.innerHTML).toContain('class="res-pills res-pills--bank"');
     expect(uiRoot.innerHTML).toContain('class="event-log"');
+    expect(
+      uiRoot.innerHTML.indexOf('class="ga-standings-section"')
+    ).toBeLessThan(uiRoot.innerHTML.indexOf('class="ga-sidebar__secondary"'));
+    expect(cssText).toContain(".ga-game-canvas .ga-standings-section");
+    expect(cssText).toContain(".ga-game-canvas .ga-sidebar__secondary");
+
+    expect(uiApp.sidebarSettingsExpanded).toBe(false);
+    expect(uiRoot.innerHTML).toContain('id="btn-toggle-game-settings"');
+    expect(uiRoot.innerHTML).toContain('aria-expanded="false"');
+    expect(uiRoot.innerHTML).not.toContain('class="ga-settings-fold__body"');
+
+    uiApp.sidebarSettingsExpanded = true;
+    uiApp.render();
+    expect(uiRoot.innerHTML).toContain('aria-expanded="true"');
+    expect(uiRoot.innerHTML).toContain('class="ga-settings-fold__body"');
+    uiApp.sidebarSettingsExpanded = false;
+    uiApp.render();
 
     // 2. Start in Player Trade, request 2 Ore + 1 Brick, then quick-switch to Bank Trade:
     //    Request stays 100% identical and Bank Trade shows NO bank supply numbers!
@@ -1758,6 +1786,125 @@ describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", ()
       expect(
         roomBroadcast.state.players.find((p: any) => p.id === "g-host")?.name
       ).toBe("Admiral Yi");
+    } finally {
+      (srv.server as any).closeAllConnections?.();
+      srv.server.close();
+    }
+  });
+
+  test("assigns 6-char room hashes without room-name inputs, creates rooms from selected game filter, and joins rooms directly from shared hash links", async () => {
+    const fakeRoot: any = {
+      innerHTML: "",
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener: () => {},
+    };
+    const app = new MultiGamePlatformApp(fakeRoot, {
+      forceLocalMode: true,
+      startAtLogin: true,
+    });
+
+    app.signInAsGuest("HostClara");
+    expect(app.viewMode).toBe("lobby");
+    expect(app.lobbyGameFilter).toBe("catan");
+    expect(fakeRoot.innerHTML).not.toContain('id="inp-create-room-name"');
+    expect(fakeRoot.innerHTML).not.toContain('id="sel-create-room-game"');
+    expect(fakeRoot.innerHTML).not.toContain('data-lobby-filter="all"');
+    expect(fakeRoot.innerHTML).toContain("+ Create Settlers of Catan room");
+
+    // Switching game filter to Azul updates the compact Create button and creates an Azul room with a 6-char hex hash
+    app.lobbyGameFilter = "azul";
+    app.render();
+    expect(fakeRoot.innerHTML).toContain("+ Create Azul room");
+
+    app.createAndOpenRoom();
+    const createdRoom = app.getActiveRoom();
+    expect(app.viewMode).toBe("room_setup");
+    expect(createdRoom.gameId).toBe("azul");
+    expect(/^[0-9a-f]{6}$/.test(createdRoom.roomId)).toBe(true);
+    expect(createdRoom.name).toBe(`#${createdRoom.roomId}`);
+    expect(fakeRoot.innerHTML).not.toContain('id="setup-room-name"');
+    expect(fakeRoot.innerHTML).toContain(
+      `Room ${formatRoomHashLabelPure(createdRoom.roomId)}`
+    );
+
+    // Shareable URL builder and hash/search parsers round-trip cleanly
+    const shareUrl = buildRoomShareUrlPure(
+      "https://home.tailnet.ts.net",
+      "/",
+      "",
+      createdRoom.roomId
+    );
+    expect(shareUrl).toBe(
+      `https://home.tailnet.ts.net/#room=${createdRoom.roomId}`
+    );
+    expect(
+      extractInviteRoomHashFromLocationPure("", `#room=${createdRoom.roomId}`)
+    ).toBe(createdRoom.roomId);
+    expect(
+      extractInviteRoomHashFromLocationPure("", `#${createdRoom.roomId.toUpperCase()}`)
+    ).toBe(createdRoom.roomId);
+    expect(
+      extractInviteRoomHashFromLocationPure(`?room=${createdRoom.roomId}`, "")
+    ).toBe(createdRoom.roomId);
+
+    // Login screen displays invite banner when opened via #room=<hash>
+    const invitedModel = createInitialAppModelPure(
+      { startAtLogin: true },
+      {
+        isStaticHost: false,
+        isBrowserHttp: true,
+        randomGuestSuffix: 404,
+        deviceGuests: [],
+        savedGuest: null,
+        nowMs: 1700000000000,
+        locationSearch: "",
+        locationHash: `#room=${createdRoom.roomId}`,
+      }
+    );
+    expect(invitedModel.pendingInviteRoomId).toBe(createdRoom.roomId);
+    const invitedLoginHtml = renderLoginViewPure(invitedModel);
+    expect(invitedLoginHtml).toContain(`#${createdRoom.roomId}`);
+    expect(invitedLoginHtml).toContain(`Join #${createdRoom.roomId}`);
+
+    // Live server creates 6-char hash room and allows joining by hash (with or without leading #)
+    const srv = createPlatformServer();
+    await new Promise<void>((resolve) =>
+      srv.server.listen(0, "127.0.0.1", () => resolve())
+    );
+    try {
+      const port = (srv.server.address() as { port: number }).port;
+      const base = `http://127.0.0.1:${port}`;
+
+      const createRes = await fetch(`${base}/api/rooms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gameId: "seven_wonders",
+          ownerId: "g-host-1",
+          hostName: "HostClara",
+        }),
+      });
+      const { room: srvRoom } = await createRes.json();
+      expect(/^[0-9a-f]{6}$/.test(srvRoom.roomId)).toBe(true);
+      expect(srvRoom.name).toBe(`#${srvRoom.roomId}`);
+      expect(srvRoom.gameId).toBe("seven_wonders");
+
+      // Friend opens link #room=<hash> and joins directly
+      const joinRes = await fetch(`${base}/api/rooms/${srvRoom.roomId}/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerId: "g-friend-2",
+          playerName: "FriendDan",
+        }),
+      });
+      const joinData = await joinRes.json();
+      expect(joinRes.ok).toBe(true);
+      expect(joinData.room.players.map((p: any) => p.name)).toEqual([
+        "HostClara",
+        "FriendDan",
+      ]);
     } finally {
       (srv.server as any).closeAllConnections?.();
       srv.server.close();

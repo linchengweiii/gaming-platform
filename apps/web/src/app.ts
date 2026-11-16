@@ -212,7 +212,8 @@ export interface ClientRoom {
 }
 
 export interface CreateLocalRoomOptions {
-  readonly name: string;
+  readonly name?: string;
+  readonly customRoomId?: string;
   readonly gameId: SupportedGameId;
   readonly ownerId: string;
   readonly ownerName: string;
@@ -234,7 +235,7 @@ export interface CreateLocalRoomOptions {
 
 export interface AppModel {
   readonly viewMode: AppViewMode;
-  readonly lobbyGameFilter: "all" | SupportedGameId;
+  readonly lobbyGameFilter: SupportedGameId;
   readonly lobbyHeroEnteredOnce: boolean;
   readonly loginHeroEnteredOnce: boolean;
   readonly useServerBackend: boolean;
@@ -255,6 +256,8 @@ export interface AppModel {
   readonly createRoomName: string;
   readonly createRoomGameId: SupportedGameId;
   readonly createRoomMode: "online" | "offline";
+  readonly pendingInviteRoomId: string | null;
+  readonly copiedRoomLinkId: string | null;
   readonly rooms: Readonly<Record<string, ClientRoom>>;
   readonly roomOrder: readonly string[];
   readonly nextRoomNum: number;
@@ -304,6 +307,7 @@ export interface AppModel {
     readonly maxAutoStepIndex: number;
   } | null;
   readonly guideModalGameId: SupportedGameId | null;
+  readonly sidebarSettingsExpanded: boolean;
   readonly autoPlayBots: boolean;
   readonly autoRespondBotsToHuman: boolean;
   readonly autoPlaySpeedMs: number;
@@ -720,12 +724,139 @@ export function rebuildRoomSeatsPure(room: Readonly<ClientRoom>): ClientRoom {
   };
 }
 
+export const GAME_TITLE_BY_ID: Readonly<Record<SupportedGameId, string>> = {
+  catan: "Settlers of Catan",
+  splendor: "Splendor",
+  azul: "Azul",
+  seven_wonders: "7 Wonders",
+};
+
+export function computeClientRoomHashPure(
+  counter: number,
+  nowMs: number,
+  salt: string,
+  existingRooms: Readonly<Record<string, unknown>> = {}
+): string {
+  const hashOnce = (input: string): string => {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < input.length; i++) {
+      h ^= input.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    h ^= h >>> 16;
+    h = Math.imul(h, 0x85ebca6b) >>> 0;
+    h ^= h >>> 13;
+    return (h & 0xffffff).toString(16).padStart(6, "0");
+  };
+
+  for (let attempt = 0; attempt < 64; attempt++) {
+    const candidate = hashOnce(`${counter}:${nowMs}:${salt}:${attempt}`);
+    if (!existingRooms[candidate]) {
+      return candidate;
+    }
+  }
+  return `${hashOnce(`${counter}:${nowMs}:${salt}`)}${counter}`;
+}
+
+export function formatRoomHashLabelPure(roomId: string): string {
+  const raw = roomId.trim().replace(/^#+/, "");
+  if (/^[0-9a-f]{6,10}$/i.test(raw)) {
+    return `#${raw.toLowerCase()}`;
+  }
+  return `#${computeClientRoomHashPure(0, 0, raw)}`;
+}
+
+export function extractInviteRoomHashFromLocationPure(
+  search: string,
+  hash: string
+): string | null {
+  const cleanToken = (val: string): string | null => {
+    let decoded = val;
+    try {
+      decoded = decodeURIComponent(val);
+    } catch {
+      decoded = val;
+    }
+    const stripped = decoded.trim().replace(/^#+/, "");
+    if (!stripped || !/^[A-Za-z0-9_-]{3,40}$/.test(stripped)) {
+      return null;
+    }
+    return /^[0-9A-Fa-f]{6,10}$/.test(stripped)
+      ? stripped.toLowerCase()
+      : stripped;
+  };
+
+  const trimmedHash = (hash ?? "").trim().replace(/^#+/, "");
+  if (trimmedHash) {
+    if (trimmedHash.includes("=")) {
+      const params = new URLSearchParams(trimmedHash);
+      const fromParam = params.get("room");
+      if (fromParam) {
+        const cleaned = cleanToken(fromParam);
+        if (cleaned) return cleaned;
+      }
+    } else {
+      const direct = cleanToken(trimmedHash);
+      if (direct) return direct;
+    }
+  }
+
+  const trimmedSearch = (search ?? "").trim().replace(/^\?+/, "");
+  if (trimmedSearch) {
+    const params = new URLSearchParams(trimmedSearch);
+    const fromSearch = params.get("room");
+    if (fromSearch) {
+      const cleaned = cleanToken(fromSearch);
+      if (cleaned) return cleaned;
+    }
+  }
+
+  return null;
+}
+
+export function buildRoomShareUrlPure(
+  origin: string,
+  pathname: string,
+  search: string,
+  roomId: string
+): string {
+  const cleanId = roomId.trim().replace(/^#+/, "");
+  const params = new URLSearchParams((search ?? "").replace(/^\?+/, ""));
+  params.delete("room");
+  const nextSearch = params.toString();
+  return `${origin}${pathname}${nextSearch ? `?${nextSearch}` : ""}#room=${encodeURIComponent(cleanId)}`;
+}
+
+export function resolveClientRoomIdPure(
+  model: Readonly<AppModel>,
+  rawRoomId: string
+): string {
+  const cleaned = rawRoomId.trim().replace(/^#+/, "");
+  if (model.rooms[cleaned]) return cleaned;
+  const lower = cleaned.toLowerCase();
+  if (model.rooms[lower]) return lower;
+  const byDisplayHash = model.roomOrder.find(
+    (id) =>
+      model.rooms[id] &&
+      formatRoomHashLabelPure(id).slice(1).toLowerCase() === lower
+  );
+  return byDisplayHash ?? (/^[0-9A-Fa-f]{6,10}$/.test(cleaned) ? lower : cleaned);
+}
+
 export function createLocalRoomPure(
   model: Readonly<AppModel>,
   opts: CreateLocalRoomOptions,
   nowMs: number = Date.now()
 ): { readonly model: AppModel; readonly room: ClientRoom } {
-  const roomId = `room-${model.nextRoomNum}`;
+  const roomId =
+    opts.customRoomId ??
+    computeClientRoomHashPure(
+      model.nextRoomNum,
+      nowMs,
+      `${opts.gameId}:${opts.ownerId}:${opts.customSeed ?? ""}`,
+      model.rooms
+    );
+  const roomName = opts.name?.trim() || formatRoomHashLabelPure(roomId);
   const allBots = opts.allBots ?? false;
   const botDifficulty: BotDifficulty = opts.botDifficulty ?? "master";
   const humanPlayers: PlayerDescriptor[] = allBots
@@ -741,7 +872,7 @@ export function createLocalRoomPure(
 
   const baseRoom: ClientRoom = {
     roomId,
-    name: opts.name,
+    name: roomName,
     gameId: opts.gameId,
     isOfflineLocal: opts.isOfflineLocal ?? true,
     ownerId: opts.ownerId,
@@ -798,7 +929,7 @@ export function createLocalRoomPure(
 
 const INITIAL_LOBBY_ROOM_SEEDS: readonly CreateLocalRoomOptions[] = [
   {
-    name: "Island of Catan — Table 1",
+    customRoomId: "room-1",
     gameId: "catan",
     ownerId: "p1",
     ownerName: "Player 1 (You)",
@@ -808,7 +939,7 @@ const INITIAL_LOBBY_ROOM_SEEDS: readonly CreateLocalRoomOptions[] = [
     autoStart: false,
   },
   {
-    name: "Four Islands — Seafarers",
+    customRoomId: "room-2",
     gameId: "catan",
     ownerId: "host-nemo",
     ownerName: "Captain Nemo",
@@ -818,7 +949,7 @@ const INITIAL_LOBBY_ROOM_SEEDS: readonly CreateLocalRoomOptions[] = [
     autoStart: false,
   },
   {
-    name: "Florence Gem Market",
+    customRoomId: "room-3",
     gameId: "splendor",
     ownerId: "host-lorenzo",
     ownerName: "Lorenzo",
@@ -826,7 +957,7 @@ const INITIAL_LOBBY_ROOM_SEEDS: readonly CreateLocalRoomOptions[] = [
     autoStart: false,
   },
   {
-    name: "Evora Courtyard Wall",
+    customRoomId: "room-4",
     gameId: "azul",
     ownerId: "host-manuel",
     ownerName: "Manuel",
@@ -834,7 +965,7 @@ const INITIAL_LOBBY_ROOM_SEEDS: readonly CreateLocalRoomOptions[] = [
     autoStart: false,
   },
   {
-    name: "Alexandria — Seven Wonders",
+    customRoomId: "room-5",
     gameId: "seven_wonders",
     ownerId: "host-hypatia",
     ownerName: "Hypatia",
@@ -1202,6 +1333,8 @@ export function createInitialAppModelPure(
     readonly deviceGuests: readonly GuestSession[];
     readonly savedGuest: GuestSession | null;
     readonly nowMs: number;
+    readonly locationSearch?: string;
+    readonly locationHash?: string;
   }
 ): AppModel {
   const staticHostOnly = env.isStaticHost;
@@ -1211,6 +1344,10 @@ export function createInitialAppModelPure(
     ? "online"
     : "offline";
   const initialDraftName = `Guest ${env.randomGuestSuffix}`;
+  const pendingInviteRoomId = extractInviteRoomHashFromLocationPure(
+    env.locationSearch ?? "",
+    env.locationHash ?? ""
+  );
 
   const authInit = ((): {
     currentUserId: string;
@@ -1277,7 +1414,7 @@ export function createInitialAppModelPure(
 
   const baseModel: AppModel = {
     viewMode: authInit.viewMode,
-    lobbyGameFilter: "all",
+    lobbyGameFilter: "catan",
     lobbyHeroEnteredOnce: false,
     loginHeroEnteredOnce: false,
     useServerBackend,
@@ -1295,9 +1432,11 @@ export function createInitialAppModelPure(
     deviceGuests: authInit.deviceGuests,
     localFriendDraftName: "",
     hidePassAndPlayHand: false,
-    createRoomName: "Catan harbour table",
+    createRoomName: "",
     createRoomGameId: "catan",
     createRoomMode,
+    pendingInviteRoomId,
+    copiedRoomLinkId: null,
     rooms: {},
     roomOrder: [],
     nextRoomNum: 1,
@@ -1339,6 +1478,7 @@ export function createInitialAppModelPure(
     sevenWondersInspectedPlayerId: null,
     activeTutorial: null,
     guideModalGameId: null,
+    sidebarSettingsExpanded: false,
     autoPlayBots: false,
     autoRespondBotsToHuman: true,
     autoPlaySpeedMs: 150,
@@ -2100,6 +2240,16 @@ export function renderLoginViewPure(model: Readonly<AppModel>): string {
             <span class="ga-chip ga-chip--accent">Guest mode</span>
           </div>
 
+          ${
+            model.pendingInviteRoomId && !model.addingAdditionalGuest
+              ? `<div class="ga-notice ga-notice--accent">
+                   Joining room <strong class="ga-num">${escapeAttr(
+                     formatRoomHashLabelPure(model.pendingInviteRoomId)
+                   )}</strong> — enter your display name below to join directly.
+                 </div>`
+              : ""
+          }
+
           <div class="ga-field">
             <label for="inp-guest-name">Guest display name</label>
             <input
@@ -2121,7 +2271,13 @@ export function renderLoginViewPure(model: Readonly<AppModel>): string {
 
           <div style="display: flex; flex-direction: column; gap: var(--s-2);">
             <button type="submit" id="btn-guest-login" class="btn btn--primary" style="width: 100%;">
-              ${model.addingAdditionalGuest ? "Save and switch guest" : "Continue as guest"}${DRAWN_ARROW_SVG}
+              ${
+                model.addingAdditionalGuest
+                  ? "Save and switch guest"
+                  : model.pendingInviteRoomId
+                    ? `Join ${escapeAttr(formatRoomHashLabelPure(model.pendingInviteRoomId))}`
+                    : "Continue as guest"
+              }${DRAWN_ARROW_SVG}
             </button>
 
             ${
@@ -2274,10 +2430,24 @@ export function renderTopbarUserSelectorPure(model: Readonly<AppModel>): string 
 
 export function renderLobbyViewPure(model: Readonly<AppModel>): string {
   const allRooms = getRoomListPure(model);
-  const roomsList = allRooms.filter(
-    (r) => model.lobbyGameFilter === "all" || r.gameId === model.lobbyGameFilter
-  );
-  const enterAttr = model.lobbyHeroEnteredOnce ? "" : "data-enter";
+  const isUserInRoom = (r: ClientRoom): boolean =>
+    Boolean(
+      (r.ownerId && r.ownerId === model.currentUserId) ||
+        r.humanPlayers.some((p) => p.id === model.currentUserId)
+    );
+  const isVisibleLobbyRoom = (r: ClientRoom): boolean =>
+    r.status === "lobby" || r.status === "finished" || isUserInRoom(r);
+  const countOpenForGame = (g: SupportedGameId): number =>
+    allRooms.filter((r) => r.gameId === g && r.status === "lobby").length;
+
+  const roomsList = allRooms
+    .filter((r) => r.gameId === model.lobbyGameFilter && isVisibleLobbyRoom(r))
+    .sort((a, b) => {
+      const aOpen = a.status === "lobby" ? 0 : 1;
+      const bOpen = b.status === "lobby" ? 0 : 1;
+      return aOpen - bOpen;
+    });
+
   const effectiveMode: "online" | "offline" =
     !model.useServerBackend || !model.serverReachable
       ? "offline"
@@ -2289,16 +2459,23 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
           {
             value: "offline",
             label: "Offline local",
-            meta: "Solo and friends",
+            meta: "Solo & friends",
           },
         ]
       : [
           {
             value: "offline",
             label: "Offline local",
-            meta: "Solo and friends",
+            meta: "Solo & friends",
           },
         ];
+
+  const renderOpenBadge = (g: SupportedGameId, seats: string): string => {
+    const cnt = countOpenForGame(g);
+    return cnt > 0
+      ? `<span style="display:inline-flex;align-items:center;gap:5px;"><span class="ga-chip ga-chip--ok ga-num">${cnt} open</span><span class="ga-chip">${seats}</span></span>`
+      : `<span class="ga-chip">${seats}</span>`;
+  };
 
   return `
       <header class="ga-nav">
@@ -2317,291 +2494,226 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
       </header>
 
       <div class="wrap ga-lobby-shell">
-        <div class="hero ga-lobby-hero grid grid--top" ${enterAttr}>
-          <div class="ga-lobby-hero__copy span-7">
-            <h1 class="ga-lobby-hero__title">Tabletop board games in one room.</h1>
-            <p class="t-lead muted">Open an online room as host, switch guests to run multiple rooms on one computer, or play offline with local friends.</p>
-          </div>
-          <dl class="ga-lobby-stats span-5 start-8">
-            <div class="ga-lobby-stat">
-              <dt>Board games</dt>
-              <dd class="ga-num">4</dd>
-            </div>
-            <div class="ga-lobby-stat">
-              <dt>Open tables</dt>
-              <dd class="ga-num">${allRooms.length}</dd>
-            </div>
-            <div class="ga-lobby-stat">
-              <dt>Table seats</dt>
-              <dd class="ga-num">2–7</dd>
-            </div>
-          </dl>
-        </div>
-
         <div style="display: flex; flex-direction: column; gap: var(--s-3);">
-          <div class="ga-section-bar">
-            <h2>Choose a game</h2>
-            <span class="t-label muted ga-num">${roomsList.length} ${roomsList.length === 1 ? "table" : "tables"} shown</span>
-          </div>
           <div class="ga-filter-grid">
-            <button type="button" class="game-select-card ${
-              model.lobbyGameFilter === "all" ? "selected" : ""
-            }" data-lobby-filter="all">
-              <div class="game-select-card__top">
-                <span class="game-select-card__title">All games</span>
-                <span class="ga-chip ga-num">${allRooms.length}</span>
-              </div>
-              <span class="game-select-card__desc">Browse every active and open table across Catan, Splendor, Azul, and 7 Wonders.</span>
-            </button>
-
-            <button type="button" class="game-select-card ${
+            <div class="game-select-card ${
               model.lobbyGameFilter === "catan" ? "selected" : ""
-            }" data-lobby-filter="catan">
-              <div class="game-select-card__top">
-                <span class="game-select-card__title">Settlers of Catan</span>
-                <span class="ga-chip">2–6 players</span>
+            }">
+              <button type="button" class="game-select-card__main" data-lobby-filter="catan">
+                <div class="game-select-card__top">
+                  <span class="game-select-card__title">Settlers of Catan</span>
+                  ${renderOpenBadge("catan", "2–6P")}
+                </div>
+                <span class="game-select-card__desc">Base island, 5–6 player extension, Seafarers, Cities &amp; Knights, and Harbormaster.</span>
+              </button>
+              <div class="game-select-card__actions">
+                <button type="button" data-start-tutorial="catan" class="btn btn--secondary btn--sm">Tutorial</button>
+                <button type="button" data-open-guide="catan" class="btn btn--secondary btn--sm">Rules</button>
               </div>
-              <span class="game-select-card__desc">Base island, 5–6 player extension, Seafarers, Cities &amp; Knights, and Harbormaster.</span>
-            </button>
-
-            <button type="button" class="game-select-card ${
-              model.lobbyGameFilter === "splendor" ? "selected" : ""
-            }" data-lobby-filter="splendor">
-              <div class="game-select-card__top">
-                <span class="game-select-card__title">Splendor</span>
-                <span class="ga-chip">2–4 players</span>
-              </div>
-              <span class="game-select-card__desc">Draft gem tokens, acquire mine cards across three tiers, and earn 15 prestige points.</span>
-            </button>
-
-            <button type="button" class="game-select-card ${
-              model.lobbyGameFilter === "azul" ? "selected" : ""
-            }" data-lobby-filter="azul">
-              <div class="game-select-card__top">
-                <span class="game-select-card__title">Azul</span>
-                <span class="ga-chip">2–4 players</span>
-              </div>
-              <span class="game-select-card__desc">Draft ceramic tiles from factory displays to score rows and columns on a 5×5 wall.</span>
-            </button>
-
-            <button type="button" class="game-select-card ${
-              model.lobbyGameFilter === "seven_wonders" ? "selected" : ""
-            }" data-lobby-filter="seven_wonders">
-              <div class="game-select-card__top">
-                <span class="game-select-card__title">7 Wonders</span>
-                <span class="ga-chip">3–7 players</span>
-              </div>
-              <span class="game-select-card__desc">Draft structures across three Ages, trade with neighbors, wage war, and build your Wonder.</span>
-            </button>
-          </div>
-
-          <div class="ga-tutorial-strip">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <span class="ga-chip ga-chip--accent">Learn to play</span>
-              <span class="t-small muted">Step through an interactive guided board or open the strategy &amp; rules sheet for any game.</span>
             </div>
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-              <button type="button" data-start-tutorial="catan" class="btn btn--secondary btn--sm">Catan tutorial</button>
-              <button type="button" data-start-tutorial="splendor" class="btn btn--secondary btn--sm">Splendor tutorial</button>
-              <button type="button" data-start-tutorial="azul" class="btn btn--secondary btn--sm">Azul tutorial</button>
-              <button type="button" data-start-tutorial="seven_wonders" class="btn btn--secondary btn--sm">7 Wonders tutorial</button>
-              <button type="button" data-open-guide="${
-                model.lobbyGameFilter !== "all"
-                  ? model.lobbyGameFilter
-                  : model.createRoomGameId
-              }" class="btn btn--primary btn--sm">Rules &amp; strategy guide</button>
+
+            <div class="game-select-card ${
+              model.lobbyGameFilter === "splendor" ? "selected" : ""
+            }">
+              <button type="button" class="game-select-card__main" data-lobby-filter="splendor">
+                <div class="game-select-card__top">
+                  <span class="game-select-card__title">Splendor</span>
+                  ${renderOpenBadge("splendor", "2–4P")}
+                </div>
+                <span class="game-select-card__desc">Draft gem tokens, acquire mine cards across three tiers, and earn 15 prestige points.</span>
+              </button>
+              <div class="game-select-card__actions">
+                <button type="button" data-start-tutorial="splendor" class="btn btn--secondary btn--sm">Tutorial</button>
+                <button type="button" data-open-guide="splendor" class="btn btn--secondary btn--sm">Rules</button>
+              </div>
+            </div>
+
+            <div class="game-select-card ${
+              model.lobbyGameFilter === "azul" ? "selected" : ""
+            }">
+              <button type="button" class="game-select-card__main" data-lobby-filter="azul">
+                <div class="game-select-card__top">
+                  <span class="game-select-card__title">Azul</span>
+                  ${renderOpenBadge("azul", "2–4P")}
+                </div>
+                <span class="game-select-card__desc">Draft ceramic tiles from factory displays to score rows and columns on a 5×5 wall.</span>
+              </button>
+              <div class="game-select-card__actions">
+                <button type="button" data-start-tutorial="azul" class="btn btn--secondary btn--sm">Tutorial</button>
+                <button type="button" data-open-guide="azul" class="btn btn--secondary btn--sm">Rules</button>
+              </div>
+            </div>
+
+            <div class="game-select-card ${
+              model.lobbyGameFilter === "seven_wonders" ? "selected" : ""
+            }">
+              <button type="button" class="game-select-card__main" data-lobby-filter="seven_wonders">
+                <div class="game-select-card__top">
+                  <span class="game-select-card__title">7 Wonders</span>
+                  ${renderOpenBadge("seven_wonders", "3–7P")}
+                </div>
+                <span class="game-select-card__desc">Draft structures across three Ages, trade with neighbors, wage war, and build your Wonder.</span>
+              </button>
+              <div class="game-select-card__actions">
+                <button type="button" data-start-tutorial="seven_wonders" class="btn btn--secondary btn--sm">Tutorial</button>
+                <button type="button" data-open-guide="seven_wonders" class="btn btn--secondary btn--sm">Rules</button>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="ga-lobby-columns">
-          <aside class="ga-surface-card">
-            <div class="ga-section-bar">
-              <h2>Create a room</h2>
-              <span class="ga-chip ga-chip--accent">Host controls</span>
+        <div class="ga-surface-card">
+          <div class="ga-section-bar">
+            <div style="display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <h2>Open rooms</h2>
+              <span class="ga-chip ga-num">${escapeAttr(GAME_TITLE_BY_ID[model.lobbyGameFilter])} · ${roomsList.length}</span>
             </div>
-
-            <div class="ga-field">
-              <label for="inp-create-room-name">Room name</label>
-              <input type="text" id="inp-create-room-name" class="ga-input" value="${escapeAttr(
-                model.createRoomName
-              )}" placeholder="Name your table" />
-            </div>
-
-            <div class="ga-field">
-              <label for="sel-create-room-game-btn">Board game</label>
-              ${renderDropdown({
-                id: "sel-create-room-game",
-                value: model.createRoomGameId,
-                options: [
-                  {
-                    value: "catan",
-                    label: "Settlers of Catan",
-                    meta: "2–6P",
-                  },
-                  { value: "splendor", label: "Splendor", meta: "2–4P" },
-                  { value: "azul", label: "Azul", meta: "2–4P" },
-                  {
-                    value: "seven_wonders",
-                    label: "7 Wonders",
-                    meta: "3–7P",
-                  },
-                ],
-              })}
-            </div>
-
-            <div class="ga-field">
-              <label for="sel-create-room-mode-btn">Table mode</label>
+            <div style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
               ${renderDropdown({
                 id: "sel-create-room-mode",
                 value: effectiveMode,
+                size: "sm",
+                inline: true,
+                align: "end",
+                title: "Choose online multiplayer or offline local table",
                 options: modeOptions,
               })}
+              <button type="button" id="btn-create-room" class="btn btn--primary btn--sm">
+                + Create ${escapeAttr(GAME_TITLE_BY_ID[model.lobbyGameFilter])} room
+              </button>
             </div>
+          </div>
 
-            <p class="t-small muted">
-              ${
-                effectiveMode === "offline"
-                  ? `Opens a local room on this computer with <strong>${escapeAttr(model.currentUserName)}</strong> as host. Add bots for a solo game or add local friends to pass and play.`
-                  : `Opens an online room with <strong>${escapeAttr(model.currentUserName)}</strong> as host. Choose bots, local friends, and starting player on the setup screen.`
-              }
-            </p>
-
-            <button type="button" id="btn-create-room" class="btn btn--primary" style="width: 100%;">
-              Create room${DRAWN_ARROW_SVG}
-            </button>
-          </aside>
-
-          <div class="ga-surface-card">
-            <div class="ga-section-bar">
-              <h2>Open rooms</h2>
-              <span class="t-label muted">Signed in as <strong style="color: var(--ink); font-weight: 500;">${escapeAttr(model.currentUserName)}</strong></span>
-            </div>
-
-            ${
-              roomsList.length === 0
-                ? `
-                  <div class="ga-empty-rooms">
-                    <p class="t-body" style="color: var(--ink); font-weight: 500;">No open rooms yet.</p>
-                    <p class="t-small muted">Create a room on the left to play solo against bots or pass and play offline with local friends.</p>
-                  </div>
-                `
-                : `
-                  <div class="rooms-grid">
-                    ${roomsList
-                      .map((r) => {
-                        const isOwner = Boolean(
-                          r.ownerId && r.ownerId === model.currentUserId
+          ${
+            roomsList.length === 0
+              ? `
+                <div class="ga-empty-rooms">
+                  <p class="t-body" style="color: var(--ink); font-weight: 500;">No open ${escapeAttr(GAME_TITLE_BY_ID[model.lobbyGameFilter])} rooms right now.</p>
+                  <p class="t-small muted">Click <strong>+ Create ${escapeAttr(GAME_TITLE_BY_ID[model.lobbyGameFilter])} room</strong> above to open a room with a shareable invite link.</p>
+                </div>
+              `
+              : `
+                <div class="rooms-grid">
+                  ${roomsList
+                    .map((r) => {
+                      const isOwner = Boolean(
+                        r.ownerId && r.ownerId === model.currentUserId
+                      );
+                      const isJoinedGuest =
+                        !isOwner &&
+                        r.humanPlayers.some(
+                          (p) => p.id === model.currentUserId
                         );
-                        const isJoinedGuest =
-                          !isOwner &&
-                          r.humanPlayers.some(
-                            (p) => p.id === model.currentUserId
-                          );
-                        const gameBadge =
-                          r.gameId === "catan"
-                            ? `Catan · ${SCENARIO_CATALOG[r.config.scenarioId].name}`
-                            : r.gameId === "splendor"
-                              ? "Splendor"
-                              : r.gameId === "seven_wonders"
-                                ? "7 Wonders"
-                                : "Azul";
-                        const statusBadge =
-                          r.status === "lobby"
-                            ? `<span class="ga-chip ga-chip--ok">Open</span>`
-                            : r.status === "in_progress"
-                              ? `<span class="ga-chip ga-chip--warn">In progress</span>`
-                              : `<span class="ga-chip">Finished</span>`;
-                        const modeChip = r.isOfflineLocal
-                          ? `<span class="ga-chip ga-chip--ok">Offline local</span>`
-                          : `<span class="ga-chip">Online room</span>`;
-                        const hostChipLabel = isOwner
-                          ? "Owner: You · editable"
-                          : `Host: ${escapeAttr(r.ownerName)}`;
-                        const humanCount = r.players.filter(
-                          (p) => !p.isBot
-                        ).length;
-                        const botCount = r.players.length - humanCount;
-                        const seatSummary =
-                          humanCount === 0
-                            ? `${botCount} ${botCount === 1 ? "bot" : "bots"}`
-                            : `${r.players.length} ${r.players.length === 1 ? "player" : "players"} (${humanCount} ${humanCount === 1 ? "human" : "humans"}, ${botCount} ${botCount === 1 ? "bot" : "bots"})`;
-                        const bounds = getRoomBoundsPure(r);
-                        const canDirectStart =
-                          isOwner && r.players.length >= bounds.minPlayers;
+                      const hashLabel = formatRoomHashLabelPure(r.roomId);
+                      const isCopied = model.copiedRoomLinkId === r.roomId;
+                      const gameBadge =
+                        r.gameId === "catan"
+                          ? `Catan · ${SCENARIO_CATALOG[r.config.scenarioId].name}`
+                          : r.gameId === "splendor"
+                            ? "Splendor"
+                            : r.gameId === "seven_wonders"
+                              ? "7 Wonders"
+                              : "Azul";
+                      const statusBadge =
+                        r.status === "lobby"
+                          ? `<span class="ga-chip ga-chip--ok">Open</span>`
+                          : r.status === "in_progress"
+                            ? `<span class="ga-chip ga-chip--warn">In progress</span>`
+                            : `<span class="ga-chip">Finished</span>`;
+                      const modeChip = r.isOfflineLocal
+                        ? `<span class="ga-chip ga-chip--ok">Offline local</span>`
+                        : `<span class="ga-chip">Online room</span>`;
+                      const hostChipLabel = isOwner
+                        ? "Owner: You · editable"
+                        : `Host: ${escapeAttr(r.ownerName)}`;
+                      const humanCount = r.players.filter(
+                        (p) => !p.isBot
+                      ).length;
+                      const botCount = r.players.length - humanCount;
+                      const seatSummary =
+                        humanCount === 0
+                          ? `${botCount} ${botCount === 1 ? "bot" : "bots"}`
+                          : `${r.players.length} ${r.players.length === 1 ? "player" : "players"} (${humanCount} ${humanCount === 1 ? "human" : "humans"}, ${botCount} ${botCount === 1 ? "bot" : "bots"})`;
+                      const bounds = getRoomBoundsPure(r);
+                      const canDirectStart =
+                        isOwner && r.players.length >= bounds.minPlayers;
 
-                        return `
-                          <div class="room-card ${isOwner ? "owned-by-me" : ""}">
-                            <div style="display: flex; flex-direction: column; gap: 10px;">
-                              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-                                <span class="room-card__title">${escapeAttr(r.name)}</span>
-                                ${statusBadge}
-                              </div>
-                              <div class="room-card__meta">
-                                ${modeChip}
-                                <span class="ga-chip">${gameBadge}</span>
-                                <span class="ga-chip ${isOwner ? "ga-chip--accent" : ""}">
-                                  ${hostChipLabel}
-                                </span>
-                                ${
-                                  isJoinedGuest
-                                    ? `<span class="ga-chip ga-chip--ok">Joined</span>`
-                                    : ""
-                                }
-                              </div>
-                              <div class="room-card__seats">
-                                ${seatSummary}: ${r.players
-                                  .map((p) => escapeAttr(p.name))
-                                  .join(", ")}
-                              </div>
+                      return `
+                        <div class="room-card ${isOwner ? "owned-by-me" : ""}">
+                          <div style="display: flex; flex-direction: column; gap: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                              <span class="room-card__title ga-num">Room ${escapeAttr(hashLabel)}</span>
+                              ${statusBadge}
                             </div>
-
-                            <div class="room-card__actions">
+                            <div class="room-card__meta">
+                              ${modeChip}
+                              <span class="ga-chip">${gameBadge}</span>
+                              <span class="ga-chip ${isOwner ? "ga-chip--accent" : ""}">
+                                ${hostChipLabel}
+                              </span>
                               ${
-                                r.status === "lobby" || r.status === "finished"
-                                  ? `<button type="button" data-join-room="${r.roomId}" class="btn ${
-                                      isOwner
-                                        ? "btn--primary"
-                                        : "btn--secondary"
-                                    } btn--sm" style="flex: 1;">
-                                      ${
-                                        isOwner
-                                          ? r.status === "finished"
-                                            ? "Configure rematch"
-                                            : "Configure setup"
-                                          : isJoinedGuest
-                                            ? "Open room"
-                                            : "Join room"
-                                      }
-                                    </button>
-                                    ${
-                                      isOwner
-                                        ? `<button type="button" data-start-room-direct="${r.roomId}" class="btn btn--secondary btn--sm" ${
-                                            !canDirectStart ? "disabled" : ""
-                                          }>Start match</button>`
-                                        : ""
-                                    }`
-                                  : `<button type="button" data-join-room="${r.roomId}" class="btn ${
-                                      isOwner || isJoinedGuest
-                                        ? "btn--primary"
-                                        : "btn--secondary"
-                                    } btn--sm" style="flex: 1;">
-                                      ${
-                                        isOwner || isJoinedGuest
-                                          ? "Rejoin match"
-                                          : "Spectate"
-                                      }
-                                    </button>`
+                                isJoinedGuest
+                                  ? `<span class="ga-chip ga-chip--ok">Joined</span>`
+                                  : ""
                               }
                             </div>
+                            <div class="room-card__seats">
+                              ${seatSummary}: ${r.players
+                                .map((p) => escapeAttr(p.name))
+                                .join(", ")}
+                            </div>
                           </div>
-                        `;
-                      })
-                      .join("")}
-                  </div>
-                `
-            }
-          </div>
+
+                          <div class="room-card__actions">
+                            ${
+                              r.status === "lobby" || r.status === "finished"
+                                ? `<button type="button" data-join-room="${escapeAttr(r.roomId)}" class="btn ${
+                                    isOwner
+                                      ? "btn--primary"
+                                      : "btn--secondary"
+                                  } btn--sm" style="flex: 1;">
+                                    ${
+                                      isOwner
+                                        ? r.status === "finished"
+                                          ? "Configure rematch"
+                                          : "Configure setup"
+                                        : isJoinedGuest
+                                          ? "Open room"
+                                          : "Join room"
+                                    }
+                                  </button>
+                                  ${
+                                    !r.isOfflineLocal
+                                      ? `<button type="button" data-copy-room-link="${escapeAttr(r.roomId)}" class="btn btn--secondary btn--sm ga-num" title="Copy direct invite link for Room ${escapeAttr(hashLabel)}">${isCopied ? "Copied ✓" : "Copy link"}</button>`
+                                      : ""
+                                  }
+                                  ${
+                                    isOwner
+                                      ? `<button type="button" data-start-room-direct="${escapeAttr(r.roomId)}" class="btn btn--secondary btn--sm" ${
+                                          !canDirectStart ? "disabled" : ""
+                                        }>Start match</button>`
+                                      : ""
+                                  }`
+                                : `<button type="button" data-join-room="${escapeAttr(r.roomId)}" class="btn ${
+                                    isOwner || isJoinedGuest
+                                      ? "btn--primary"
+                                      : "btn--secondary"
+                                  } btn--sm" style="flex: 1;">
+                                    ${
+                                      isOwner || isJoinedGuest
+                                        ? "Rejoin match"
+                                        : "Spectate"
+                                    }
+                                  </button>`
+                            }
+                          </div>
+                        </div>
+                      `;
+                    })
+                    .join("")}
+                </div>
+              `
+          }
         </div>
       </div>
       ${
@@ -2618,6 +2730,8 @@ export function renderRoomHeaderPure(
   activeTab: "setup" | "game"
 ): string {
   const hasMatchState = Boolean(getRoomStatePure(model, room));
+  const hashLabel = formatRoomHashLabelPure(room.roomId);
+  const isCopied = model.copiedRoomLinkId === room.roomId;
   const statusChip =
     room.status === "in_progress"
       ? `<span class="ga-chip ga-chip--warn">In progress</span>`
@@ -2632,7 +2746,7 @@ export function renderRoomHeaderPure(
             <button type="button" id="btn-back-lobby" class="ga-brand">
               ${BRAND_MARK_SVG}
               <div class="ga-brand__meta">
-                <span>${escapeAttr(room.name)}</span>
+                <span class="ga-num">Room ${escapeAttr(hashLabel)}</span>
                 <span class="ga-brand__sub">Host: ${escapeAttr(room.ownerName || "Host")} · Back to lobby</span>
               </div>
             </button>
@@ -2650,7 +2764,11 @@ export function renderRoomHeaderPure(
             ${
               room.isOfflineLocal
                 ? `<span class="ga-chip ga-chip--ok">Offline local</span>`
-                : ""
+                : `<button type="button" id="btn-copy-room-link" data-copy-room-link="${escapeAttr(
+                    room.roomId
+                  )}" class="btn btn--secondary btn--sm ga-num" title="Copy shareable invite link (${escapeAttr(
+                    hashLabel
+                  )})">${isCopied ? "Copied ✓" : "Share link"}</button>`
             }
           </div>
 
@@ -2848,7 +2966,7 @@ export function renderSetupSummaryCardPure(
           <div class="ga-summary-cell">
             <span class="ga-summary-cell__label">Victory target</span>
             <span class="ga-summary-cell__value ga-num">${info.targetLabel}</span>
-            <span class="ga-summary-cell__sub">${escapeAttr(room.name)}</span>
+            <span class="ga-summary-cell__sub ga-num">Room ${escapeAttr(formatRoomHashLabelPure(room.roomId))}</span>
           </div>
 
           <div class="ga-summary-cell">
@@ -2943,7 +3061,10 @@ export function renderRoomSetupViewPure(
       <div class="ga-surface-card">
         <div class="ga-section-bar">
           <h2>Match configuration</h2>
-          <span class="ga-chip ga-chip--ok">Owner editable</span>
+          <div style="display: inline-flex; align-items: center; gap: 6px;">
+            <span class="ga-chip ga-num">Room ${escapeAttr(formatRoomHashLabelPure(room.roomId))}</span>
+            <span class="ga-chip ga-chip--ok">Owner editable</span>
+          </div>
         </div>
 
         ${
@@ -2953,13 +3074,6 @@ export function renderRoomSetupViewPure(
                </div>`
             : ""
         }
-
-        <div class="ga-field">
-          <label for="setup-room-name">Room name</label>
-          <input type="text" id="setup-room-name" class="ga-input" value="${escapeAttr(
-            room.name
-          )}" />
-        </div>
 
         <div class="ga-field">
           <label for="setup-sel-game-btn">Board game</label>
@@ -3153,6 +3267,26 @@ export function renderRoomSetupViewPure(
                   : "Finished"
             }</span>
           </div>
+
+          ${
+            !room.isOfflineLocal
+              ? `<div class="ga-invite-bar">
+                   <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+                     <span class="t-label" style="color:var(--ink);font-weight:500;">Invite friends via direct link</span>
+                     <span class="t-label muted ga-num" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">#room=${escapeAttr(
+                       room.roomId
+                     )}</span>
+                   </div>
+                   <button type="button" data-copy-room-link="${escapeAttr(
+                     room.roomId
+                   )}" class="btn btn--secondary btn--sm ga-num">${
+                     model.copiedRoomLinkId === room.roomId
+                       ? "Copied ✓"
+                       : "Copy invite link"
+                   }</button>
+                 </div>`
+              : ""
+          }
 
           <div class="ga-seat-list">
             ${room.players
@@ -5857,7 +5991,8 @@ export function renderCatanPlayerCardPure(
   currentUserId: string,
   state: CatanState,
   p: CatanState["players"][number],
-  isActing: boolean
+  isActing: boolean,
+  isOffline = false
 ): string {
   const visibleVp = computePlayerVictoryPoints(state, p.id, true);
   const totalVp = computePlayerVictoryPoints(state, p.id, false);
@@ -5870,6 +6005,9 @@ export function renderCatanPlayerCardPure(
     : p.id === currentUserId
       ? "You · Guest"
       : "Guest";
+  const offlineChip = isOffline
+    ? `<span class="ga-chip ga-chip--warn" title="Temporarily disconnected — waiting to reconnect">Offline</span>`
+    : "";
 
   const hiddenCardIconSvg = `<svg width="13" height="15" viewBox="0 0 14 16" aria-hidden="true"><rect x="1.5" y="1" width="11" height="14" rx="2.2" fill="#27272a" stroke="#a1a1aa" stroke-width="1.2"/><path d="M4.2 4.5h5.6M4.2 8h5.6M4.2 11.5h3.6" stroke="#fb923c" stroke-width="1.1" stroke-linecap="round"/></svg>`;
 
@@ -5885,6 +6023,7 @@ export function renderCatanPlayerCardPure(
             <span class="player-dot" style="background: ${p.color}"></span>
             <strong class="player-card__name">${escapeAttr(p.name)}</strong>
             <span class="ga-chip">${botBadge}</span>
+            ${offlineChip}
           </div>
           <span class="ga-chip ga-chip--warn ga-num">${
             showPrivateHand
@@ -5944,6 +6083,7 @@ export function renderCatanPlayerCardPure(
             <span class="player-dot" style="background: ${p.color}"></span>
             <strong class="player-card__name">${escapeAttr(p.name)}</strong>
             <span class="ga-chip">${botBadge}</span>
+            ${offlineChip}
           </div>
           <span class="ga-chip ga-chip--warn ga-num">${
             showPrivateHand
@@ -6640,219 +6780,260 @@ export function renderInGameViewPure(
           </div>
 
           <aside class="ga-sidebar">
-            <div class="ga-inline-summary" title="${escapeAttr(summaryInfo.ruleChips.join(" · "))}">
-              <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
-                <strong style="font-size: var(--t-label); font-weight: 500;">${summaryInfo.formatTitle}</strong>
-                <span class="t-label muted ga-num">${summaryInfo.seatsLabel} · T${state.turn} · ${summaryInfo.targetLabel}</span>
-              </div>
-              <div class="ga-inline-summary__chips">
-                ${summaryInfo.ruleChips
-                  .map((chip) => `<span class="ga-chip">${escapeAttr(chip)}</span>`)
-                  .join("")}
-                ${(room.offlinePlayerIds ?? [])
-                  .map((offId) => {
-                    const offP = state.players.find((sp: any) => sp.id === offId);
-                    return offP
-                      ? `<span class="ga-chip ga-chip--warn" title="Temporarily disconnected — waiting to reconnect">${escapeAttr(offP.name)}: Offline</span>`
-                      : "";
-                  })
-                  .join("")}
+            <div class="ga-standings-section">
+              <div class="ga-sidebar__head">
+                <span>Standings (${state.players.length})</span>
+                <span class="ga-num">${
+                  room.gameId === "catan"
+                    ? `Target ${state.config.targetVictoryPoints} VP`
+                    : room.gameId === "splendor"
+                      ? `Target ${state.config.targetPoints} VP`
+                      : room.gameId === "seven_wonders"
+                        ? `Age ${state.age}/3 · VP`
+                        : `5×5 wall`
+                }</span>
               </div>
               ${
-                room.status === "finished" && isOwner
-                  ? `<button type="button" id="btn-sidebar-edit-setup" class="btn btn--secondary btn--sm" style="width: 100%;">Edit setup for next game</button>`
+                (room.offlinePlayerIds ?? []).length > 0
+                  ? `<div class="ga-inline-summary__chips">
+                      ${(room.offlinePlayerIds ?? [])
+                        .map((offId) => {
+                          const offP = state.players.find((sp: any) => sp.id === offId);
+                          return offP
+                            ? `<span class="ga-chip ga-chip--warn" title="Temporarily disconnected — waiting to reconnect">${escapeAttr(offP.name)}: Offline</span>`
+                            : "";
+                        })
+                        .join("")}
+                    </div>`
                   : ""
               }
-            </div>
-
-            <div class="ga-sidebar__head">
-              <span>Standings (${state.players.length})</span>
-              <span class="ga-num">${
-                room.gameId === "catan"
-                  ? `Target ${state.config.targetVictoryPoints} VP`
-                  : room.gameId === "splendor"
-                    ? `Target ${state.config.targetPoints} VP`
-                    : room.gameId === "seven_wonders"
-                      ? `Age ${state.age}/3 · VP`
-                      : `5×5 wall`
-              }</span>
-            </div>
-            <div class="ga-standings-list">
-              ${state.players
-                .map((p: any) =>
-                  room.gameId === "catan"
-                    ? renderCatanPlayerCardPure(
-                        model.currentUserId,
-                        state as CatanState,
-                        p,
-                        p.id === actingPlayerId
-                      )
-                    : room.gameId === "splendor"
-                      ? renderSplendorPlayerCard(
-                          state as SplendorState,
+              <div class="ga-standings-list">
+                ${state.players
+                  .map((p: any) =>
+                    room.gameId === "catan"
+                      ? renderCatanPlayerCardPure(
+                          model.currentUserId,
+                          state as CatanState,
                           p,
-                          p.id === actingPlayerId
+                          p.id === actingPlayerId,
+                          Boolean(room.offlinePlayerIds?.includes(p.id))
                         )
-                      : room.gameId === "seven_wonders"
-                        ? renderSevenWondersPlayerCard(
-                            state as SevenWondersState,
+                      : room.gameId === "splendor"
+                        ? renderSplendorPlayerCard(
+                            state as SplendorState,
                             p,
                             p.id === actingPlayerId
                           )
-                        : renderAzulPlayerCard(
-                            state as AzulState,
-                            p,
-                            p.id === actingPlayerId
-                          )
-                )
-                .join("")}
+                        : room.gameId === "seven_wonders"
+                          ? renderSevenWondersPlayerCard(
+                              state as SevenWondersState,
+                              p,
+                              p.id === actingPlayerId
+                            )
+                          : renderAzulPlayerCard(
+                              state as AzulState,
+                              p,
+                              p.id === actingPlayerId
+                            )
+                  )
+                  .join("")}
+              </div>
             </div>
 
-            ${
-              room.gameId === "catan"
-                ? (state as CatanState).config.enableCitiesAndKnights
-                  ? `
-              <div class="ga-sidebar__head">
-                <span>Bank & progress decks</span>
-                <span class="ga-num">T${state.progressDecks.trade.length}·P${state.progressDecks.politics.length}·S${state.progressDecks.science.length}</span>
-              </div>
-              <div class="res-pills res-pills--bank">
-                ${RESOURCES.map(
-                  (r) =>
-                    `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}: ${state.bank[r]} in bank">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
-                ).join("")}${COMMODITIES.map(
-                  (c) =>
-                    `<span class="res-pill res-${c}" title="${COMMODITY_META[c].label}: ${state.commodityBank[c]} in bank">${renderCommodityGlyphSvg(c)} ${state.commodityBank[c]}</span>`
-                ).join("")}
-              </div>
-              <div class="ga-stat-list ga-stat-list--compact">
-                <div class="ga-stat-row">
-                  <span>Longest route (+2 VP)</span>
-                  <strong class="ga-num">${
-                    state.longestRoadOwnerId
-                      ? `${
-                          state.players.find(
-                            (p: any) => p.id === state.longestRoadOwnerId
-                          )?.name
-                        } (${state.longestRoadLength})`
-                      : "Unclaimed (5+)"
-                  }</strong>
-                </div>
-                ${IMPROVEMENT_DISCIPLINES.map((disc) => {
-                  const m = state.metropolises[disc];
-                  const dMeta = DISCIPLINE_META[disc];
-                  return `<div class="ga-stat-row">
-                    <span>${dMeta.label} Metro (+2 VP)</span>
-                    <strong class="ga-num">${
-                      m.ownerId
-                        ? `${
-                            state.players.find((p: any) => p.id === m.ownerId)
-                              ?.name
-                          } (Lv ${m.level})`
-                        : "Unclaimed (Lv 4)"
-                    }</strong>
-                  </div>`;
-                }).join("")}
-                <div class="ga-stat-row">
-                  <span>Merchant (+1 VP)</span>
-                  <strong class="ga-num">${
-                    state.merchantOwnerId
-                      ? `${
-                          state.players.find(
-                            (p: any) => p.id === state.merchantOwnerId
-                          )?.name
-                        }`
-                      : "Unclaimed"
-                  }</strong>
-                </div>
+            <div class="ga-sidebar__secondary">
+              <div class="ga-inline-summary ga-settings-fold ${
+                model.sidebarSettingsExpanded ? "is-open" : ""
+              }" title="${escapeAttr(summaryInfo.ruleChips.join(" · "))}">
+                <button
+                  type="button"
+                  id="btn-toggle-game-settings"
+                  class="ga-settings-fold__btn"
+                  aria-expanded="${model.sidebarSettingsExpanded ? "true" : "false"}"
+                >
+                  <span class="ga-settings-fold__title">Game settings</span>
+                  <span class="ga-settings-fold__meta ga-num">
+                    <span>${summaryInfo.seatsLabel} · T${state.turn}</span>
+                    <svg class="ga-settings-fold__chev" viewBox="0 0 12 12" aria-hidden="true">
+                      <path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </span>
+                </button>
                 ${
-                  state.config.enableHarbormaster
-                    ? `<div class="ga-stat-row">
-                        <span>Harbormaster (+2 VP)</span>
-                        <strong class="ga-num">${
-                          state.harbormasterOwnerId
-                            ? `${
-                                state.players.find(
-                                  (p: any) => p.id === state.harbormasterOwnerId
-                                )?.name
-                              } (${state.harbormasterPoints})`
-                            : "Unclaimed (3+)"
-                        }</strong>
-                      </div>`
+                  model.sidebarSettingsExpanded
+                    ? `
+                      <div class="ga-settings-fold__body">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                          <strong style="font-size: var(--t-label); font-weight: 500; color: var(--ink);">${summaryInfo.formatTitle}</strong>
+                          <span class="t-label muted ga-num">${summaryInfo.targetLabel}</span>
+                        </div>
+                        <div class="ga-inline-summary__chips">
+                          ${summaryInfo.ruleChips
+                            .map((chip) => `<span class="ga-chip">${escapeAttr(chip)}</span>`)
+                            .join("")}
+                        </div>
+                      </div>
+                    `
+                    : ""
+                }
+                ${
+                  room.status === "finished" && isOwner
+                    ? `<div style="padding: 0 12px 10px;"><button type="button" id="btn-sidebar-edit-setup" class="btn btn--secondary btn--sm" style="width: 100%;">Edit setup for next game</button></div>`
                     : ""
                 }
               </div>
-            `
-                  : `
-              <div class="ga-sidebar__head">
-                <span>Bank supply and awards</span>
-                <span class="ga-num">Dev deck: ${state.devCardDeck.length}</span>
-              </div>
-              <div class="res-pills res-pills--bank">
-                ${RESOURCES.map(
-                  (r) =>
-                    `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}: ${state.bank[r]} in bank">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
-                ).join("")}
-              </div>
-              <div class="ga-stat-list ga-stat-list--compact">
-                <div class="ga-stat-row">
-                  <span>Longest route (+2 VP)</span>
-                  <strong class="ga-num">${
-                    state.longestRoadOwnerId
-                      ? `${
-                          state.players.find(
-                            (p: any) => p.id === state.longestRoadOwnerId
-                          )?.name
-                        } (${state.longestRoadLength})`
-                      : "Unclaimed (5+)"
-                  }</strong>
-                </div>
-                <div class="ga-stat-row">
-                  <span>Largest army (+2 VP)</span>
-                  <strong class="ga-num">${
-                    state.largestArmyOwnerId
-                      ? `${
-                          state.players.find(
-                            (p: any) => p.id === state.largestArmyOwnerId
-                          )?.name
-                        } (${state.largestArmySize})`
-                      : "Unclaimed (3+)"
-                  }</strong>
-                </div>
-                ${
-                  state.config.enableHarbormaster
-                    ? `<div class="ga-stat-row">
-                        <span>Harbormaster (+2 VP)</span>
-                        <strong class="ga-num">${
-                          state.harbormasterOwnerId
-                            ? `${
-                                state.players.find(
-                                  (p: any) => p.id === state.harbormasterOwnerId
-                                )?.name
-                              } (${state.harbormasterPoints})`
-                            : "Unclaimed (3+)"
-                        }</strong>
-                      </div>`
-                    : ""
-                }
-              </div>
-            `
-                : ""
-            }
 
-            <div class="ga-sidebar__head">
-              <span>Match log</span>
-              <span class="ga-num">${state.eventLog.length}</span>
-            </div>
-            <div class="event-log">
-              ${[...state.eventLog]
-                .reverse()
-                .slice(0, 35)
-                .map(
-                  (evt: any) =>
-                    `<div class="event-item"><strong>T${evt.turn}</strong> ${escapeAttr(evt.message)}</div>`
-                )
-                .join("")}
+              ${
+                room.gameId === "catan"
+                  ? (state as CatanState).config.enableCitiesAndKnights
+                    ? `
+                <div class="ga-bank-section">
+                  <div class="ga-sidebar__head">
+                    <span>Bank & progress decks</span>
+                    <span class="ga-num">T${state.progressDecks.trade.length}·P${state.progressDecks.politics.length}·S${state.progressDecks.science.length}</span>
+                  </div>
+                  <div class="res-pills res-pills--bank" data-bank-mode="ck">
+                    ${RESOURCES.map(
+                      (r) =>
+                        `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}: ${state.bank[r]} in bank">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
+                    ).join("")}${COMMODITIES.map(
+                      (c) =>
+                        `<span class="res-pill res-${c}" title="${COMMODITY_META[c].label}: ${state.commodityBank[c]} in bank">${renderCommodityGlyphSvg(c)} ${state.commodityBank[c]}</span>`
+                    ).join("")}
+                  </div>
+                  <div class="ga-stat-list ga-stat-list--compact">
+                    <div class="ga-stat-row">
+                      <span>Longest route (+2 VP)</span>
+                      <strong class="ga-num">${
+                        state.longestRoadOwnerId
+                          ? `${
+                              state.players.find(
+                                (p: any) => p.id === state.longestRoadOwnerId
+                              )?.name
+                            } (${state.longestRoadLength})`
+                          : "Unclaimed (5+)"
+                      }</strong>
+                    </div>
+                    ${IMPROVEMENT_DISCIPLINES.map((disc) => {
+                      const m = state.metropolises[disc];
+                      const dMeta = DISCIPLINE_META[disc];
+                      return `<div class="ga-stat-row">
+                        <span>${dMeta.label} Metro (+2 VP)</span>
+                        <strong class="ga-num">${
+                          m.ownerId
+                            ? `${
+                                state.players.find((p: any) => p.id === m.ownerId)
+                                  ?.name
+                              } (Lv ${m.level})`
+                            : "Unclaimed (Lv 4)"
+                        }</strong>
+                      </div>`;
+                    }).join("")}
+                    <div class="ga-stat-row">
+                      <span>Merchant (+1 VP)</span>
+                      <strong class="ga-num">${
+                        state.merchantOwnerId
+                          ? `${
+                              state.players.find(
+                                (p: any) => p.id === state.merchantOwnerId
+                              )?.name
+                            }`
+                          : "Unclaimed"
+                      }</strong>
+                    </div>
+                    ${
+                      state.config.enableHarbormaster
+                        ? `<div class="ga-stat-row">
+                            <span>Harbormaster (+2 VP)</span>
+                            <strong class="ga-num">${
+                              state.harbormasterOwnerId
+                                ? `${
+                                    state.players.find(
+                                      (p: any) => p.id === state.harbormasterOwnerId
+                                    )?.name
+                                  } (${state.harbormasterPoints})`
+                                : "Unclaimed (3+)"
+                            }</strong>
+                          </div>`
+                        : ""
+                    }
+                  </div>
+                </div>
+              `
+                    : `
+                <div class="ga-bank-section">
+                  <div class="ga-sidebar__head">
+                    <span>Bank supply and awards</span>
+                    <span class="ga-num">Dev deck: ${state.devCardDeck.length}</span>
+                  </div>
+                  <div class="res-pills res-pills--bank">
+                    ${RESOURCES.map(
+                      (r) =>
+                        `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}: ${state.bank[r]} in bank">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
+                    ).join("")}
+                  </div>
+                  <div class="ga-stat-list ga-stat-list--compact">
+                    <div class="ga-stat-row">
+                      <span>Longest route (+2 VP)</span>
+                      <strong class="ga-num">${
+                        state.longestRoadOwnerId
+                          ? `${
+                              state.players.find(
+                                (p: any) => p.id === state.longestRoadOwnerId
+                              )?.name
+                            } (${state.longestRoadLength})`
+                          : "Unclaimed (5+)"
+                      }</strong>
+                    </div>
+                    <div class="ga-stat-row">
+                      <span>Largest army (+2 VP)</span>
+                      <strong class="ga-num">${
+                        state.largestArmyOwnerId
+                          ? `${
+                              state.players.find(
+                                (p: any) => p.id === state.largestArmyOwnerId
+                              )?.name
+                            } (${state.largestArmySize})`
+                          : "Unclaimed (3+)"
+                      }</strong>
+                    </div>
+                    ${
+                      state.config.enableHarbormaster
+                        ? `<div class="ga-stat-row">
+                            <span>Harbormaster (+2 VP)</span>
+                            <strong class="ga-num">${
+                              state.harbormasterOwnerId
+                                ? `${
+                                    state.players.find(
+                                      (p: any) => p.id === state.harbormasterOwnerId
+                                    )?.name
+                                  } (${state.harbormasterPoints})`
+                                : "Unclaimed (3+)"
+                            }</strong>
+                          </div>`
+                        : ""
+                    }
+                  </div>
+                </div>
+              `
+                  : ""
+              }
+
+              <div class="ga-log-section">
+                <div class="ga-sidebar__head">
+                  <span>Match log</span>
+                  <span class="ga-num">${state.eventLog.length}</span>
+                </div>
+                <div class="event-log">
+                  ${[...state.eventLog]
+                    .reverse()
+                    .slice(0, 35)
+                    .map(
+                      (evt: any) =>
+                        `<div class="event-item"><strong>T${evt.turn}</strong> ${escapeAttr(evt.message)}</div>`
+                    )
+                    .join("")}
+                </div>
+              </div>
             </div>
           </aside>
         </div>
@@ -7113,7 +7294,7 @@ export interface RoomsMapView {
 export interface MultiGamePlatformApp {
   readonly root: HTMLElement;
   viewMode: AppViewMode;
-  lobbyGameFilter: "all" | SupportedGameId;
+  lobbyGameFilter: SupportedGameId;
   lobbyHeroEnteredOnce: boolean;
   loginHeroEnteredOnce: boolean;
   useServerBackend: boolean;
@@ -7157,6 +7338,7 @@ export interface MultiGamePlatformApp {
     color: AzulTileColor;
   } | null;
   autoPlayBots: boolean;
+  sidebarSettingsExpanded: boolean;
   autoRespondBotsToHuman: boolean;
   autoPlaySpeedMs: number;
   render(): void;
@@ -7235,6 +7417,10 @@ export function createMultiGamePlatformApp(
     deviceGuests: loadDeviceGuestsFromStorage(),
     savedGuest: loadSavedGuestSessionFromStorage(),
     nowMs: Date.now(),
+    locationSearch:
+      typeof window !== "undefined" ? window.location?.search ?? "" : "",
+    locationHash:
+      typeof window !== "undefined" ? window.location?.hash ?? "" : "",
   });
 
   if (model.isAuthenticated) {
@@ -7246,9 +7432,116 @@ export function createMultiGamePlatformApp(
   let setupSyncTimer: ReturnType<typeof setTimeout> | null = null;
   let autoPlayTimer: ReturnType<typeof setInterval> | null = null;
   let botResponseTimeout: ReturnType<typeof setTimeout> | null = null;
+  let copyLinkResetTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingRestoreRoomId: string | null = model.isAuthenticated
-    ? loadActiveRoomIdFromStorage()
+    ? model.pendingInviteRoomId ?? loadActiveRoomIdFromStorage()
     : null;
+
+  const syncUrlRoomHash = (roomId: string | null): void => {
+    if (
+      typeof window === "undefined" ||
+      !window.history ||
+      typeof window.history.replaceState !== "function"
+    ) {
+      return;
+    }
+    try {
+      const pathname = window.location?.pathname ?? "/";
+      const rawSearch = window.location?.search ?? "";
+      const params = new URLSearchParams(rawSearch.replace(/^\?+/, ""));
+      params.delete("room");
+      const cleanSearch = params.toString();
+      const base = `${pathname}${cleanSearch ? `?${cleanSearch}` : ""}`;
+      if (roomId) {
+        const cleanId = roomId.trim().replace(/^#+/, "");
+        window.history.replaceState(
+          null,
+          "",
+          `${base}#room=${encodeURIComponent(cleanId)}`
+        );
+      } else if (
+        window.location?.hash?.includes("room=") ||
+        /^#[0-9a-f]{6,10}$/i.test(window.location?.hash ?? "")
+      ) {
+        window.history.replaceState(null, "", base);
+      }
+    } catch {
+      // Ignore history security errors in sandboxed frames
+    }
+  };
+
+  const copyRoomShareLink = (roomId: string): string => {
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "http://localhost:3000";
+    const pathname =
+      typeof window !== "undefined" && window.location?.pathname
+        ? window.location.pathname
+        : "/";
+    const search =
+      typeof window !== "undefined" && window.location?.search
+        ? window.location.search
+        : "";
+    const shareUrl = buildRoomShareUrlPure(origin, pathname, search, roomId);
+
+    const markCopied = () => {
+      model = { ...model, copiedRoomLinkId: roomId };
+      render();
+      if (copyLinkResetTimer) clearTimeout(copyLinkResetTimer);
+      copyLinkResetTimer = setTimeout(() => {
+        if (model.copiedRoomLinkId === roomId) {
+          model = { ...model, copiedRoomLinkId: null };
+          render();
+        }
+      }, 2000);
+    };
+
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === "function"
+    ) {
+      void navigator.clipboard
+        .writeText(shareUrl)
+        .then(() => markCopied())
+        .catch(() => {
+          try {
+            if (typeof document !== "undefined" && document.body) {
+              const ta = document.createElement("textarea");
+              ta.value = shareUrl;
+              ta.style.position = "fixed";
+              ta.style.opacity = "0";
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand?.("copy");
+              document.body.removeChild(ta);
+            }
+          } catch {
+            // Ignore fallback error
+          }
+          markCopied();
+        });
+    } else {
+      try {
+        if (typeof document !== "undefined" && document.body) {
+          const ta = document.createElement("textarea");
+          ta.value = shareUrl;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand?.("copy");
+          document.body.removeChild(ta);
+        }
+      } catch {
+        // Ignore fallback error
+      }
+      markCopied();
+    }
+
+    return shareUrl;
+  };
 
   const roomLensCache = new Map<string, ClientRoom>();
 
@@ -7515,6 +7808,13 @@ export function createMultiGamePlatformApp(
       const data = await res.json();
       if (Array.isArray(data.rooms)) {
         model = syncOnlineLobbyRoomsPure(model, data.rooms);
+        if (model.pendingInviteRoomId) {
+          const inviteId = model.pendingInviteRoomId;
+          model = { ...model, pendingInviteRoomId: null };
+          pendingRestoreRoomId = null;
+          enterOrJoinRoom(inviteId);
+          return;
+        }
         if (pendingRestoreRoomId) {
           const restoreId = pendingRestoreRoomId;
           pendingRestoreRoomId = null;
@@ -7596,6 +7896,7 @@ export function createMultiGamePlatformApp(
     rawName?: string,
     existingGuestId?: string
   ): boolean => {
+    const inviteBeforeSignIn = model.pendingInviteRoomId;
     const res = resolveGuestSignInPure(
       model,
       rawName,
@@ -7611,6 +7912,17 @@ export function createMultiGamePlatformApp(
 
     saveGuestSessionToStorage(res.session);
     saveDeviceGuestsToStorage(model.deviceGuests);
+
+    if (inviteBeforeSignIn) {
+      model = { ...model, pendingInviteRoomId: null };
+      pendingRestoreRoomId = null;
+      if (model.useServerBackend) {
+        void fetchLobbyRooms();
+      }
+      enterOrJoinRoom(inviteBeforeSignIn);
+      return true;
+    }
+
     render();
 
     if (model.useServerBackend) {
@@ -7631,11 +7943,11 @@ export function createMultiGamePlatformApp(
   const startSoloGameFromLogin = (rawName?: string): boolean => {
     const fallbackName =
       (rawName ?? model.loginDraftName).trim() || "Player 1";
+    model = { ...model, pendingInviteRoomId: null };
     const ok = signInAsGuest(fallbackName);
     if (!ok) return false;
     model = { ...model, createRoomMode: "offline" };
     const room = createLocalRoom({
-      name: `${model.currentUserName}'s solo table`,
       gameId: model.createRoomGameId,
       ownerId: model.currentUserId,
       ownerName: model.currentUserName,
@@ -7656,11 +7968,11 @@ export function createMultiGamePlatformApp(
   const startOfflineLocalFromLogin = (rawName?: string): boolean => {
     const fallbackName =
       (rawName ?? model.loginDraftName).trim() || "Player 1";
+    model = { ...model, pendingInviteRoomId: null };
     const ok = signInAsGuest(fallbackName);
     if (!ok) return false;
     model = { ...model, createRoomMode: "offline" };
     const room = createLocalRoom({
-      name: `${model.currentUserName}'s local table`,
       gameId: model.createRoomGameId,
       ownerId: model.currentUserId,
       ownerName: model.currentUserName,
@@ -7940,9 +8252,8 @@ export function createMultiGamePlatformApp(
   };
 
   const createAndOpenRoom = (): void => {
-    const cleanName =
-      model.createRoomName.trim() ||
-      `${model.createRoomGameId} table ${model.nextRoomNum}`;
+    const selectedGameId = model.lobbyGameFilter || model.createRoomGameId;
+    const explicitName = model.createRoomName.trim();
 
     const openAsOfflineLocal =
       model.createRoomMode === "offline" ||
@@ -7956,8 +8267,8 @@ export function createMultiGamePlatformApp(
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              name: cleanName,
-              gameId: model.createRoomGameId,
+              ...(explicitName ? { name: explicitName } : {}),
+              gameId: selectedGameId,
               ownerId: model.currentUserId,
               hostName: model.currentUserName,
               botCount: 0,
@@ -7978,8 +8289,11 @@ export function createMultiGamePlatformApp(
           );
           const created = upserted.room;
           saveActiveRoomIdToStorage(created.roomId);
+          syncUrlRoomHash(created.roomId);
           model = resetSubModesPure({
             ...upserted.model,
+            lobbyGameFilter: created.gameId,
+            createRoomGameId: created.gameId,
             activeRoomId: created.roomId,
             viewMode:
               created.status === "in_progress" ? "in_game" : "room_setup",
@@ -7997,8 +8311,8 @@ export function createMultiGamePlatformApp(
             createRoomMode: "offline",
           };
           const fallbackRoom = createLocalRoom({
-            name: cleanName,
-            gameId: model.createRoomGameId,
+            ...(explicitName ? { name: explicitName } : {}),
+            gameId: selectedGameId,
             ownerId: model.currentUserId,
             ownerName: model.currentUserName,
             isOfflineLocal: true,
@@ -8008,6 +8322,8 @@ export function createMultiGamePlatformApp(
           });
           model = resetSubModesPure({
             ...model,
+            lobbyGameFilter: fallbackRoom.gameId,
+            createRoomGameId: fallbackRoom.gameId,
             activeRoomId: fallbackRoom.roomId,
             viewMode: "room_setup",
           });
@@ -8018,8 +8334,8 @@ export function createMultiGamePlatformApp(
     }
 
     const room = createLocalRoom({
-      name: cleanName,
-      gameId: model.createRoomGameId,
+      ...(explicitName ? { name: explicitName } : {}),
+      gameId: selectedGameId,
       ownerId: model.currentUserId,
       ownerName: model.currentUserName,
       isOfflineLocal: true,
@@ -8029,18 +8345,110 @@ export function createMultiGamePlatformApp(
     });
     model = resetSubModesPure({
       ...model,
+      lobbyGameFilter: room.gameId,
+      createRoomGameId: room.gameId,
       activeRoomId: room.roomId,
       viewMode: "room_setup",
     });
     render();
   };
 
-  const enterOrJoinRoom = (roomId: string): void => {
+  const enterOrJoinRoom = (rawRoomId: string): void => {
     stopAutoPlay();
+    const roomId = resolveClientRoomIdPure(model, rawRoomId);
     const room = model.rooms[roomId];
-    if (!room) return;
-    model = { ...model, activeRoomId: roomId };
-    saveActiveRoomIdToStorage(roomId);
+
+    if (!room) {
+      if (model.useServerBackend) {
+        void (async () => {
+          try {
+            const getRes = await fetch(
+              `/api/rooms/${encodeURIComponent(roomId)}?playerId=${encodeURIComponent(model.currentUserId)}`
+            );
+            if (!getRes.ok) {
+              clearActiveRoomIdFromStorage();
+              syncUrlRoomHash(null);
+              render();
+              return;
+            }
+            const getData = await getRes.json();
+            const fetchedStatus = getData.room?.status ?? "lobby";
+            let latestRoom: ClientRoom;
+
+            if (fetchedStatus === "lobby" || fetchedStatus === "finished") {
+              const joinRes = await fetch(
+                `/api/rooms/${encodeURIComponent(getData.room.roomId)}/join`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    playerId: model.currentUserId,
+                    playerName: model.currentUserName,
+                  }),
+                }
+              );
+              const joinData = await joinRes.json();
+              if (!joinRes.ok) {
+                alert(joinData.error ?? "Unable to join room");
+                syncUrlRoomHash(null);
+                render();
+                return;
+              }
+              const upserted = upsertRoomFromSummaryPure(
+                model,
+                joinData.room,
+                joinData.state,
+                joinData.actingPlayerId
+              );
+              model = upserted.model;
+              latestRoom = upserted.room;
+            } else {
+              const upserted = upsertRoomFromSummaryPure(
+                model,
+                getData.room,
+                getData.state,
+                getData.actingPlayerId
+              );
+              model = upserted.model;
+              latestRoom = upserted.room;
+            }
+
+            connectServerRealtime();
+            saveActiveRoomIdToStorage(latestRoom.roomId);
+            syncUrlRoomHash(latestRoom.roomId);
+            sendWsMessage({
+              type: "SUBSCRIBE_ROOM",
+              roomId: latestRoom.roomId,
+              playerId: model.currentUserId,
+            });
+            model = resetSubModesPure({
+              ...model,
+              lobbyGameFilter: latestRoom.gameId,
+              createRoomGameId: latestRoom.gameId,
+              activeRoomId: latestRoom.roomId,
+              viewMode:
+                latestRoom.status === "in_progress" ? "in_game" : "room_setup",
+            });
+            render();
+          } catch {
+            syncUrlRoomHash(null);
+            render();
+          }
+        })();
+      }
+      return;
+    }
+
+    model = {
+      ...model,
+      lobbyGameFilter: room.gameId,
+      createRoomGameId: room.gameId,
+      activeRoomId: room.roomId,
+    };
+    saveActiveRoomIdToStorage(room.roomId);
+    if (!room.isOfflineLocal) {
+      syncUrlRoomHash(room.roomId);
+    }
 
     if (roomUsesServerPure(model, room)) {
       void (async () => {
@@ -8048,7 +8456,7 @@ export function createMultiGamePlatformApp(
           let latestRoom = room;
           if (room.status === "lobby" || room.status === "finished") {
             const joinRes = await fetch(
-              `/api/rooms/${encodeURIComponent(roomId)}/join`,
+              `/api/rooms/${encodeURIComponent(room.roomId)}/join`,
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -8073,7 +8481,7 @@ export function createMultiGamePlatformApp(
             latestRoom = upserted.room;
           } else {
             const getRes = await fetch(
-              `/api/rooms/${encodeURIComponent(roomId)}?playerId=${encodeURIComponent(model.currentUserId)}`
+              `/api/rooms/${encodeURIComponent(room.roomId)}?playerId=${encodeURIComponent(model.currentUserId)}`
             );
             if (getRes.ok) {
               const getData = await getRes.json();
@@ -8088,13 +8496,16 @@ export function createMultiGamePlatformApp(
             }
           }
 
+          syncUrlRoomHash(latestRoom.roomId);
           sendWsMessage({
             type: "SUBSCRIBE_ROOM",
-            roomId,
+            roomId: latestRoom.roomId,
             playerId: model.currentUserId,
           });
           model = resetSubModesPure({
             ...model,
+            lobbyGameFilter: latestRoom.gameId,
+            createRoomGameId: latestRoom.gameId,
             viewMode:
               latestRoom.status === "in_progress" ? "in_game" : "room_setup",
           });
@@ -8106,7 +8517,7 @@ export function createMultiGamePlatformApp(
       return;
     }
 
-    model = enterOfflineRoomPure(model, roomId);
+    model = enterOfflineRoomPure(model, room.roomId);
     render();
   };
 
@@ -8115,6 +8526,7 @@ export function createMultiGamePlatformApp(
     if (!room) return;
     stopAutoPlay();
     clearActiveRoomIdFromStorage();
+    syncUrlRoomHash(null);
 
     if (roomUsesServerPure(model, room)) {
       void (async () => {
@@ -8656,16 +9068,6 @@ export function createMultiGamePlatformApp(
       });
     });
 
-    root.querySelectorAll("[data-guide-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const gId = btn.getAttribute("data-guide-tab") as SupportedGameId;
-        if (gId) {
-          model = { ...model, guideModalGameId: gId };
-          render();
-        }
-      });
-    });
-
     root.querySelector("#btn-close-guide")?.addEventListener("click", () => {
       model = { ...model, guideModalGameId: null };
       render();
@@ -8879,7 +9281,18 @@ export function createMultiGamePlatformApp(
     });
 
     root.querySelector("#btn-sign-out")?.addEventListener("click", () => {
+      syncUrlRoomHash(null);
       signOutGuest();
+    });
+
+    root.querySelectorAll("[data-copy-room-link]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const rId = btn.getAttribute("data-copy-room-link");
+        if (rId) {
+          copyRoomShareLink(rId);
+        }
+      });
     });
   };
 
@@ -8946,38 +9359,15 @@ export function createMultiGamePlatformApp(
 
     root.querySelectorAll("[data-lobby-filter]").forEach((el) => {
       el.addEventListener("click", () => {
-        const filter = el.getAttribute("data-lobby-filter") as
-          | "all"
-          | SupportedGameId;
+        const filter = el.getAttribute("data-lobby-filter") as SupportedGameId;
         model = {
           ...model,
           lobbyGameFilter: filter,
-          createRoomGameId:
-            filter !== "all" ? filter : model.createRoomGameId,
+          createRoomGameId: filter,
         };
         render();
       });
     });
-
-    root
-      .querySelector("#inp-create-room-name")
-      ?.addEventListener("input", (e) => {
-        model = {
-          ...model,
-          createRoomName: (e.target as HTMLInputElement).value,
-        };
-      });
-
-    root
-      .querySelector("#sel-create-room-game")
-      ?.addEventListener("change", (e) => {
-        model = {
-          ...model,
-          createRoomGameId: (e.target as HTMLSelectElement)
-            .value as SupportedGameId,
-        };
-        render();
-      });
 
     root
       .querySelector("#sel-create-room-mode")
@@ -9020,6 +9410,7 @@ export function createMultiGamePlatformApp(
 
     root.querySelector("#btn-back-lobby")?.addEventListener("click", () => {
       clearActiveRoomIdFromStorage();
+      syncUrlRoomHash(null);
       model = { ...model, viewMode: "lobby" };
       if (model.useServerBackend) {
         void fetchLobbyRooms().then(() => render());
@@ -9051,16 +9442,6 @@ export function createMultiGamePlatformApp(
       });
 
     if (canEditSetup) {
-      root.querySelector("#setup-room-name")?.addEventListener("input", (e) => {
-        const nextName = (e.target as HTMLInputElement).value;
-        model = updateRoomInModelPure(model, room.roomId, (r) => ({
-          ...r,
-          name: nextName,
-        }));
-        const latest = model.rooms[room.roomId];
-        if (latest) pushServerRoomSetup(latest, 250);
-      });
-
       root
         .querySelector("#inp-local-friend-name")
         ?.addEventListener("input", (e) => {
@@ -11547,6 +11928,7 @@ export function createMultiGamePlatformApp(
     root.querySelector("#btn-back-lobby")?.addEventListener("click", () => {
       stopAutoPlay();
       clearActiveRoomIdFromStorage();
+      syncUrlRoomHash(null);
       model = { ...model, viewMode: "lobby" };
       if (model.useServerBackend) {
         void fetchLobbyRooms().then(() => render());
@@ -11560,6 +11942,16 @@ export function createMultiGamePlatformApp(
       model = { ...model, viewMode: "room_setup" };
       render();
     });
+
+    root
+      .querySelector("#btn-toggle-game-settings")
+      ?.addEventListener("click", () => {
+        model = {
+          ...model,
+          sidebarSettingsExpanded: !model.sidebarSettingsExpanded,
+        };
+        render();
+      });
 
     root
       .querySelector("#btn-sidebar-edit-setup")
@@ -11801,8 +12193,30 @@ export function createMultiGamePlatformApp(
   registerGlobalDropdownDismiss(root);
   render();
 
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("hashchange", () => {
+      const nextInvite = extractInviteRoomHashFromLocationPure(
+        window.location?.search ?? "",
+        window.location?.hash ?? ""
+      );
+      if (!nextInvite) return;
+      if (model.isAuthenticated && model.viewMode !== "login") {
+        if (nextInvite !== model.activeRoomId || model.viewMode === "lobby") {
+          enterOrJoinRoom(nextInvite);
+        }
+      } else {
+        model = { ...model, pendingInviteRoomId: nextInvite };
+        render();
+      }
+    });
+  }
+
   if (model.useServerBackend && model.isAuthenticated) {
     void fetchLobbyRooms();
+  } else if (model.isAuthenticated && model.pendingInviteRoomId) {
+    const inviteId = model.pendingInviteRoomId;
+    model = { ...model, pendingInviteRoomId: null };
+    enterOrJoinRoom(inviteId);
   }
 
   return {
@@ -11818,8 +12232,8 @@ export function createMultiGamePlatformApp(
     get lobbyGameFilter() {
       return model.lobbyGameFilter;
     },
-    set lobbyGameFilter(v: "all" | SupportedGameId) {
-      model = { ...model, lobbyGameFilter: v };
+    set lobbyGameFilter(v: SupportedGameId) {
+      model = { ...model, lobbyGameFilter: v, createRoomGameId: v };
     },
     get lobbyHeroEnteredOnce() {
       return model.lobbyHeroEnteredOnce;
@@ -11921,7 +12335,7 @@ export function createMultiGamePlatformApp(
       return model.createRoomGameId;
     },
     set createRoomGameId(v: SupportedGameId) {
-      model = { ...model, createRoomGameId: v };
+      model = { ...model, createRoomGameId: v, lobbyGameFilter: v };
     },
     get createRoomMode() {
       return model.createRoomMode;
@@ -12059,6 +12473,12 @@ export function createMultiGamePlatformApp(
     },
     set autoPlayBots(v: boolean) {
       model = { ...model, autoPlayBots: v };
+    },
+    get sidebarSettingsExpanded() {
+      return model.sidebarSettingsExpanded;
+    },
+    set sidebarSettingsExpanded(v: boolean) {
+      model = { ...model, sidebarSettingsExpanded: v };
     },
     get autoRespondBotsToHuman() {
       return model.autoRespondBotsToHuman;

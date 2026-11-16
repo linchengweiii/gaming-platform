@@ -292,11 +292,46 @@ export function listRoomsPure(
     .map((r) => toRoomSummaryPure(managerState.registry, r));
 }
 
+export function normalizeRoomHashIdPure(rawRoomId: string): string {
+  return rawRoomId.trim().replace(/^#+/, "");
+}
+
+export function computeRoomHashPure(
+  counter: number,
+  nowMs: number,
+  salt: string,
+  existingRooms: Readonly<Record<string, unknown>> = {}
+): string {
+  const hashOnce = (input: string): string => {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < input.length; i++) {
+      h ^= input.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    h ^= h >>> 16;
+    h = Math.imul(h, 0x85ebca6b) >>> 0;
+    h ^= h >>> 13;
+    return (h & 0xffffff).toString(16).padStart(6, "0");
+  };
+
+  for (let attempt = 0; attempt < 64; attempt++) {
+    const candidate = hashOnce(`${counter}:${nowMs}:${salt}:${attempt}`);
+    if (!existingRooms[candidate]) {
+      return candidate;
+    }
+  }
+  return `${hashOnce(`${counter}:${nowMs}:${salt}`)}${counter}`;
+}
+
 export function getRoomRecordPure(
   managerState: RoomManagerState,
   roomId: string
 ): RoomRecord {
-  const room = managerState.rooms[roomId];
+  const cleaned = normalizeRoomHashIdPure(roomId);
+  const room =
+    managerState.rooms[roomId] ??
+    managerState.rooms[cleaned] ??
+    managerState.rooms[cleaned.toLowerCase()];
   if (!room) {
     throw new Error(`Room "${roomId}" not found`);
   }
@@ -437,12 +472,17 @@ export function createRoomPure(
   nowMs: number = Date.now()
 ): { state: RoomManagerState; roomId: string } {
   const roomIndex = managerState.roomCounter;
-  const roomId = `room-${roomIndex}`;
   const gameId = options.gameId ?? "catan";
-  const engine = getRegisteredEnginePure(managerState.registry, gameId);
+  getRegisteredEnginePure(managerState.registry, gameId);
 
   const ownerId = options.ownerId?.trim() || "p1";
   const ownerName = options.hostName?.trim() || "Player 1 (Host)";
+  const roomId = computeRoomHashPure(
+    roomIndex,
+    nowMs,
+    `${gameId}:${ownerId}:${options.seed ?? ""}`,
+    managerState.rooms
+  );
 
   const botDifficulty: BotDifficulty =
     options.botDifficulty ??
@@ -478,7 +518,7 @@ export function createRoomPure(
 
   const draftRoom: RoomRecord = {
     roomId,
-    name: options.name || `${engine.metadata.name} Table #${roomIndex}`,
+    name: options.name?.trim() || `#${roomId}`,
     gameId,
     ownerId,
     ownerName,

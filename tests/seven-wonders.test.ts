@@ -15,6 +15,10 @@ import {
   type SevenWondersState,
 } from "@gaming-platform/seven-wonders";
 import { createMultiGamePlatformApp } from "../apps/web/src/app.ts";
+import {
+  COMMODITY_META,
+  RESOURCE_META,
+} from "../apps/web/src/catan-graphics.ts";
 import { resolveEffectiveViewerIdPure } from "../apps/server/src/index.ts";
 import { createPlatformRoomManager } from "../apps/server/src/room-manager.ts";
 import {
@@ -346,10 +350,13 @@ describe("7 Wonders Pure Functional Engine", () => {
     app.autoRespondBotsToHuman = false;
 
     expect(root.innerHTML).toContain("7 Wonders");
-    expect(root.innerHTML).toContain("Alexandria — Seven Wonders");
+    app.lobbyGameFilter = "seven_wonders";
+    app.render();
+    expect(root.innerHTML).toContain("+ Create 7 Wonders room");
+    expect(root.innerHTML).toContain("Host: Hypatia");
+    expect(root.innerHTML).toContain("Room #");
 
     const swRoom = app.createLocalRoom({
-      name: "Babylon Test Table",
       gameId: "seven_wonders",
       ownerId: app.currentUserId,
       ownerName: app.currentUserName,
@@ -401,6 +408,22 @@ describe("7 Wonders Pure Functional Engine", () => {
     });
     app.autoRespondBotsToHuman = false;
 
+    expect(root.innerHTML).not.toContain("ga-tutorial-strip");
+    expect(root.innerHTML).toContain("game-select-card__actions");
+    for (const gameId of [
+      "catan",
+      "splendor",
+      "azul",
+      "seven_wonders",
+    ] as const) {
+      expect(root.innerHTML).toContain(`data-start-tutorial="${gameId}"`);
+      expect(root.innerHTML).toContain(`data-open-guide="${gameId}"`);
+    }
+
+    expect(COMMODITY_META.paper.bgTop).toBe(RESOURCE_META.lumber.bgTop);
+    expect(COMMODITY_META.cloth.bgTop).toBe(RESOURCE_META.wool.bgTop);
+    expect(COMMODITY_META.coin.bgTop).toBe(RESOURCE_META.ore.bgTop);
+
     for (const gameId of [
       "catan",
       "splendor",
@@ -409,12 +432,23 @@ describe("7 Wonders Pure Functional Engine", () => {
     ] as const) {
       expect(TUTORIAL_LESSONS[gameId].length).toBeGreaterThanOrEqual(5);
       expect(GAME_REFERENCE_GUIDES[gameId].sections.length).toBeGreaterThanOrEqual(
-        3
+        4
       );
 
       const guideHtml = renderReferenceGuideModalPure(gameId, false);
-      expect(guideHtml).toContain(GAME_REFERENCE_GUIDES[gameId].title);
-      expect(guideHtml).toContain("Grandmaster table tips");
+      expect(guideHtml).toContain(`${GAME_REFERENCE_GUIDES[gameId].title} — How to play`);
+      expect(guideHtml).toContain("ga-guide-visual");
+      expect(guideHtml).not.toContain("Grandmaster table tips");
+      expect(guideHtml).not.toContain("data-guide-tab");
+
+      if (gameId === "catan") {
+        expect(GAME_REFERENCE_GUIDES.catan.sections.length).toBe(8);
+        expect(guideHtml).toContain("ga-guide-dev-grid");
+        expect(guideHtml).toContain("Road Building");
+        expect(guideHtml).toContain("Year of Plenty");
+        expect(guideHtml).toContain("Monopoly");
+        expect(guideHtml).toContain("Barbarian Ship");
+      }
 
       const tutRoom = app.startInteractiveTutorial(gameId);
       expect(app.viewMode).toBe("in_game");

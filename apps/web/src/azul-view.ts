@@ -559,12 +559,12 @@ export function renderAzulPlayerCard(
   const coloredLinesHtml = p.patternLines
     .map((l, idx) => {
       if (!l.color || l.count === 0) {
-        return `<span class="ga-chip ga-num" style="height:18px;padding:0 4px;font-size:10px;opacity:0.65;" title="Row ${idx + 1}: empty (0/${l.capacity})">0/${l.capacity}</span>`;
+        return `<span class="ga-chip ga-num" style="height:20px;padding:0 6px;font-size:10.5px;opacity:0.65;" title="Row ${idx + 1}: empty (0/${l.capacity})">0/${l.capacity}</span>`;
       }
       const st = AZUL_TILE_STYLES[l.color];
       return `<span class="ga-num" title="Row ${idx + 1}: ${l.count}/${l.capacity} ${st.label}" style="
-        display:inline-flex;align-items:center;gap:2px;height:18px;padding:0 5px;border-radius:4px;
-        background:${st.bg};border:1px solid ${st.border};color:${l.color === "yellow" ? "#422006" : "#fff"};font-size:10px;font-weight:500;
+        display:inline-flex;align-items:center;gap:3px;height:20px;padding:0 6px;border-radius:5px;
+        background:${st.bg};border:1px solid ${st.border};color:${l.color === "yellow" ? "#422006" : "#fff"};font-size:10.5px;font-weight:500;
       ">${st.symbol}${l.count}/${l.capacity}</span>`;
     })
     .join("");
@@ -580,19 +580,19 @@ export function renderAzulPlayerCard(
         <span class="ga-chip ga-chip--warn ga-num">${p.score} pts</span>
       </div>
 
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-        <div class="ga-stat-list" style="gap:4px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+        <div class="ga-stat-list" style="gap:5px;">
           <div class="ga-num" style="font-size:11px;">
             Rows ${p.completedRows}/5 · Cols ${p.completedCols}/5 · Sets ${p.completedColorSets}/5
           </div>
           <div class="ga-num" style="font-size:11px;">
             Floor ${p.floorLine.length}/7${curFloorPenalty > 0 ? ` (-${curFloorPenalty})` : ""}${holdsFirst ? " · 1st" : ""}
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:3px;">
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
             ${coloredLinesHtml}
           </div>
         </div>
-        <div style="display: flex; flex-direction: column; gap: 2px; padding: 4px; background: var(--surface); border-radius: 6px; border: 1px solid var(--line);">
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 5px; background: var(--surface); border-radius: 7px; border: 1px solid var(--line);">
           ${miniWall}
         </div>
       </div>

@@ -1204,29 +1204,29 @@ export function renderSevenWondersPlayerCard(
 
   return `
     <div class="player-card clickable-target ${isActing ? "active-turn" : ""}" data-sw-inspect-player="${escapeHtml(p.id)}" title="Click to inspect ${escapeHtml(p.name)}'s empire">
-      <div class="player-card-header">
+      <div class="player-header">
         <div style="display:flex;align-items:center;gap:8px;min-width:0;">
           <span class="player-dot" style="background:${p.color}"></span>
           <strong style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(p.name)}</strong>
-          <span class="ga-chip" style="height:20px;padding:0 6px;">${seatBadge}</span>
+          <span class="ga-chip" style="height:22px;padding:0 8px;">${seatBadge}</span>
         </div>
         <span class="ga-chip ga-chip--warn ga-num">${p.scoreBreakdown.totalVp} VP</span>
       </div>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;">
         <span class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(
           board.name.replace(/^The /, "")
         )} (${p.wonderSide})</span>
         ${
           state.phase === "AGE_DRAFT"
             ? isLocked
-              ? `<span class="ga-chip ga-chip--ok" style="height:19px;padding:0 6px;">Ready</span>`
-              : `<span class="ga-chip" style="height:19px;padding:0 6px;">Drafting</span>`
+              ? `<span class="ga-chip ga-chip--ok" style="height:21px;padding:0 8px;">Ready</span>`
+              : `<span class="ga-chip" style="height:21px;padding:0 8px;">Drafting</span>`
             : ""
         }
       </div>
 
-      <div style="display:flex;flex-wrap:wrap;gap:5px;font-size:12px;" class="ga-num">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:12px;" class="ga-num">
         <span class="ga-chip">${renderSwCoinSvg(11)} ${p.coins}</span>
         <span class="ga-chip">${renderSwShieldSvg(11)} ${shields}</span>
         <span class="ga-chip">Stages ${p.builtWonderStages}/${board.stages.length}</span>
