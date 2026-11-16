@@ -146,6 +146,7 @@ export interface GuestSession {
 
 const GUEST_STORAGE_KEY = "ga_guest_session";
 const DEVICE_GUESTS_STORAGE_KEY = "ga_device_guests";
+const ACTIVE_ROOM_STORAGE_KEY = "ga_active_room_id";
 
 export type BuildMode =
   | null
@@ -207,6 +208,7 @@ export interface ClientRoom {
   undoableSteps: number;
   canRedo: boolean;
   step: number;
+  offlinePlayerIds?: string[];
 }
 
 export interface CreateLocalRoomOptions {
@@ -934,6 +936,10 @@ export function upsertRoomFromSummaryPure(
         : (existing?.canRedo ?? false),
     step:
       typeof summary.step === "number" ? summary.step : (existing?.step ?? 0),
+    ...(Array.isArray(summary.offlinePlayerIds) &&
+    summary.offlinePlayerIds.length > 0
+      ? { offlinePlayerIds: summary.offlinePlayerIds.slice() }
+      : {}),
   };
 
   const nextModel = setRoomInModelPure(
@@ -1578,6 +1584,215 @@ export function leaveOfflineRoomPure(
   });
 }
 
+export function signOutGuestFromModelPure(
+  model: Readonly<AppModel>,
+  targetGuestId: string,
+  fallbackDraftSuffix: number
+): {
+  readonly model: AppModel;
+  readonly removedRoomIds: readonly string[];
+  readonly switchedToGuest: GuestSession | null;
+} {
+  if (!targetGuestId) {
+    return { model, removedRoomIds: [], switchedToGuest: null };
+  }
+
+  const remainingDeviceGuests = model.deviceGuests.filter(
+    (g) => g.id !== targetGuestId
+  );
+  const toBotName = (name: string): string =>
+    name.endsWith(" (Bot)") ? name : `${name} (Bot)`;
+
+  const swept = model.roomOrder.reduce<{
+    readonly model: AppModel;
+    readonly removedRoomIds: readonly string[];
+  }>(
+    (acc, roomId) => {
+      const room = acc.model.rooms[roomId];
+      if (!room) return acc;
+
+      const isOwnedOrSeated =
+        room.ownerId === targetGuestId ||
+        room.humanPlayers.some(
+          (p) => p.id === targetGuestId || p.controllerId === targetGuestId
+        ) ||
+        room.players.some(
+          (p) =>
+            !p.isBot &&
+            (p.id === targetGuestId || p.controllerId === targetGuestId)
+        );
+
+      if (!isOwnedOrSeated) return acc;
+
+      const remainingHumans = room.humanPlayers.filter(
+        (p) => p.id !== targetGuestId && p.controllerId !== targetGuestId
+      );
+
+      if (remainingHumans.length === 0 && !room.allBots) {
+        return {
+          model: removeRoomFromModelPure(acc.model, roomId),
+          removedRoomIds: [...acc.removedRoomIds, roomId],
+        };
+      }
+
+      const nextOwnerId =
+        room.ownerId === targetGuestId && remainingHumans.length > 0
+          ? remainingHumans[0]!.id
+          : room.ownerId;
+      const nextOwnerName =
+        room.ownerId === targetGuestId && remainingHumans.length > 0
+          ? remainingHumans[0]!.name
+          : room.ownerName;
+
+      if (room.status !== "in_progress") {
+        const rebuilt = rebuildRoomSeatsPure({
+          ...room,
+          ownerId: nextOwnerId,
+          ownerName: nextOwnerName,
+          humanPlayers: remainingHumans,
+        });
+        return {
+          model: setRoomInModelPure(acc.model, rebuilt),
+          removedRoomIds: acc.removedRoomIds,
+        };
+      }
+
+      const leavingSeatIds = new Set(
+        room.players
+          .filter(
+            (p) =>
+              !p.isBot &&
+              (p.id === targetGuestId || p.controllerId === targetGuestId)
+          )
+          .map((p) => p.id)
+      );
+
+      const nextPlayers: PlayerDescriptor[] = room.players.map((p) =>
+        leavingSeatIds.has(p.id)
+          ? {
+              id: p.id,
+              name: toBotName(p.name),
+              color: p.color,
+              isBot: true,
+              botDifficulty: room.botDifficulty,
+            }
+          : p
+      );
+
+      const nextSession = room.session
+        ? (() => {
+            const curState = room.session.getState();
+            if (!curState || !Array.isArray(curState.players)) {
+              return room.session;
+            }
+            const updatedState = {
+              ...curState,
+              players: curState.players.map((sp: any) =>
+                leavingSeatIds.has(sp.id)
+                  ? {
+                      ...sp,
+                      name: toBotName(sp.name),
+                      isBot: true,
+                      botDifficulty: room.botDifficulty,
+                    }
+                  : sp
+              ),
+            };
+            const engine = getEngineForGamePure(room.gameId);
+            return createMatchSession(engine, updatedState, true);
+          })()
+        : null;
+
+      const nextRemoteState =
+        room.remoteState && Array.isArray(room.remoteState.players)
+          ? {
+              ...room.remoteState,
+              players: room.remoteState.players.map((sp: any) =>
+                leavingSeatIds.has(sp.id)
+                  ? {
+                      ...sp,
+                      name: toBotName(sp.name),
+                      isBot: true,
+                      botDifficulty: room.botDifficulty,
+                    }
+                  : sp
+              ),
+            }
+          : room.remoteState;
+
+      const updatedRoom: ClientRoom = {
+        ...room,
+        ownerId: nextOwnerId,
+        ownerName: nextOwnerName,
+        humanPlayers: remainingHumans,
+        botCount: nextPlayers.filter((p) => p.isBot).length,
+        players: nextPlayers,
+        session: nextSession,
+        remoteState: nextRemoteState,
+      };
+
+      return {
+        model: setRoomInModelPure(acc.model, updatedRoom),
+        removedRoomIds: acc.removedRoomIds,
+      };
+    },
+    { model: { ...model, deviceGuests: remainingDeviceGuests }, removedRoomIds: [] }
+  );
+
+  const fallbackActiveRoomId = swept.model.rooms[swept.model.activeRoomId]
+    ? swept.model.activeRoomId
+    : (swept.model.roomOrder[0] ?? "");
+
+  if (targetGuestId !== model.currentUserId) {
+    return {
+      model: {
+        ...swept.model,
+        activeRoomId: fallbackActiveRoomId,
+      },
+      removedRoomIds: swept.removedRoomIds,
+      switchedToGuest: null,
+    };
+  }
+
+  if (remainingDeviceGuests.length > 0 && model.viewMode !== "login") {
+    const nextGuest = remainingDeviceGuests[0]!;
+    const activeStillHasNextGuest = Boolean(
+      fallbackActiveRoomId &&
+        swept.model.rooms[fallbackActiveRoomId]?.players.some(
+          (p) => p.id === nextGuest.id || p.controllerId === nextGuest.id
+        )
+    );
+    return {
+      model: resetSubModesPure({
+        ...swept.model,
+        isAuthenticated: true,
+        addingAdditionalGuest: false,
+        loginErrorMsg: "",
+        currentUserId: nextGuest.id,
+        currentUserName: nextGuest.name,
+        activeRoomId: fallbackActiveRoomId,
+        viewMode: activeStillHasNextGuest ? model.viewMode : "lobby",
+      }),
+      removedRoomIds: swept.removedRoomIds,
+      switchedToGuest: nextGuest,
+    };
+  }
+
+  return {
+    model: resetSubModesPure({
+      ...swept.model,
+      isAuthenticated: false,
+      addingAdditionalGuest: false,
+      loginErrorMsg: "",
+      loginDraftName: `Guest ${fallbackDraftSuffix}`,
+      activeRoomId: fallbackActiveRoomId,
+      viewMode: "login",
+    }),
+    removedRoomIds: swept.removedRoomIds,
+    switchedToGuest: null,
+  };
+}
+
 export function startOfflineRoomMatchPure(
   model: Readonly<AppModel>,
   roomId: string
@@ -1840,9 +2055,12 @@ export function renderLoginViewPure(model: Readonly<AppModel>): string {
                     ${model.deviceGuests
                       .map(
                         (g) => `
-                          <button type="button" data-select-saved-guest="${escapeAttr(g.id)}" class="btn btn--secondary btn--sm">
-                            ${escapeAttr(g.name)}
-                          </button>
+                          <span style="display: inline-flex; align-items: center; gap: 2px;">
+                            <button type="button" data-select-saved-guest="${escapeAttr(g.id)}" class="btn btn--secondary btn--sm">
+                              ${escapeAttr(g.name)}
+                            </button>
+                            <button type="button" data-remove-saved-guest="${escapeAttr(g.id)}" class="btn btn--secondary btn--sm" aria-label="Sign out and remove ${escapeAttr(g.name)}" title="Sign out and remove ${escapeAttr(g.name)}">×</button>
+                          </span>
                         `
                       )
                       .join("")}
@@ -1939,7 +2157,7 @@ export function renderTopbarUserSelectorPure(model: Readonly<AppModel>): string 
           options,
         })}
         <button type="button" id="btn-add-guest" class="btn btn--secondary btn--sm">New guest</button>
-        <button type="button" id="btn-sign-out" class="btn btn--secondary btn--sm">Sign out</button>
+        <button type="button" id="btn-sign-out" class="btn btn--secondary btn--sm" title="End ${escapeAttr(model.currentUserName)}'s guest session and clean up their rooms">Sign out</button>
       </div>
     `;
 }
@@ -2253,8 +2471,16 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
                                           }>Start match</button>`
                                         : ""
                                     }`
-                                  : `<button type="button" data-join-room="${r.roomId}" class="btn btn--primary btn--sm" style="flex: 1;">
-                                      Open game board
+                                  : `<button type="button" data-join-room="${r.roomId}" class="btn ${
+                                      isOwner || isJoinedGuest
+                                        ? "btn--primary"
+                                        : "btn--secondary"
+                                    } btn--sm" style="flex: 1;">
+                                      ${
+                                        isOwner || isJoinedGuest
+                                          ? "Rejoin match"
+                                          : "Spectate"
+                                      }
                                     </button>`
                               }
                             </div>
@@ -2836,6 +3062,11 @@ export function renderRoomSetupViewPure(
                   ${
                     p.id === model.currentUserId
                       ? `<span class="ga-chip ga-chip--ok">You</span>`
+                      : ""
+                  }
+                  ${
+                    room.offlinePlayerIds?.includes(p.id)
+                      ? `<span class="ga-chip ga-chip--warn" title="Temporarily disconnected — waiting to reconnect">Offline</span>`
                       : ""
                   }
                   <span class="ga-chip">${
@@ -6308,6 +6539,14 @@ export function renderInGameViewPure(
                 ${summaryInfo.ruleChips
                   .map((chip) => `<span class="ga-chip">${escapeAttr(chip)}</span>`)
                   .join("")}
+                ${(room.offlinePlayerIds ?? [])
+                  .map((offId) => {
+                    const offP = state.players.find((sp: any) => sp.id === offId);
+                    return offP
+                      ? `<span class="ga-chip ga-chip--warn" title="Temporarily disconnected — waiting to reconnect">${escapeAttr(offP.name)}: Offline</span>`
+                      : "";
+                  })
+                  .join("")}
               </div>
               ${
                 room.status === "finished" && isOwner
@@ -6584,6 +6823,36 @@ function clearGuestSessionFromStorage(): void {
   }
 }
 
+function loadActiveRoomIdFromStorage(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage?.getItem(ACTIVE_ROOM_STORAGE_KEY);
+    return raw && raw.trim() ? raw.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveActiveRoomIdToStorage(roomId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (roomId) {
+      window.sessionStorage?.setItem(ACTIVE_ROOM_STORAGE_KEY, roomId);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function clearActiveRoomIdFromStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage?.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 function closeDropdownElement(dd: HTMLElement): void {
   dd.classList.remove("is-open");
   const trigger = dd.querySelector(
@@ -6787,6 +7056,7 @@ export interface MultiGamePlatformApp {
   openAddGuestView(): void;
   switchActiveGuest(guestId: string): void;
   signOutGuest(): void;
+  removeDeviceGuest(guestId: string): void;
   getRoomBounds(room: {
     gameId: SupportedGameId;
     config: { scenarioId: ScenarioId };
@@ -6865,6 +7135,9 @@ export function createMultiGamePlatformApp(
   let setupSyncTimer: ReturnType<typeof setTimeout> | null = null;
   let autoPlayTimer: ReturnType<typeof setInterval> | null = null;
   let botResponseTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pendingRestoreRoomId: string | null = model.isAuthenticated
+    ? loadActiveRoomIdFromStorage()
+    : null;
 
   const roomLensCache = new Map<string, ClientRoom>();
 
@@ -7131,6 +7404,23 @@ export function createMultiGamePlatformApp(
       const data = await res.json();
       if (Array.isArray(data.rooms)) {
         model = syncOnlineLobbyRoomsPure(model, data.rooms);
+        if (pendingRestoreRoomId) {
+          const restoreId = pendingRestoreRoomId;
+          pendingRestoreRoomId = null;
+          const restoreTarget = model.rooms[restoreId];
+          const isSeatedInRestore = Boolean(
+            restoreTarget?.players.some(
+              (p) =>
+                p.id === model.currentUserId ||
+                p.controllerId === model.currentUserId
+            )
+          );
+          if (restoreTarget && isSeatedInRestore) {
+            enterOrJoinRoom(restoreId);
+            return;
+          }
+          clearActiveRoomIdFromStorage();
+        }
         if (model.viewMode === "lobby") {
           renderPreservingFocus();
         }
@@ -7343,37 +7633,74 @@ export function createMultiGamePlatformApp(
     render();
   };
 
-  const signOutGuest = (): void => {
-    stopAutoPlay();
-    if (model.useServerBackend && model.activeRoomId) {
-      const active = model.rooms[model.activeRoomId];
-      if (
-        active &&
-        !active.isOfflineLocal &&
-        active.status !== "in_progress" &&
-        model.deviceGuests.length <= 1
-      ) {
-        void fetch(
-          `/api/rooms/${encodeURIComponent(model.activeRoomId)}/leave`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ playerId: model.currentUserId }),
-          }
-        ).catch(() => {});
-      }
-      sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+  const performGuestCleanup = (targetGuestId: string): void => {
+    if (!targetGuestId) return;
+    const isSigningOutCurrent = targetGuestId === model.currentUserId;
+    if (isSigningOutCurrent) {
+      stopAutoPlay();
+      pendingRestoreRoomId = null;
     }
-    clearGuestSessionFromStorage();
-    model = resetSubModesPure({
-      ...model,
-      isAuthenticated: false,
-      addingAdditionalGuest: false,
-      loginErrorMsg: "",
-      loginDraftName: `Guest ${100 + Math.floor(Math.random() * 900)}`,
-      viewMode: "login",
-    });
+
+    if (model.useServerBackend) {
+      void fetch("/api/guests/signout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId: targetGuestId }),
+      })
+        .then(() => {
+          if (model.isAuthenticated && model.useServerBackend) {
+            return fetchLobbyRooms();
+          }
+        })
+        .catch(() => {});
+
+      if (isSigningOutCurrent) {
+        sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+      }
+    }
+
+    const cleaned = signOutGuestFromModelPure(
+      model,
+      targetGuestId,
+      100 + Math.floor(Math.random() * 900)
+    );
+    model = cleaned.model;
+    cleaned.removedRoomIds.forEach((id) => roomLensCache.delete(id));
+    saveDeviceGuestsToStorage(model.deviceGuests);
+
+    if (cleaned.switchedToGuest) {
+      saveGuestSessionToStorage(cleaned.switchedToGuest);
+      if (
+        (model.viewMode === "room_setup" || model.viewMode === "in_game") &&
+        model.activeRoomId
+      ) {
+        saveActiveRoomIdToStorage(model.activeRoomId);
+        const active = model.rooms[model.activeRoomId];
+        if (active && roomUsesServerPure(model, active)) {
+          sendWsMessage({
+            type: "SUBSCRIBE_ROOM",
+            roomId: active.roomId,
+            playerId: model.currentUserId,
+          });
+        }
+      } else {
+        clearActiveRoomIdFromStorage();
+      }
+    } else if (isSigningOutCurrent) {
+      clearGuestSessionFromStorage();
+      clearActiveRoomIdFromStorage();
+    }
+
     render();
+    scheduleBotAutoResponseIfNeeded();
+  };
+
+  const signOutGuest = (): void => {
+    performGuestCleanup(model.currentUserId);
+  };
+
+  const removeDeviceGuest = (guestId: string): void => {
+    performGuestCleanup(guestId);
   };
 
   const getActiveRoom = (): ClientRoom => {
@@ -7511,6 +7838,7 @@ export function createMultiGamePlatformApp(
             data.actingPlayerId
           );
           const created = upserted.room;
+          saveActiveRoomIdToStorage(created.roomId);
           model = resetSubModesPure({
             ...upserted.model,
             activeRoomId: created.roomId,
@@ -7573,6 +7901,7 @@ export function createMultiGamePlatformApp(
     const room = model.rooms[roomId];
     if (!room) return;
     model = { ...model, activeRoomId: roomId };
+    saveActiveRoomIdToStorage(roomId);
 
     if (roomUsesServerPure(model, room)) {
       void (async () => {
@@ -7646,6 +7975,7 @@ export function createMultiGamePlatformApp(
     const room = getActiveRoomPure(model);
     if (!room) return;
     stopAutoPlay();
+    clearActiveRoomIdFromStorage();
 
     if (roomUsesServerPure(model, room)) {
       void (async () => {
@@ -8407,6 +8737,13 @@ export function createMultiGamePlatformApp(
         }
       });
     });
+
+    root.querySelectorAll("[data-remove-saved-guest]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const guestId = btn.getAttribute("data-remove-saved-guest")!;
+        removeDeviceGuest(guestId);
+      });
+    });
   };
 
   const bindLobbyEvents = (): void => {
@@ -8487,6 +8824,7 @@ export function createMultiGamePlatformApp(
     bindCommonIdentityEvents();
 
     root.querySelector("#btn-back-lobby")?.addEventListener("click", () => {
+      clearActiveRoomIdFromStorage();
       model = { ...model, viewMode: "lobby" };
       if (model.useServerBackend) {
         void fetchLobbyRooms().then(() => render());
@@ -11013,6 +11351,7 @@ export function createMultiGamePlatformApp(
     bindCommonIdentityEvents();
     root.querySelector("#btn-back-lobby")?.addEventListener("click", () => {
       stopAutoPlay();
+      clearActiveRoomIdFromStorage();
       model = { ...model, viewMode: "lobby" };
       if (model.useServerBackend) {
         void fetchLobbyRooms().then(() => render());
@@ -11545,6 +11884,7 @@ export function createMultiGamePlatformApp(
     openAddGuestView,
     switchActiveGuest,
     signOutGuest,
+    removeDeviceGuest,
     getRoomBounds: getRoomBoundsPure,
     createLocalRoom,
     getActiveRoom,

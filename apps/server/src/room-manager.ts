@@ -64,6 +64,7 @@ export interface RoomSummary {
   canRedo: boolean;
   step: number;
   createdAt: number;
+  offlinePlayerIds?: string[];
 }
 
 export interface RoomRecord {
@@ -906,6 +907,185 @@ export function leaveRoomPure(
   };
 }
 
+export function closeRoomPure(
+  managerState: RoomManagerState,
+  roomId: string
+): { state: RoomManagerState; closed: boolean } {
+  if (!managerState.rooms[roomId]) {
+    return { state: managerState, closed: false };
+  }
+  return {
+    state: removeRoomRecordFromState(managerState, roomId),
+    closed: true,
+  };
+}
+
+export function signOutPlayerFromRoomPure(
+  managerState: RoomManagerState,
+  roomId: string,
+  playerId: string
+): {
+  state: RoomManagerState;
+  closed: boolean;
+  updated: boolean;
+  convertedToBot: boolean;
+} {
+  const room = managerState.rooms[roomId];
+  if (!room || !playerId) {
+    return {
+      state: managerState,
+      closed: false,
+      updated: false,
+      convertedToBot: false,
+    };
+  }
+
+  const isOwnedOrSeated =
+    room.ownerId === playerId ||
+    room.humanPlayers.some(
+      (p) => p.id === playerId || p.controllerId === playerId
+    ) ||
+    room.players.some(
+      (p) => !p.isBot && (p.id === playerId || p.controllerId === playerId)
+    );
+
+  if (!isOwnedOrSeated) {
+    return {
+      state: managerState,
+      closed: false,
+      updated: false,
+      convertedToBot: false,
+    };
+  }
+
+  if (room.status !== "in_progress") {
+    const left = leaveRoomPure(managerState, roomId, playerId);
+    return {
+      state: left.state,
+      closed: left.closed,
+      updated: !left.closed && left.state !== managerState,
+      convertedToBot: false,
+    };
+  }
+
+  const remainingHumans = room.humanPlayers.filter(
+    (p) => p.id !== playerId && p.controllerId !== playerId
+  );
+
+  if (remainingHumans.length === 0 && !room.allBots) {
+    return {
+      state: removeRoomRecordFromState(managerState, roomId),
+      closed: true,
+      updated: false,
+      convertedToBot: false,
+    };
+  }
+
+  const leavingSeatIds = new Set(
+    room.players
+      .filter(
+        (p) => !p.isBot && (p.id === playerId || p.controllerId === playerId)
+      )
+      .map((p) => p.id)
+  );
+
+  const promotedOwner =
+    room.ownerId === playerId && remainingHumans.length > 0
+      ? { ownerId: remainingHumans[0]!.id, ownerName: remainingHumans[0]!.name }
+      : { ownerId: room.ownerId, ownerName: room.ownerName };
+
+  const toBotName = (name: string): string =>
+    name.endsWith(" (Bot)") ? name : `${name} (Bot)`;
+
+  const nextPlayers: PlayerDescriptor[] = room.players.map((p) =>
+    leavingSeatIds.has(p.id)
+      ? {
+          id: p.id,
+          name: toBotName(p.name),
+          color: p.color,
+          isBot: true,
+          botDifficulty: room.botDifficulty,
+        }
+      : p
+  );
+
+  const nextSessionState = room.sessionState
+    ? (() => {
+        const cursor = room.sessionState.cursor;
+        const curSnap = room.sessionState.snapshots[cursor];
+        if (!curSnap || !Array.isArray(curSnap.players)) {
+          return room.sessionState;
+        }
+        const updatedSnap = {
+          ...curSnap,
+          players: curSnap.players.map((sp: any) =>
+            leavingSeatIds.has(sp.id)
+              ? {
+                  ...sp,
+                  name: toBotName(sp.name),
+                  isBot: true,
+                  botDifficulty: room.botDifficulty,
+                }
+              : sp
+          ),
+        };
+        const nextSnapshots = room.sessionState.snapshots.map((snap, idx) =>
+          idx === cursor ? updatedSnap : snap
+        );
+        return {
+          ...room.sessionState,
+          snapshots: nextSnapshots,
+        };
+      })()
+    : null;
+
+  const updatedRoom: RoomRecord = {
+    ...room,
+    ownerId: promotedOwner.ownerId,
+    ownerName: promotedOwner.ownerName,
+    humanPlayers: remainingHumans,
+    botCount: nextPlayers.filter((p) => p.isBot).length,
+    players: nextPlayers,
+    sessionState: nextSessionState,
+  };
+
+  return {
+    state: setRoomRecordInState(managerState, updatedRoom),
+    closed: false,
+    updated: true,
+    convertedToBot: leavingSeatIds.size > 0,
+  };
+}
+
+export function signOutGuestEverywherePure(
+  managerState: RoomManagerState,
+  playerId: string
+): {
+  state: RoomManagerState;
+  closedRoomIds: string[];
+  updatedRoomIds: string[];
+} {
+  return managerState.roomOrder.reduce<{
+    state: RoomManagerState;
+    closedRoomIds: string[];
+    updatedRoomIds: string[];
+  }>(
+    (acc, roomId) => {
+      const res = signOutPlayerFromRoomPure(acc.state, roomId, playerId);
+      return {
+        state: res.state,
+        closedRoomIds: res.closed
+          ? [...acc.closedRoomIds, roomId]
+          : acc.closedRoomIds,
+        updatedRoomIds: res.updated
+          ? [...acc.updatedRoomIds, roomId]
+          : acc.updatedRoomIds,
+      };
+    },
+    { state: managerState, closedRoomIds: [], updatedRoomIds: [] }
+  );
+}
+
 export function startGamePure(
   managerState: RoomManagerState,
   roomId: string,
@@ -1236,6 +1416,11 @@ export interface PlatformRoomManager {
     preferredPlayerId?: string
   ): PlayerDescriptor;
   leaveRoom(roomId: string, playerId: string): RoomInstance | null;
+  closeRoom(roomId: string): boolean;
+  signOutGuest(playerId: string): {
+    closedRoomIds: string[];
+    updatedRoomIds: string[];
+  };
   startGame(roomId: string, requesterId?: string): any;
   dispatchAction(roomId: string, playerId: string, action: any): any;
   undoAction(roomId: string, requesterId?: string | null): any;
@@ -1535,6 +1720,23 @@ export function createPlatformRoomManager(): PlatformRoomManager {
         return null;
       }
       return getOrCreateRoomLens(roomId);
+    },
+    closeRoom(roomId) {
+      const closed = closeRoomPure(state, roomId);
+      state = closed.state;
+      if (closed.closed) {
+        roomLensCache.delete(roomId);
+      }
+      return closed.closed;
+    },
+    signOutGuest(playerId) {
+      const signedOut = signOutGuestEverywherePure(state, playerId);
+      state = signedOut.state;
+      signedOut.closedRoomIds.forEach((id) => roomLensCache.delete(id));
+      return {
+        closedRoomIds: signedOut.closedRoomIds,
+        updatedRoomIds: signedOut.updatedRoomIds,
+      };
     },
     startGame(roomId, requesterId) {
       const started = startGamePure(state, roomId, requesterId);

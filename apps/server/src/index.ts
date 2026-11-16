@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   type PlatformRoomManager,
   type RoomInstance,
+  type RoomSummary,
   createPlatformRoomManager,
   getRoomActingPlayerId,
 } from "./room-manager.ts";
@@ -175,13 +176,109 @@ export function resolveSafeStaticPathPure(
   return path.join(publicDir, safePath);
 }
 
+const ABANDONED_ROOM_IDLE_MS = 15 * 60 * 1000;
+
 export function createPlatformServer(): {
   server: http.Server;
   roomManager: PlatformRoomManager;
+  sweepAbandonedRooms: (nowMs?: number, maxIdleMs?: number) => string[];
 } {
   const roomManager = createPlatformRoomManager();
   let wsClients: Readonly<Record<string, WsClient>> = {};
   const roomBotTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const seenConnectedPlayersByRoom = new Map<string, Set<string>>();
+  const roomAllDisconnectedSince = new Map<string, number>();
+
+  function getConnectedPlayerIds(): Set<string> {
+    const set = new Set<string>();
+    Object.values(wsClients).forEach((c) => {
+      if (c.playerId) set.add(c.playerId);
+    });
+    return set;
+  }
+
+  function recordPlayerRoomPresence(
+    roomId: string | null,
+    playerId: string | null
+  ): void {
+    if (!roomId || !playerId) return;
+    let seen = seenConnectedPlayersByRoom.get(roomId);
+    if (!seen) {
+      seen = new Set<string>();
+      seenConnectedPlayersByRoom.set(roomId, seen);
+    }
+    seen.add(playerId);
+    roomAllDisconnectedSince.delete(roomId);
+  }
+
+  function refreshRoomDisconnectClock(roomId: string, nowMs = Date.now()): void {
+    let room: RoomInstance;
+    try {
+      room = roomManager.getRoom(roomId);
+    } catch {
+      seenConnectedPlayersByRoom.delete(roomId);
+      roomAllDisconnectedSince.delete(roomId);
+      return;
+    }
+    if (room.humanPlayers.length === 0) {
+      roomAllDisconnectedSince.delete(roomId);
+      return;
+    }
+    const connectedIds = getConnectedPlayerIds();
+    const anyHumanConnected = room.humanPlayers.some((p) =>
+      connectedIds.has(p.controllerId ?? p.id)
+    );
+    if (anyHumanConnected) {
+      roomAllDisconnectedSince.delete(roomId);
+    } else if (!roomAllDisconnectedSince.has(roomId)) {
+      roomAllDisconnectedSince.set(roomId, nowMs);
+    }
+  }
+
+  function enrichSummaryWithPresence(summary: RoomSummary): RoomSummary {
+    const seen = seenConnectedPlayersByRoom.get(summary.roomId);
+    if (!seen || seen.size === 0) return summary;
+    const connectedIds = getConnectedPlayerIds();
+    const offlineIds = summary.players
+      .filter((p) => {
+        if (p.isBot) return false;
+        const ownerKey = p.controllerId ?? p.id;
+        return seen.has(ownerKey) && !connectedIds.has(ownerKey);
+      })
+      .map((p) => p.id);
+    return offlineIds.length > 0
+      ? { ...summary, offlinePlayerIds: offlineIds }
+      : summary;
+  }
+
+  function cleanupDeletedRoomMeta(roomId: string): void {
+    clearRoomBotTimer(roomId);
+    seenConnectedPlayersByRoom.delete(roomId);
+    roomAllDisconnectedSince.delete(roomId);
+  }
+
+  function sweepAbandonedRooms(
+    nowMs = Date.now(),
+    maxIdleMs = ABANDONED_ROOM_IDLE_MS
+  ): string[] {
+    const swept: string[] = [];
+    for (const [roomId, sinceMs] of Array.from(
+      roomAllDisconnectedSince.entries()
+    )) {
+      refreshRoomDisconnectClock(roomId, nowMs);
+      const refreshedSince = roomAllDisconnectedSince.get(roomId);
+      if (refreshedSince !== undefined && nowMs - refreshedSince >= maxIdleMs) {
+        if (roomManager.closeRoom(roomId)) {
+          cleanupDeletedRoomMeta(roomId);
+          swept.push(roomId);
+        }
+      }
+    }
+    if (swept.length > 0) {
+      broadcastLobbyRooms();
+    }
+    return swept;
+  }
 
   function upsertWsClient(client: WsClient): void {
     wsClients = {
@@ -191,9 +288,15 @@ export function createPlatformServer(): {
   }
 
   function removeWsClient(clientId: string): void {
+    const prev = wsClients[clientId];
     wsClients = Object.fromEntries(
       Object.entries(wsClients).filter(([id]) => id !== clientId)
     );
+    if (prev?.roomId) {
+      refreshRoomDisconnectClock(prev.roomId);
+      broadcastRoomState(prev.roomId);
+      broadcastLobbyRooms();
+    }
   }
 
   function sendWsFrame(socket: Duplex, payload: unknown): void {
@@ -202,7 +305,7 @@ export function createPlatformServer(): {
   }
 
   function broadcastLobbyRooms(): void {
-    const rooms = roomManager.listRooms();
+    const rooms = roomManager.listRooms().map(enrichSummaryWithPresence);
     Object.values(wsClients).forEach((client) => {
       sendWsFrame(client.socket, {
         type: "LOBBY_ROOMS",
@@ -231,7 +334,9 @@ export function createPlatformServer(): {
           actingId,
           state
         );
-        const summary = roomManager.toRoomSummary(room, client.playerId);
+        const summary = enrichSummaryWithPresence(
+          roomManager.toRoomSummary(room, client.playerId)
+        );
         const view = state
           ? engine.getPlayerView(state, effectiveViewerId)
           : null;
@@ -341,7 +446,42 @@ export function createPlatformServer(): {
 
       if (pathname === "/api/rooms" && req.method === "GET") {
         const gameFilter = url.searchParams.get("gameId") ?? undefined;
-        sendJson(res, 200, { rooms: roomManager.listRooms(gameFilter) });
+        sendJson(res, 200, {
+          rooms: roomManager
+            .listRooms(gameFilter)
+            .map(enrichSummaryWithPresence),
+        });
+        return;
+      }
+
+      if (pathname === "/api/guests/signout" && req.method === "POST") {
+        const body = await readJsonBody(req);
+        const playerId =
+          typeof body.playerId === "string" ? body.playerId.trim() : "";
+        if (!playerId) {
+          sendJson(res, 400, { error: "Missing playerId" });
+          return;
+        }
+        Object.values(wsClients).forEach((client) => {
+          if (client.playerId === playerId) {
+            upsertWsClient({ ...client, roomId: null, playerId: null });
+          }
+        });
+        seenConnectedPlayersByRoom.forEach((seen) => seen.delete(playerId));
+
+        const result = roomManager.signOutGuest(playerId);
+        result.closedRoomIds.forEach((id) => cleanupDeletedRoomMeta(id));
+        result.updatedRoomIds.forEach((id) => {
+          refreshRoomDisconnectClock(id);
+          broadcastRoomState(id);
+          scheduleRoomBotTurn(id);
+        });
+        broadcastLobbyRooms();
+        sendJson(res, 200, {
+          ok: true,
+          closedRoomIds: result.closedRoomIds,
+          updatedRoomIds: result.updatedRoomIds,
+        });
         return;
       }
 
@@ -390,7 +530,9 @@ export function createPlatformServer(): {
             ? engine.getPlayerView(state, effectiveViewerId)
             : null;
           sendJson(res, 200, {
-            room: roomManager.toRoomSummary(room, viewerId),
+            room: enrichSummaryWithPresence(
+              roomManager.toRoomSummary(room, viewerId)
+            ),
             state: view,
             actingPlayerId,
           });
@@ -475,11 +617,13 @@ export function createPlatformServer(): {
           const body = await readJsonBody(req);
           const room = roomManager.leaveRoom(roomId, body.playerId);
           if (!room) {
-            clearRoomBotTimer(roomId);
+            cleanupDeletedRoomMeta(roomId);
             broadcastLobbyRooms();
             sendJson(res, 200, { closed: true, room: null });
             return;
           }
+          seenConnectedPlayersByRoom.get(roomId)?.delete(body.playerId);
+          refreshRoomDisconnectClock(roomId);
           broadcastRoomState(roomId);
           broadcastLobbyRooms();
           sendJson(res, 200, {
@@ -743,7 +887,7 @@ export function createPlatformServer(): {
     // Send initial lobby rooms snapshot immediately on WS connect
     sendWsFrame(socket, {
       type: "LOBBY_ROOMS",
-      rooms: roomManager.listRooms(),
+      rooms: roomManager.listRooms().map(enrichSummaryWithPresence),
     });
 
     socket.on("data", (buffer: Buffer) => {
@@ -752,7 +896,10 @@ export function createPlatformServer(): {
         for (const frame of frames) {
           if (frame.opcode === 0x08) {
             removeWsClient(clientId);
-            socket.end();
+            if (!socket.destroyed && socket.writable) {
+              socket.write(Buffer.from([0x88, 0x00]));
+            }
+            socket.destroy();
             return;
           }
           if (frame.opcode === 0x01 && frame.text !== undefined) {
@@ -762,19 +909,26 @@ export function createPlatformServer(): {
 
             if (msg.type === "SUBSCRIBE_ROOM") {
               const nextRoomId = msg.roomId ?? null;
+              const nextPlayerId = msg.playerId ?? curClient.playerId ?? null;
               upsertWsClient({
                 ...curClient,
                 roomId: nextRoomId,
-                playerId: msg.playerId ?? null,
+                playerId: nextPlayerId,
               });
+              recordPlayerRoomPresence(nextRoomId, nextPlayerId);
               if (nextRoomId) {
                 broadcastRoomState(nextRoomId);
+                broadcastLobbyRooms();
               }
             } else if (msg.type === "UNSUBSCRIBE_ROOM") {
+              const prevRoomId = curClient.roomId;
               upsertWsClient({
                 ...curClient,
                 roomId: null,
               });
+              if (prevRoomId) {
+                refreshRoomDisconnectClock(prevRoomId);
+              }
             } else if (msg.type === "DISPATCH_ACTION" && curClient.roomId) {
               clearRoomBotTimer(curClient.roomId);
               roomManager.dispatchAction(
@@ -803,7 +957,18 @@ export function createPlatformServer(): {
     socket.on("error", () => removeWsClient(clientId));
   });
 
-  return { server, roomManager };
+  const sweepTimer = setInterval(() => {
+    sweepAbandonedRooms();
+  }, 60_000);
+  sweepTimer.unref?.();
+
+  server.on("close", () => {
+    clearInterval(sweepTimer);
+    roomBotTimers.forEach((t) => clearTimeout(t));
+    roomBotTimers.clear();
+  });
+
+  return { server, roomManager, sweepAbandonedRooms };
 }
 
 // Start HTTP server if executed directly
