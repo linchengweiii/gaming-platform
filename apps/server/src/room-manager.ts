@@ -40,6 +40,10 @@ import {
   getSplendorActingPlayerId,
 } from "@gaming-platform/splendor";
 import { AzulEngine, getAzulActingPlayerId } from "@gaming-platform/azul";
+import {
+  SevenWondersEngine,
+  getSevenWondersActingPlayerId,
+} from "@gaming-platform/seven-wonders";
 
 export interface RoomSummary {
   roomId: string;
@@ -118,6 +122,7 @@ export function getRoomActingPlayerId(
   if (!state) return null;
   if (gameId === "splendor") return getSplendorActingPlayerId(state);
   if (gameId === "azul") return getAzulActingPlayerId(state);
+  if (gameId === "seven_wonders") return getSevenWondersActingPlayerId(state);
   return getNextActingPlayerId(state);
 }
 
@@ -126,8 +131,9 @@ export function createInitialRoomManagerState(): RoomManagerState {
   const r1 = registerEnginePure(r0, CatanEngine);
   const r2 = registerEnginePure(r1, SplendorEngine);
   const r3 = registerEnginePure(r2, AzulEngine);
+  const r4 = registerEnginePure(r3, SevenWondersEngine);
   return {
-    registry: r3,
+    registry: r4,
     rooms: {},
     roomOrder: [],
     roomCounter: 1,
@@ -165,6 +171,58 @@ export function canViewerControlActorPure(
   return actor.id === viewerId || actor.controllerId === viewerId;
 }
 
+function resolveUndoTargetPlayerIdPure(
+  engine: any,
+  r: RoomRecord,
+  viewerId?: string | null
+): string | null {
+  if (!r.sessionState) return null;
+  const state = getSessionState(r.sessionState);
+  const actingId = getRoomActingPlayerId(r.gameId, state);
+  if (
+    r.gameId === "seven_wonders" &&
+    state?.phase === "AGE_DRAFT" &&
+    r.sessionState.cursor > 0
+  ) {
+    const lastEntry = r.sessionState.actionLog[r.sessionState.cursor - 1];
+    if (
+      lastEntry &&
+      getSessionUndoableStepCount(engine, r.sessionState, lastEntry.playerId) >
+        0 &&
+      (viewerId === undefined ||
+        canViewerControlActorPure(r, viewerId, lastEntry.playerId))
+    ) {
+      return lastEntry.playerId;
+    }
+  }
+  return actingId;
+}
+
+function resolveRedoTargetPlayerIdPure(
+  r: RoomRecord,
+  viewerId?: string | null
+): string | null {
+  if (!r.sessionState) return null;
+  const state = getSessionState(r.sessionState);
+  const actingId = getRoomActingPlayerId(r.gameId, state);
+  if (
+    r.gameId === "seven_wonders" &&
+    state?.phase === "AGE_DRAFT" &&
+    r.sessionState.cursor < r.sessionState.snapshots.length - 1
+  ) {
+    const nextEntry = r.sessionState.actionLog[r.sessionState.cursor];
+    if (
+      nextEntry &&
+      canSessionPlayerRedo(r.sessionState, nextEntry.playerId) &&
+      (viewerId === undefined ||
+        canViewerControlActorPure(r, viewerId, nextEntry.playerId))
+    ) {
+      return nextEntry.playerId;
+    }
+  }
+  return actingId;
+}
+
 export function toRoomSummaryPure(
   registry: GameRegistryState,
   r: RoomRecord,
@@ -172,19 +230,28 @@ export function toRoomSummaryPure(
 ): RoomSummary {
   const engine = getRegisteredEnginePure(registry, r.gameId);
   const state = r.sessionState ? getSessionState(r.sessionState) : null;
-  const actingId = state ? getRoomActingPlayerId(r.gameId, state) : null;
+  const undoTargetId = resolveUndoTargetPlayerIdPure(engine, r, viewerId);
+  const redoTargetId = resolveRedoTargetPlayerIdPure(r, viewerId);
   const rawUndoableSteps =
-    r.sessionState && actingId
-      ? getSessionUndoableStepCount(engine, r.sessionState, actingId)
+    r.sessionState && undoTargetId
+      ? getSessionUndoableStepCount(engine, r.sessionState, undoTargetId)
       : 0;
-  const viewerAllowed =
+  const viewerAllowedUndo =
     viewerId === undefined
-      ? Boolean(actingId && !r.players.find((p) => p.id === actingId)?.isBot)
-      : canViewerControlActorPure(r, viewerId, actingId);
-  const undoableSteps = viewerAllowed ? rawUndoableSteps : 0;
+      ? Boolean(
+          undoTargetId && !r.players.find((p) => p.id === undoTargetId)?.isBot
+        )
+      : canViewerControlActorPure(r, viewerId, undoTargetId);
+  const viewerAllowedRedo =
+    viewerId === undefined
+      ? Boolean(
+          redoTargetId && !r.players.find((p) => p.id === redoTargetId)?.isBot
+        )
+      : canViewerControlActorPure(r, viewerId, redoTargetId);
+  const undoableSteps = viewerAllowedUndo ? rawUndoableSteps : 0;
   const canRedo =
-    viewerAllowed && r.sessionState && actingId
-      ? canSessionPlayerRedo(r.sessionState, actingId)
+    viewerAllowedRedo && r.sessionState && redoTargetId
+      ? canSessionPlayerRedo(r.sessionState, redoTargetId)
       : false;
 
   return {
@@ -958,18 +1025,17 @@ export function undoActionPure(
     throw new Error("Game has not started in this room");
   }
   const engine = getRegisteredEnginePure(managerState.registry, room.gameId);
-  const currentState = getSessionState(room.sessionState);
-  const actingId = getRoomActingPlayerId(room.gameId, currentState);
-  if (!actingId) {
+  const undoTargetId = resolveUndoTargetPlayerIdPure(engine, room, requesterId);
+  if (!undoTargetId) {
     throw new Error("Cannot undo after the game has finished");
   }
-  const actingPlayer = room.players.find((p) => p.id === actingId);
+  const actingPlayer = room.players.find((p) => p.id === undoTargetId);
   if (!actingPlayer || actingPlayer.isBot) {
     throw new Error("Undo is only available during a human player's turn");
   }
   if (
     requesterId !== undefined &&
-    !canViewerControlActorPure(room, requesterId, actingId)
+    !canViewerControlActorPure(room, requesterId, undoTargetId)
   ) {
     throw new Error("You can only undo during your own turn");
   }
@@ -977,7 +1043,7 @@ export function undoActionPure(
   const nextSession = undoSessionForPlayerPure(
     engine,
     room.sessionState,
-    actingId
+    undoTargetId
   );
   const nextGameState = getSessionState(nextSession);
   const updatedRoom: RoomRecord = {
@@ -1001,19 +1067,18 @@ export function redoActionPure(
   if (!room.sessionState) {
     throw new Error("Game has not started in this room");
   }
-  const currentState = getSessionState(room.sessionState);
-  const actingId = getRoomActingPlayerId(room.gameId, currentState);
-  if (!actingId) {
+  const redoTargetId = resolveRedoTargetPlayerIdPure(room, requesterId);
+  if (!redoTargetId) {
     throw new Error("Cannot redo after the game has finished");
   }
   if (
     requesterId !== undefined &&
-    !canViewerControlActorPure(room, requesterId, actingId)
+    !canViewerControlActorPure(room, requesterId, redoTargetId)
   ) {
     throw new Error("You can only redo during your own turn");
   }
 
-  const nextSession = redoSessionForPlayerPure(room.sessionState, actingId);
+  const nextSession = redoSessionForPlayerPure(room.sessionState, redoTargetId);
   const nextGameState = getSessionState(nextSession);
   const updatedRoom: RoomRecord = {
     ...room,

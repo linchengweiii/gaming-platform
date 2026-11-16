@@ -41,6 +41,11 @@ import {
   type AzulState,
 } from "../packages/games/azul/src/index.ts";
 import {
+  SevenWondersEngine,
+  getSevenWondersActingPlayerId,
+  type SevenWondersState,
+} from "../packages/games/seven-wonders/src/index.ts";
+import {
   PlatformRoomManager,
   createInitialRoomManagerState,
   createRoomPure,
@@ -66,6 +71,7 @@ import {
 } from "../apps/web/src/catan-graphics.ts";
 import { renderSplendorBoardView } from "../apps/web/src/splendor-view.ts";
 import { renderAzulBoardView } from "../apps/web/src/azul-view.ts";
+import { renderSevenWondersBoardView } from "../apps/web/src/seven-wonders-view.ts";
 
 const GOLDEN_SNAPSHOT_PATH = fileURLToPath(
   new URL("./__snapshots__/functional-parity.golden.json", import.meta.url)
@@ -880,12 +886,9 @@ function loadOrCreateGoldenSnapshot(): GoldenSnapshotData {
   if (!fs.existsSync(GOLDEN_SNAPSHOT_PATH)) {
     fs.mkdirSync(path.dirname(GOLDEN_SNAPSHOT_PATH), { recursive: true });
     const generated = computeFullGoldenSuite();
-    fs.writeFileSync(
-      GOLDEN_SNAPSHOT_PATH,
-      JSON.stringify(generated, null, 2),
-      "utf8"
-    );
-    return generated;
+    const jsonText = JSON.stringify(generated, null, 2);
+    fs.writeFileSync(GOLDEN_SNAPSHOT_PATH, jsonText, "utf8");
+    return JSON.parse(jsonText) as GoldenSnapshotData;
   }
   return JSON.parse(
     fs.readFileSync(GOLDEN_SNAPSHOT_PATH, "utf8")
@@ -1002,6 +1005,34 @@ describe("Functional Refactoring Golden Parity & Immutability Suite", () => {
       expect(renderAzulBoardView(azulState, null).length).toBeGreaterThan(100);
       azulState = deepFreeze(
         AzulEngine.applyAction(azulState, actor.id, chosen).state
+      );
+    }
+
+    // 7 Wonders pure engine + view functions never mutate frozen inputs
+    let swState: SevenWondersState = deepFreeze(
+      SevenWondersEngine.initGame(
+        players,
+        deepFreeze({ wonderSideMode: "random" }),
+        "frozen-seven-wonders"
+      )
+    );
+    for (let i = 0; i < 20; i++) {
+      const actorId = getSevenWondersActingPlayerId(swState)!;
+      const legal = deepFreeze(
+        SevenWondersEngine.getLegalActions(swState, actorId)
+      );
+      expect(legal.length).toBeGreaterThan(0);
+      const redacted = SevenWondersEngine.getPlayerView(swState, actorId);
+      expect(redacted.players.length).toBe(4);
+      const chosen = deepFreeze(
+        SevenWondersEngine.chooseBotAction(swState, actorId)!
+      );
+      expect(SevenWondersEngine.checkInvariants(swState).valid).toBe(true);
+      expect(
+        renderSevenWondersBoardView(redacted, actorId, null, legal).length
+      ).toBeGreaterThan(200);
+      swState = deepFreeze(
+        SevenWondersEngine.applyAction(swState, actorId, chosen).state
       );
     }
 

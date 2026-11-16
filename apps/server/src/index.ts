@@ -41,15 +41,32 @@ export interface DecodedWsFrame {
 }
 
 export function resolveEffectiveViewerIdPure(
-  room: Pick<RoomInstance, "players">,
+  room: Pick<RoomInstance, "players"> & Partial<Pick<RoomInstance, "gameId">>,
   viewerId: string | null,
-  actingId: string | null
+  actingId: string | null,
+  gameState?: any
 ): string | null {
   if (!viewerId) return null;
   if (actingId) {
     const actingPlayer = room.players.find((p) => p.id === actingId);
     if (actingPlayer?.controllerId === viewerId) {
       return actingId;
+    }
+  }
+  if (
+    room.gameId === "seven_wonders" &&
+    gameState?.phase === "AGE_DRAFT" &&
+    Array.isArray(gameState.lockedPlayerIds) &&
+    gameState.lockedPlayerIds.includes(viewerId)
+  ) {
+    const unlockedLocal = room.players.find(
+      (p) =>
+        !p.isBot &&
+        p.controllerId === viewerId &&
+        !gameState.lockedPlayerIds.includes(p.id)
+    );
+    if (unlockedLocal) {
+      return unlockedLocal.id;
     }
   }
   return viewerId;
@@ -211,7 +228,8 @@ export function createPlatformServer(): {
         const effectiveViewerId = resolveEffectiveViewerIdPure(
           room,
           client.playerId,
-          actingId
+          actingId,
+          state
         );
         const summary = roomManager.toRoomSummary(room, client.playerId);
         const view = state
@@ -365,7 +383,8 @@ export function createPlatformServer(): {
           const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             viewerId,
-            actingPlayerId
+            actingPlayerId,
+            state
           );
           const view = state
             ? engine.getPlayerView(state, effectiveViewerId)
@@ -387,7 +406,9 @@ export function createPlatformServer(): {
           );
           broadcastRoomState(roomId);
           broadcastLobbyRooms();
-          sendJson(res, 200, { room: roomManager.toRoomSummary(updated) });
+          sendJson(res, 200, {
+            room: roomManager.toRoomSummary(updated, body.requesterId ?? null),
+          });
           return;
         }
 
@@ -403,7 +424,7 @@ export function createPlatformServer(): {
           broadcastLobbyRooms();
           sendJson(res, 200, {
             player,
-            room: roomManager.toRoomSummary(room),
+            room: roomManager.toRoomSummary(room, body.requesterId ?? null),
           });
           return;
         }
@@ -417,7 +438,9 @@ export function createPlatformServer(): {
           );
           broadcastRoomState(roomId);
           broadcastLobbyRooms();
-          sendJson(res, 200, { room: roomManager.toRoomSummary(room) });
+          sendJson(res, 200, {
+            room: roomManager.toRoomSummary(room, body.requesterId ?? null),
+          });
           return;
         }
 
@@ -439,7 +462,7 @@ export function createPlatformServer(): {
           broadcastLobbyRooms();
           sendJson(res, 200, {
             player,
-            room: roomManager.toRoomSummary(room),
+            room: roomManager.toRoomSummary(room, player.id),
             state: view,
             actingPlayerId: rawState
               ? getRoomActingPlayerId(room.gameId, rawState)
@@ -461,7 +484,7 @@ export function createPlatformServer(): {
           broadcastLobbyRooms();
           sendJson(res, 200, {
             closed: false,
-            room: roomManager.toRoomSummary(room),
+            room: roomManager.toRoomSummary(room, body.playerId ?? null),
           });
           return;
         }
@@ -472,17 +495,21 @@ export function createPlatformServer(): {
           const rawState = roomManager.startGame(roomId, body.requesterId);
           const room = roomManager.getRoom(roomId);
           const engine = roomManager.registry.get(room.gameId);
-          const view = engine.getPlayerView(
-            rawState,
-            body.requesterId ?? null
+          const actingId = getRoomActingPlayerId(room.gameId, rawState);
+          const effectiveViewerId = resolveEffectiveViewerIdPure(
+            room,
+            body.requesterId ?? null,
+            actingId,
+            rawState
           );
+          const view = engine.getPlayerView(rawState, effectiveViewerId);
           broadcastRoomState(roomId);
           broadcastLobbyRooms();
           scheduleRoomBotTurn(roomId);
           sendJson(res, 200, {
-            room: roomManager.toRoomSummary(room),
+            room: roomManager.toRoomSummary(room, body.requesterId ?? null),
             state: view,
-            actingPlayerId: getRoomActingPlayerId(room.gameId, rawState),
+            actingPlayerId: actingId,
           });
           return;
         }
@@ -512,7 +539,8 @@ export function createPlatformServer(): {
           const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             body.requesterId ?? body.playerId ?? null,
-            actingId
+            actingId,
+            nextState
           );
           const view = engine.getPlayerView(nextState, effectiveViewerId);
           broadcastRoomState(roomId);
@@ -544,7 +572,8 @@ export function createPlatformServer(): {
           const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             body.requesterId ?? null,
-            actingId
+            actingId,
+            result.state
           );
           broadcastRoomState(roomId);
           if (room.status !== prevStatus) {
@@ -573,7 +602,9 @@ export function createPlatformServer(): {
           } else {
             clearRoomBotTimer(roomId);
           }
-          sendJson(res, 200, { room: roomManager.toRoomSummary(room) });
+          sendJson(res, 200, {
+            room: roomManager.toRoomSummary(room, body.requesterId ?? null),
+          });
           return;
         }
 
@@ -583,16 +614,20 @@ export function createPlatformServer(): {
           const nextState = roomManager.finishCatanSetupWithBots(roomId);
           const room = roomManager.getRoom(roomId);
           const engine = roomManager.registry.get(room.gameId);
-          const view = engine.getPlayerView(
-            nextState,
-            body.requesterId ?? null
+          const actingId = getRoomActingPlayerId(room.gameId, nextState);
+          const effectiveViewerId = resolveEffectiveViewerIdPure(
+            room,
+            body.requesterId ?? null,
+            actingId,
+            nextState
           );
+          const view = engine.getPlayerView(nextState, effectiveViewerId);
           broadcastRoomState(roomId);
           scheduleRoomBotTurn(roomId);
           sendJson(res, 200, {
-            room: roomManager.toRoomSummary(room),
+            room: roomManager.toRoomSummary(room, body.requesterId ?? null),
             state: view,
-            actingPlayerId: getRoomActingPlayerId(room.gameId, nextState),
+            actingPlayerId: actingId,
           });
           return;
         }
@@ -610,7 +645,8 @@ export function createPlatformServer(): {
           const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             body.requesterId ?? null,
-            actingId
+            actingId,
+            nextState
           );
           const view = engine.getPlayerView(nextState, effectiveViewerId);
           broadcastRoomState(roomId);
@@ -636,7 +672,8 @@ export function createPlatformServer(): {
           const effectiveViewerId = resolveEffectiveViewerIdPure(
             room,
             body.requesterId ?? null,
-            actingId
+            actingId,
+            nextState
           );
           const view = engine.getPlayerView(nextState, effectiveViewerId);
           broadcastRoomState(roomId);

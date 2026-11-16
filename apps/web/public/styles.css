@@ -585,8 +585,14 @@ html {
 /* Game filter cards */
 .ga-filter-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--s-4);
+}
+
+@media (max-width: 1239px) {
+  .ga-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1023px) {
@@ -601,6 +607,18 @@ html {
   .ga-lobby-stats {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+.ga-tutorial-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
 }
 
 .game-select-card {
@@ -978,6 +996,7 @@ html {
   font-size: 13px;
   font-family: var(--font-mono);
   color: var(--ink);
+  pointer-events: auto;
 }
 
 .map-spot-popover {
@@ -1515,6 +1534,12 @@ html {
   flex-wrap: wrap;
   gap: var(--s-2);
   align-items: center;
+}
+
+#btn-mode-maritime,
+#btn-mode-domestic,
+#btn-end-turn {
+  flex-shrink: 0;
 }
 
 .action-prompt {
@@ -2739,6 +2764,7 @@ html {
   color: var(--metro-accent, #fde047);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--metro-accent, rgba(253, 224, 71, 0.45));
+  pointer-events: auto;
 }
 
 .ck-upgrades-grid {
@@ -2790,6 +2816,448 @@ html {
   }
 
   .ck-upgrades-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================================
+   7 Wonders Board View (Ancient World Drafting, Commerce, Wonders, Scorepad)
+   ============================================================================ */
+
+.sw-board {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  color: var(--ink);
+}
+
+.sw-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.sw-neighbor-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: var(--surface-hi);
+  border: 1px solid var(--line);
+}
+
+.sw-age-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 74, 31, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid rgba(255, 74, 31, 0.34);
+}
+
+.sw-empire-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+}
+
+.sw-empire-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sw-wonder-stages-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.sw-wonder-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px dashed var(--line-strong);
+}
+
+.sw-wonder-stage.is-built {
+  border-style: solid;
+  border-color: rgba(74, 222, 128, 0.48);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.sw-wonder-stage.is-next {
+  border-style: solid;
+  border-color: rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.06);
+}
+
+.sw-tableau-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sw-tableau-col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+
+.sw-built-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  font-size: 11px;
+  font-weight: 500;
+  color: #f8fafc;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-hand-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.sw-cards-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+  gap: 8px;
+}
+
+.sw-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--surface-hi);
+  border: 1px solid var(--line-strong);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.sw-card:hover {
+  transform: translateY(-2px);
+}
+
+.sw-card.is-affordable {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.sw-card.is-selected {
+  box-shadow: 0 0 0 2px var(--action);
+}
+
+.sw-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sw-card__title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-card__body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 9px;
+  flex: 1 1 auto;
+}
+
+.sw-card__effects {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+}
+
+.sw-card__cost {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+}
+
+.sw-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.sw-card__actions .btn--sm {
+  flex: 1 1 auto;
+  height: 26px;
+  min-height: 26px;
+  padding-inline: 6px;
+  font-size: 11px;
+}
+
+.sw-res-pill,
+.sw-coin-badge,
+.sw-shield-badge,
+.sw-sci-badge,
+.sw-vp-badge,
+.sw-effect-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+}
+
+.sw-vp-badge {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(37, 99, 235, 0.22);
+  color: #dbeafe;
+}
+
+.sw-shield-badge {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(185, 28, 28, 0.24);
+  color: #fee2e2;
+}
+
+.sw-sci-badge {
+  border-color: rgba(74, 222, 128, 0.5);
+  background: rgba(21, 128, 61, 0.24);
+  color: #dcfce7;
+}
+
+.sw-coin-badge {
+  border-color: rgba(250, 204, 21, 0.5);
+  background: rgba(161, 98, 7, 0.24);
+  color: #fef08a;
+}
+
+.sw-scorepad-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  overflow-x: auto;
+}
+
+.sw-scorepad-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.sw-scorepad-table th,
+.sw-scorepad-table td {
+  padding: 6px 8px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+}
+
+.sw-scorepad-table th:first-child,
+.sw-scorepad-table td:first-child {
+  text-align: left;
+}
+
+/* ============================================================================
+   Interactive Tutorial Coach & Reference Guide Sheet
+   ============================================================================ */
+
+.ga-tutorial-coach {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(20, 22, 26, 0.94);
+  border: 1px solid rgba(255, 74, 31, 0.48);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(8px);
+  z-index: 8;
+}
+
+/* Inside Catan's fixed SVG map stage, float over southern ocean rim so .board-svg-wrap height changes by 0px and top HUDs never overlap */
+.board-container:not(.board-container--neutral) .board-svg-wrap > .ga-tutorial-coach {
+  position: absolute;
+  bottom: 10px;
+  top: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(680px, calc(100% - 20px));
+  max-width: 680px;
+  z-index: 19;
+}
+
+.board-container:not(.board-container--neutral) .board-svg-wrap > .ga-tutorial-coach--lifted,
+.board-container:not(.board-container--neutral) .board-svg-wrap:has(.map-decision-popup) > .ga-tutorial-coach {
+  bottom: 92px;
+}
+
+/* Inside scrollable neutral boards (Splendor, Azul, 7 Wonders), stick cleanly at top */
+.board-container--neutral .board-svg-wrap > .ga-tutorial-coach {
+  position: sticky;
+  top: 8px;
+  margin: 8px 12px 0;
+}
+
+.ga-tutorial-coach__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ga-tutorial-coach__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  line-height: 1.42;
+  color: var(--ink);
+}
+
+.ga-tutorial-coach__hint {
+  font-size: 12px;
+  color: #fdba74;
+  font-weight: 500;
+}
+
+.ga-guide-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(8, 9, 12, 0.76);
+  backdrop-filter: blur(6px);
+}
+
+.ga-guide-dialog {
+  width: min(880px, 100%);
+  max-height: calc(100svh - 40px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+
+.ga-guide-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ga-guide-objective {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255, 74, 31, 0.08);
+  border: 1px solid rgba(255, 74, 31, 0.28);
+}
+
+.ga-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ga-guide-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-hi);
+  border: 1px solid var(--line);
+}
+
+.ga-guide-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+@media (max-width: 960px) {
+  .sw-top-grid {
+    grid-template-columns: 1fr;
+  }
+  .sw-tableau-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ga-guide-grid {
     grid-template-columns: 1fr;
   }
 }

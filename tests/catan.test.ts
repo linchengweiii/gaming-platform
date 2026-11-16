@@ -1829,6 +1829,58 @@ describe("@gaming-platform/catan - 5–6 Player Extension for Seafarers & Cities
       }
     );
   }
+
+  test("Cities & Knights + Seafarers generates full untrunacted Inventor hex pairs and Diplomat remove-only own open road actions", () => {
+    const init = CatanEngine.initGame(
+      FOUR_PLAYERS,
+      {
+        scenarioId: "seafarers_four_islands",
+        enableCitiesAndKnights: true,
+      },
+      "ck-sf-full-progress-legals"
+    );
+    let { state } = completeSnakeDraftSetup(init);
+    state.phase = "MAIN_PHASE";
+    state.activePlayerIndex = 0;
+    grantCardFromDeckForTest(state, "p1", "inv-full", "inventor", "science");
+    grantCardFromDeckForTest(state, "p1", "dip-full", "diplomat", "politics");
+
+    const legal = CatanEngine.getLegalActions(state, "p1");
+    const invActions = legal.filter(
+      (a) => a.type === "PLAY_PROGRESS_CARD" && a.cardId === "inv-full"
+    );
+    const eligibleHexCount = state.topology.hexOrder.filter((hId) => {
+      const tok = state.hexes[hId]?.numberToken;
+      return (
+        tok !== null &&
+        tok !== undefined &&
+        tok !== 2 &&
+        tok !== 6 &&
+        tok !== 8 &&
+        tok !== 12
+      );
+    }).length;
+    expect(invActions.length).toBe(
+      (eligibleHexCount * (eligibleHexCount - 1)) / 2
+    );
+    expect(invActions.length).toBeGreaterThan(60);
+
+    const dipRemoveOnly = legal.filter(
+      (a) =>
+        a.type === "PLAY_PROGRESS_CARD" &&
+        a.cardId === "dip-full" &&
+        a.params?.edgeId &&
+        !a.params?.rebuildEdgeId &&
+        state.edges[a.params.edgeId]?.ownerId === "p1"
+    );
+    // If p1 placed a road (not a ship) during setup, remove-only diplomat action must exist!
+    const p1HasRoad = Object.values(state.edges).some(
+      (e) => e.ownerId === "p1" && e.type === "road"
+    );
+    if (p1HasRoad) {
+      expect(dipRemoveOnly.length).toBeGreaterThanOrEqual(1);
+    }
+  });
 });
 
 function grantCardFromDeckForTest(

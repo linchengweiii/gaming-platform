@@ -19,10 +19,10 @@ import {
 } from "../scripts/stress-20k.ts";
 
 describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", () => {
-  test("registers Catan, Splendor, and Azul and runs rooms for all 3 games", () => {
+  test("registers Catan, Splendor, Azul, and 7 Wonders and runs rooms for all 4 games", () => {
     const manager = new PlatformRoomManager();
     const games = manager.registry.list().map((g) => g.id);
-    expect(games).toEqual(["catan", "splendor", "azul"]);
+    expect(games).toEqual(["catan", "splendor", "azul", "seven_wonders"]);
 
     // 1. Catan Room
     const catanRoom = manager.createRoom({
@@ -64,6 +64,32 @@ describe("@gaming-platform/server - PlatformRoomManager & UI Graphics Specs", ()
     const azStep = manager.stepBot(azulRoom.roomId);
     expect(azulRoom.players.map((p) => p.id)).toContain(azStep.actedPlayerId!);
     expect(azStep.action).not.toBeNull();
+
+    // 4. 7 Wonders Room (3-7P simultaneous drafting + pre-reveal undo)
+    const swRoom = manager.createRoom({
+      gameId: "seven_wonders",
+      ownerId: "p1",
+      hostName: "Alice",
+      botCount: 3,
+      seed: "room-seven-wonders",
+      autoStart: true,
+    });
+    expect(swRoom.status).toBe("in_progress");
+    const p1Legal = swRoom.session!.engine.getLegalActions(
+      swRoom.session!.getState(),
+      "p1"
+    );
+    expect(p1Legal.length).toBeGreaterThan(0);
+    manager.dispatchAction(swRoom.roomId, "p1", p1Legal[0]!);
+    expect(manager.toRoomSummary(swRoom, "p1").canUndo).toBe(true);
+    manager.undoAction(swRoom.roomId, "p1");
+    expect(manager.toRoomSummary(swRoom, "p1").canRedo).toBe(true);
+    manager.redoAction(swRoom.roomId, "p1");
+    for (let i = 0; i < 3; i++) {
+      const swStep = manager.stepBot(swRoom.roomId);
+      expect(swStep.action).not.toBeNull();
+    }
+    expect(swRoom.session!.getState().draftRound).toBe(2);
   });
 
   test("enforces Room Owner editable setup in lobby and Read-Only setup for joined guests & started games", () => {

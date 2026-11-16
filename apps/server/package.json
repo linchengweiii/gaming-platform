@@ -8,6 +8,7 @@
     "@gaming-platform/core": "workspace:*",
     "@gaming-platform/catan": "workspace:*",
     "@gaming-platform/splendor": "workspace:*",
-    "@gaming-platform/azul": "workspace:*"
+    "@gaming-platform/azul": "workspace:*",
+    "@gaming-platform/seven-wonders": "workspace:*"
   }
 }

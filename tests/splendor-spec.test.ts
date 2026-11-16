@@ -7,6 +7,10 @@ import {
   getSplendorActingPlayerId,
   totalTokens,
 } from "@gaming-platform/splendor";
+import {
+  renderSplendorActionDock,
+  renderSplendorBoardView,
+} from "../apps/web/src/splendor-view.ts";
 
 const PLAYERS_2: PlayerDescriptor[] = [
   { id: "p1", name: "Merchant 1", color: "#e63946", isBot: true },
@@ -260,5 +264,76 @@ describe("@gaming-platform/splendor - Executable Specification Suite", () => {
       expect(winner.points).toBeGreaterThanOrEqual(15);
       expect(GEM_COLORS.every((c) => final.bank[c] >= 0)).toBe(true);
     }
+  });
+
+  test("SPEC 9: UI displays explicit Gold joker cost chip (Buy (1G)) and RETURN_TOKENS in-hand tooltip", () => {
+    const state = SplendorEngine.initGame(
+      [
+        { id: "p1", name: "Alice", color: "#e63946", isBot: false },
+        { id: "p2", name: "Bot", color: "#2563eb", isBot: true },
+      ],
+      {},
+      "splendor-gold-ui"
+    );
+    const targetCard = state.market[1][0]!;
+    // Give Alice exact gems minus 1, plus 1 Gold joker!
+    for (const c of GEM_COLORS) {
+      state.players[0]!.tokens[c] = targetCard.cost[c];
+    }
+    const reducedColor = GEM_COLORS.find((c) => targetCard.cost[c] > 0)!;
+    state.players[0]!.tokens[reducedColor] -= 1;
+    state.players[0]!.tokens.gold = 1;
+    state.bank.gold = 4;
+
+    const html = renderSplendorBoardView(state, {}, "p1", true);
+    expect(html).toContain("1 Gold");
+    expect(html).toContain("Buy (1G)");
+
+    // Trigger RETURN_TOKENS state (11 tokens in hand) and verify action dock chip tooltip says "in hand"
+    state.phase = "RETURN_TOKENS";
+    state.players[0]!.tokens.emerald += 8;
+    const retHtml = renderSplendorActionDock(state, state.players[0]!);
+    expect(retHtml).toContain("in hand");
+  });
+
+  test("SPEC 10: masks rngState in getPlayerView, blocks cross-turn undo, and renders Pass turn button in stalemate", () => {
+    const session = MatchSession(
+      SplendorEngine,
+      SplendorEngine.initGame(
+        [
+          { id: "p1", name: "Alice", color: "#e63946", isBot: false },
+          { id: "p2", name: "Bob", color: "#2563eb", isBot: false },
+        ],
+        {},
+        "splendor-r4-spec"
+      )
+    );
+    const view0 = SplendorEngine.getPlayerView(session.getState(), "p1");
+    expect(view0.rngState).toBe(0);
+
+    // Complete p1's turn with 3 distinct gems -> turn advances to p2, so cross-turn undo is blocked
+    session.dispatch("p1", {
+      type: "TAKE_GEMS",
+      gems: { emerald: 1, diamond: 1, sapphire: 1 },
+    });
+    expect(session.canPlayerUndo("p1")).toBe(false);
+
+    // Stalemate state: 0 bank gems, 0 decks, 3 unaffordable reserves, unaffordable market -> Pass turn button rendered
+    const stale = structuredClone(session.getState());
+    for (const c of GEM_COLORS) {
+      stale.bank[c] = 0;
+      stale.players[1]!.tokens[c] = 2;
+    }
+    stale.bank.gold = 0;
+    stale.decks = { 1: [], 2: [], 3: [] };
+    stale.market = { 1: [], 2: [], 3: [] };
+    stale.players[1]!.reservedCards = [
+      SPLENDOR_CARDS[89]!,
+      SPLENDOR_CARDS[88]!,
+      SPLENDOR_CARDS[87]!,
+    ];
+    const dockHtml = renderSplendorActionDock(stale, stale.players[1]!);
+    expect(dockHtml).toContain("btn-sp-pass-turn");
+    expect(dockHtml).toContain("Pass turn");
   });
 });

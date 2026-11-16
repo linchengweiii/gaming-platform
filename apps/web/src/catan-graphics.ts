@@ -1179,6 +1179,7 @@ export function renderCatanBoardSvg(
   const clickableHexes = new Set<string>();
   const clickableVertices = new Set<string>();
   const clickableEdges = new Set<string>();
+  const setupShipSuggestedEdges = new Set<string>();
 
   if (actingPlayerId) {
     if (
@@ -1193,10 +1194,17 @@ export function renderCatanBoardSvg(
       state.phase === "SETUP_ROAD_2"
     ) {
       const anchor = state.lastSetupSettlementVertexId;
-      if (options.setupEdgeKind === "ship" && state.config.enableSeafarers) {
-        getLegalShipEdges(state, actingPlayerId, anchor).forEach((e) =>
-          clickableEdges.add(e)
-        );
+      if (state.config.enableSeafarers) {
+        const legalRoads = getLegalRoadEdges(state, actingPlayerId, anchor);
+        const legalShips = getLegalShipEdges(state, actingPlayerId, anchor);
+        const roadSet = new Set(legalRoads);
+        legalRoads.forEach((e) => clickableEdges.add(e));
+        legalShips.forEach((e) => {
+          clickableEdges.add(e);
+          if (options.setupEdgeKind === "ship" || !roadSet.has(e)) {
+            setupShipSuggestedEdges.add(e);
+          }
+        });
       } else {
         getLegalRoadEdges(state, actingPlayerId, anchor).forEach((e) =>
           clickableEdges.add(e)
@@ -1214,12 +1222,18 @@ export function renderCatanBoardSvg(
         );
       }
     } else if (state.phase === "ROAD_BUILDING_DEV") {
-      getLegalRoadEdges(state, actingPlayerId, null).forEach((e) =>
-        clickableEdges.add(e)
-      );
-      getLegalShipEdges(state, actingPlayerId, null).forEach((e) =>
-        clickableEdges.add(e)
-      );
+      const legalRoads = getLegalRoadEdges(state, actingPlayerId, null);
+      const legalShips = state.config.enableSeafarers
+        ? getLegalShipEdges(state, actingPlayerId, null)
+        : [];
+      const roadSet = new Set(legalRoads);
+      legalRoads.forEach((e) => clickableEdges.add(e));
+      legalShips.forEach((e) => {
+        clickableEdges.add(e);
+        if (options.setupEdgeKind === "ship" || !roadSet.has(e)) {
+          setupShipSuggestedEdges.add(e);
+        }
+      });
     } else if (
       state.phase === "MAIN_PHASE" ||
       state.phase === "SPECIAL_BUILDING"
@@ -1856,13 +1870,20 @@ export function renderCatanBoardSvg(
     if (isClickable) {
       const edgeLen = Math.hypot(eNode.x2 - eNode.x1, eNode.y2 - eNode.y1);
       const hitLen = Math.max(24, Number((edgeLen * 0.76).toFixed(2)));
+      const isSetupShip = setupShipSuggestedEdges.has(eId);
+      const highlightColor = isSetupShip ? "#38bdf8" : "#fde047";
       parts.push(`
-        <g class="clickable-target pulse-highlight" data-edge-id="${eId}" data-spot-edge="${eId}">
+        <g class="clickable-target pulse-highlight" data-edge-id="${eId}" data-spot-edge="${eId}" data-setup-ship="${isSetupShip ? "1" : "0"}">
           <g transform="translate(${eNode.midX}, ${eNode.midY}) rotate(${eNode.angleDeg})">
             <rect x="${(-hitLen / 2).toFixed(2)}" y="-6" width="${hitLen}" height="12" rx="5"
-                  fill="#fde047" opacity="0.58" stroke="#18191b" stroke-width="1.3" />
+                  fill="${highlightColor}" opacity="0.62" stroke="#18191b" stroke-width="1.3" />
           </g>
-          <circle cx="${eNode.midX}" cy="${eNode.midY}" r="7.8" fill="#fde047" stroke="#18191b" stroke-width="1.8" />
+          <circle cx="${eNode.midX}" cy="${eNode.midY}" r="8.2" fill="${highlightColor}" stroke="#18191b" stroke-width="1.8" />
+          ${
+            isSetupShip
+              ? `<polygon points="${eNode.midX},${eNode.midY - 4.4} ${eNode.midX + 3.8},${eNode.midY + 2.8} ${eNode.midX - 3.8},${eNode.midY + 2.8}" fill="#ffffff" stroke="#0c4a6e" stroke-width="0.8" pointer-events="none" />`
+              : ""
+          }
         </g>
       `);
     } else if (
@@ -2041,10 +2062,27 @@ export function renderCatanBoardSvg(
       options.selectedSpot.id === vId;
 
     if (isClickable) {
+      const isSetupSettlement =
+        state.phase === "SETUP_SETTLEMENT_1" ||
+        state.phase === "SETUP_SETTLEMENT_2";
+      const setupPips = isSetupSettlement
+        ? vNode.adjacentHexIds.reduce((sum, hId) => {
+            const tok = state.hexes[hId]?.numberToken;
+            return sum + (tok ? NUMBER_TOKEN_PIPS[tok] ?? 0 : 0);
+          }, 0)
+        : 0;
       parts.push(`
         <g class="clickable-target pulse-highlight" data-vertex-id="${vId}" data-spot-vertex="${vId}">
           <circle cx="${vNode.x}" cy="${vNode.y}" r="11.2" fill="rgba(253, 224, 71, 0.9)" stroke="#18191b" stroke-width="2.2" />
           <circle cx="${vNode.x}" cy="${vNode.y}" r="4.2" fill="#18191b" opacity="0.7" />
+          ${
+            setupPips >= 10
+              ? `<g transform="translate(${vNode.x}, ${vNode.y + 15})" pointer-events="none">
+                   <rect x="-11" y="-5.5" width="22" height="11" rx="5.5" fill="#18191b" stroke="#fbbf24" stroke-width="1" opacity="0.92" />
+                   <text x="0" y="2.6" text-anchor="middle" font-family="Martian Mono, monospace" font-size="7.2" font-weight="700" fill="#fde047">${setupPips}•</text>
+                 </g>`
+              : ""
+          }
         </g>
       `);
     } else if (

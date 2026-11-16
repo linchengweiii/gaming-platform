@@ -107,8 +107,29 @@ import {
   renderAzulBoardView,
   renderAzulPlayerCard,
 } from "./azul-view.ts";
+import {
+  type SevenWondersAction,
+  SevenWondersEngine,
+  type SevenWondersState,
+  canPlayerUnselectDraftPick,
+  getSevenWondersActingPlayerId,
+} from "@gaming-platform/seven-wonders";
+import {
+  renderSevenWondersActionDock,
+  renderSevenWondersBoardView,
+  renderSevenWondersPlayerCard,
+} from "./seven-wonders-view.ts";
+import {
+  GAME_REFERENCE_GUIDES,
+  TUTORIAL_LESSONS,
+  TUTORIAL_SEEDS,
+  chooseRecommendedTutorialActionPure,
+  computeSuggestedTutorialStepIndexPure,
+  renderReferenceGuideModalPure,
+  renderTutorialCoachBannerPure,
+} from "./tutorials.ts";
 
-export type SupportedGameId = "catan" | "splendor" | "azul";
+export type SupportedGameId = "catan" | "splendor" | "azul" | "seven_wonders";
 export type AppViewMode = "login" | "lobby" | "room_setup" | "in_game";
 
 export interface MultiGamePlatformAppOptions {
@@ -158,6 +179,7 @@ export interface ClientRoomConfig {
   enableCityWalls: boolean;
   enableFriendlyRobber: boolean;
   enableCitiesAndKnights: boolean;
+  wonderSideMode?: "random" | "day" | "night";
 }
 
 export interface ClientRoom {
@@ -203,6 +225,8 @@ export interface CreateLocalRoomOptions {
   readonly enableCityWalls?: boolean;
   readonly enableFriendlyRobber?: boolean;
   readonly enableCitiesAndKnights?: boolean;
+  readonly wonderSideMode?: "random" | "day" | "night";
+  readonly customSeed?: string;
   readonly autoStart?: boolean;
 }
 
@@ -266,6 +290,16 @@ export interface AppModel {
     readonly source: AzulDraftSource;
     readonly color: AzulTileColor;
   } | null;
+  readonly azulInspectedPlayerId: string | null;
+  readonly sevenWondersSelectedCardId: string | null;
+  readonly sevenWondersInspectedPlayerId: string | null;
+  readonly activeTutorial: {
+    readonly roomId: string;
+    readonly gameId: SupportedGameId;
+    readonly stepIndex: number;
+    readonly maxAutoStepIndex: number;
+  } | null;
+  readonly guideModalGameId: SupportedGameId | null;
   readonly autoPlayBots: boolean;
   readonly autoRespondBotsToHuman: boolean;
   readonly autoPlaySpeedMs: number;
@@ -431,6 +465,7 @@ export function formatPhaseLabel(phase: string): string {
 export function getEngineForGamePure(gameId: SupportedGameId): any {
   if (gameId === "splendor") return SplendorEngine;
   if (gameId === "azul") return AzulEngine;
+  if (gameId === "seven_wonders") return SevenWondersEngine;
   return CatanEngine;
 }
 
@@ -440,6 +475,7 @@ export function getActingPlayerIdPure(
 ): string | null {
   if (gameId === "splendor") return getSplendorActingPlayerId(state);
   if (gameId === "azul") return getAzulActingPlayerId(state);
+  if (gameId === "seven_wonders") return getSevenWondersActingPlayerId(state);
   return getNextActingPlayerId(state);
 }
 
@@ -450,6 +486,9 @@ export function getRoomBoundsPure(room: {
   if (room.gameId === "catan") {
     const sc = SCENARIO_CATALOG[room.config.scenarioId];
     return { minPlayers: sc.minPlayers, maxPlayers: sc.maxPlayers };
+  }
+  if (room.gameId === "seven_wonders") {
+    return { minPlayers: 3, maxPlayers: 7 };
   }
   return { minPlayers: 2, maxPlayers: 4 };
 }
@@ -728,9 +767,10 @@ export function createLocalRoomPure(
           Boolean(opts.enableCitiesAndKnights || isCkPreset),
         enableFriendlyRobber: opts.enableFriendlyRobber ?? false,
         enableCitiesAndKnights: opts.enableCitiesAndKnights ?? isCkPreset,
+        ...(opts.wonderSideMode ? { wonderSideMode: opts.wonderSideMode } : {}),
       };
     })(),
-    seed: `arena-${roomId}-${nowMs % 10000}`,
+    seed: opts.customSeed ?? `arena-${roomId}-${nowMs % 10000}`,
     matchCounter: 0,
     session: null,
     remoteState: null,
@@ -786,6 +826,14 @@ const INITIAL_LOBBY_ROOM_SEEDS: readonly CreateLocalRoomOptions[] = [
     gameId: "azul",
     ownerId: "host-manuel",
     ownerName: "Manuel",
+    botCount: 3,
+    autoStart: false,
+  },
+  {
+    name: "Alexandria — Seven Wonders",
+    gameId: "seven_wonders",
+    ownerId: "host-hypatia",
+    ownerName: "Hypatia",
     botCount: 3,
     autoStart: false,
   },
@@ -858,6 +906,9 @@ export function upsertRoomFromSummaryPure(
         enableCitiesAndKnights: Boolean(
           cfg.enableCitiesAndKnights || isCkPreset
         ),
+        ...(cfg.wonderSideMode
+          ? { wonderSideMode: cfg.wonderSideMode as "random" | "day" | "night" }
+          : {}),
       };
     })(),
     seed: existing?.seed ?? summary.roomId,
@@ -919,6 +970,8 @@ export function resetSubModesPure(model: Readonly<AppModel>): AppModel {
     ...model,
     buildMode: null,
     selectedBoardSpot: null,
+    setupEdgeKind: "road",
+    robberOrPirateMode: "robber",
     selectedMoveFromEdgeId: null,
     selectedMoveKnightFromVertexId: null,
     selectedChaseKnightVertexId: null,
@@ -940,6 +993,9 @@ export function resetSubModesPure(model: Readonly<AppModel>): AppModel {
     deserterTargetPlayerId: null,
     splendorDraftGems: {},
     azulSelectedDraft: null,
+    azulInspectedPlayerId: null,
+    sevenWondersSelectedCardId: null,
+    sevenWondersInspectedPlayerId: null,
   };
 }
 
@@ -1268,6 +1324,11 @@ export function createInitialAppModelPure(
     monoRes: "ore",
     splendorDraftGems: {},
     azulSelectedDraft: null,
+    azulInspectedPlayerId: null,
+    sevenWondersSelectedCardId: null,
+    sevenWondersInspectedPlayerId: null,
+    activeTutorial: null,
+    guideModalGameId: null,
     autoPlayBots: false,
     autoRespondBotsToHuman: true,
     autoPlaySpeedMs: 150,
@@ -1564,10 +1625,16 @@ export function startOfflineRoomMatchPure(
           startingPlayerIndex: startSpec.startingPlayerIndex,
           randomizeStartingPlayer: startSpec.randomizeStartingPlayer,
         }
-      : {
-          startingPlayerIndex: startSpec.startingPlayerIndex,
-          randomizeStartingPlayer: startSpec.randomizeStartingPlayer,
-        };
+      : rebuilt.gameId === "seven_wonders"
+        ? {
+            wonderSideMode: rebuilt.config.wonderSideMode ?? "random",
+            startingPlayerIndex: startSpec.startingPlayerIndex,
+            randomizeStartingPlayer: startSpec.randomizeStartingPlayer,
+          }
+        : {
+            startingPlayerIndex: startSpec.startingPlayerIndex,
+            randomizeStartingPlayer: startSpec.randomizeStartingPlayer,
+          };
 
   const matchSeed =
     rebuilt.matchCounter === 0
@@ -1599,6 +1666,61 @@ export function startOfflineRoomMatchPure(
         startedRoom
       )
     ),
+  };
+}
+
+export function startInteractiveTutorialPure(
+  model: Readonly<AppModel>,
+  gameId: SupportedGameId,
+  nowMs: number = Date.now()
+): { readonly model: AppModel; readonly roomId: string } {
+  const gameTitles: Record<SupportedGameId, string> = {
+    catan: "Catan",
+    splendor: "Splendor",
+    azul: "Azul",
+    seven_wonders: "7 Wonders",
+  };
+  const cleanedRooms = Object.fromEntries(
+    Object.entries(model.rooms).filter(
+      ([, r]) => !(r.isOfflineLocal && r.name.endsWith("— Guided Tutorial"))
+    )
+  );
+  const cleanedOrder = model.roomOrder.filter((id) => id in cleanedRooms);
+  const cleanedModel: AppModel = {
+    ...model,
+    rooms: cleanedRooms,
+    roomOrder: cleanedOrder,
+  };
+  const created = createLocalRoomPure(
+    cleanedModel,
+    {
+      name: `${gameTitles[gameId]} — Guided Tutorial`,
+      gameId,
+      ownerId: model.currentUserId,
+      ownerName: model.currentUserName,
+      isOfflineLocal: true,
+      botCount: 3,
+      botDifficulty: "normal",
+      startingPlayerMode: "first",
+      scenarioId: "standard",
+      wonderSideMode: "day",
+      customSeed: TUTORIAL_SEEDS[gameId],
+    },
+    nowMs
+  );
+  const started = startOfflineRoomMatchPure(created.model, created.room.roomId);
+  return {
+    roomId: created.room.roomId,
+    model: {
+      ...started.model,
+      guideModalGameId: null,
+      activeTutorial: {
+        roomId: created.room.roomId,
+        gameId,
+        stepIndex: 0,
+        maxAutoStepIndex: 0,
+      },
+    },
   };
 }
 
@@ -1652,11 +1774,11 @@ export function renderLoginViewPure(model: Readonly<AppModel>): string {
           <dl class="ga-lobby-stats">
             <div class="ga-lobby-stat">
               <dt>Board games</dt>
-              <dd class="ga-num">3</dd>
+              <dd class="ga-num">4</dd>
             </div>
             <div class="ga-lobby-stat">
               <dt>Seats per table</dt>
-              <dd class="ga-num">2–6</dd>
+              <dd class="ga-num">2–7</dd>
             </div>
             <div class="ga-lobby-stat">
               <dt>Play modes</dt>
@@ -1875,7 +1997,7 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
           <dl class="ga-lobby-stats span-5 start-8">
             <div class="ga-lobby-stat">
               <dt>Board games</dt>
-              <dd class="ga-num">3</dd>
+              <dd class="ga-num">4</dd>
             </div>
             <div class="ga-lobby-stat">
               <dt>Open tables</dt>
@@ -1883,7 +2005,7 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
             </div>
             <div class="ga-lobby-stat">
               <dt>Table seats</dt>
-              <dd class="ga-num">2–6</dd>
+              <dd class="ga-num">2–7</dd>
             </div>
           </dl>
         </div>
@@ -1901,7 +2023,7 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
                 <span class="game-select-card__title">All games</span>
                 <span class="ga-chip ga-num">${allRooms.length}</span>
               </div>
-              <span class="game-select-card__desc">Browse every active and open table across Catan, Splendor, and Azul.</span>
+              <span class="game-select-card__desc">Browse every active and open table across Catan, Splendor, Azul, and 7 Wonders.</span>
             </button>
 
             <button type="button" class="game-select-card ${
@@ -1933,6 +2055,34 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
               </div>
               <span class="game-select-card__desc">Draft ceramic tiles from factory displays to score rows and columns on a 5×5 wall.</span>
             </button>
+
+            <button type="button" class="game-select-card ${
+              model.lobbyGameFilter === "seven_wonders" ? "selected" : ""
+            }" data-lobby-filter="seven_wonders">
+              <div class="game-select-card__top">
+                <span class="game-select-card__title">7 Wonders</span>
+                <span class="ga-chip">3–7 players</span>
+              </div>
+              <span class="game-select-card__desc">Draft structures across three Ages, trade with neighbors, wage war, and build your Wonder.</span>
+            </button>
+          </div>
+
+          <div class="ga-tutorial-strip">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span class="ga-chip ga-chip--accent">Learn to play</span>
+              <span class="t-small muted">Step through an interactive guided board or open the strategy &amp; rules sheet for any game.</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              <button type="button" data-start-tutorial="catan" class="btn btn--secondary btn--sm">Catan tutorial</button>
+              <button type="button" data-start-tutorial="splendor" class="btn btn--secondary btn--sm">Splendor tutorial</button>
+              <button type="button" data-start-tutorial="azul" class="btn btn--secondary btn--sm">Azul tutorial</button>
+              <button type="button" data-start-tutorial="seven_wonders" class="btn btn--secondary btn--sm">7 Wonders tutorial</button>
+              <button type="button" data-open-guide="${
+                model.lobbyGameFilter !== "all"
+                  ? model.lobbyGameFilter
+                  : model.createRoomGameId
+              }" class="btn btn--primary btn--sm">Rules &amp; strategy guide</button>
+            </div>
           </div>
         </div>
 
@@ -1963,6 +2113,11 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
                   },
                   { value: "splendor", label: "Splendor", meta: "2–4P" },
                   { value: "azul", label: "Azul", meta: "2–4P" },
+                  {
+                    value: "seven_wonders",
+                    label: "7 Wonders",
+                    meta: "3–7P",
+                  },
                 ],
               })}
             </div>
@@ -2020,7 +2175,9 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
                             ? `Catan · ${SCENARIO_CATALOG[r.config.scenarioId].name}`
                             : r.gameId === "splendor"
                               ? "Splendor"
-                              : "Azul";
+                              : r.gameId === "seven_wonders"
+                                ? "7 Wonders"
+                                : "Azul";
                         const statusBadge =
                           r.status === "lobby"
                             ? `<span class="ga-chip ga-chip--ok">Open</span>`
@@ -2111,6 +2268,11 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
           </div>
         </div>
       </div>
+      ${
+        model.guideModalGameId
+          ? renderReferenceGuideModalPure(model.guideModalGameId, false)
+          : ""
+      }
     `;
 }
 
@@ -2242,6 +2404,31 @@ export function getRoomSetupSummaryDataPure(
         firstTurnChip,
         "100 ceramic tiles",
         "5×5 mosaic wall",
+      ],
+    };
+  }
+
+  if (room.gameId === "seven_wonders") {
+    const sideMode = room.config.wonderSideMode ?? "random";
+    const wonderChip =
+      sideMode === "day"
+        ? "Wonder Side A (Day)"
+        : sideMode === "night"
+          ? "Wonder Side B (Night)"
+          : "Random Day/Night Wonders";
+    return {
+      gameTitle: "7 Wonders",
+      formatTitle: "Ancient world drafting",
+      formatDescription:
+        "Draft cards simultaneously across three Ages, trade with West and East neighbors, wage military conflicts, and raise your Wonder.",
+      targetLabel: "Highest VP after Age III",
+      seatsLabel,
+      seatsSubLabel,
+      ruleChips: [
+        modeLabel,
+        "Simultaneous drafting",
+        wonderChip,
+        "3 Ages · 6 picks/Age",
       ],
     };
   }
@@ -2451,9 +2638,46 @@ export function renderRoomSetupViewPure(
               },
               { value: "splendor", label: "Splendor", meta: "2–4P" },
               { value: "azul", label: "Azul", meta: "2–4P" },
+              {
+                value: "seven_wonders",
+                label: "7 Wonders",
+                meta: "3–7P",
+              },
             ],
           })}
         </div>
+
+        ${
+          room.gameId === "seven_wonders"
+            ? `
+          <div class="ga-field">
+            <label for="setup-sel-wonderside-btn">Wonder boards</label>
+            ${renderDropdown({
+              id: "setup-sel-wonderside",
+              value: room.config.wonderSideMode ?? "random",
+              options: [
+                {
+                  value: "random",
+                  label: "Random Day (A) or Night (B)",
+                  meta: "Official mix",
+                },
+                {
+                  value: "day",
+                  label: "Day side (A) — balanced classic",
+                  meta: "3 stages",
+                },
+                {
+                  value: "night",
+                  label: "Night side (B) — asymmetric powers",
+                  meta: "2–4 stages",
+                },
+              ],
+            })}
+            <p class="t-small muted">Choose symmetric 3-stage Day boards, asymmetric Night powers, or a random flip per seat.</p>
+          </div>
+        `
+            : ""
+        }
 
         ${
           room.gameId === "catan"
@@ -2744,9 +2968,18 @@ export function renderRoomSetupViewPure(
                       }
                     `
             }
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:4px;border-top:1px solid var(--line);">
+              <button type="button" data-open-guide="${room.gameId}" class="btn btn--secondary btn--sm">How to play</button>
+              <button type="button" data-start-tutorial="${room.gameId}" class="btn btn--secondary btn--sm">Interactive tutorial</button>
+            </div>
           </div>
         </aside>
       </div>
+      ${
+        model.guideModalGameId
+          ? renderReferenceGuideModalPure(model.guideModalGameId, false)
+          : ""
+      }
     `;
 
   return { html, canEditSetup, maxBots, bounds };
@@ -2853,7 +3086,10 @@ export function hasTradeGoodsForOfferPure(
   );
 }
 
-export function renderCatanBarbarianHudPure(state: CatanState): string {
+export function renderCatanBarbarianHudPure(
+  state: CatanState,
+  viewerPlayer?: CatanState["players"][number] | null
+): string {
   if (!state.config.enableCitiesAndKnights) {
     return "";
   }
@@ -2867,6 +3103,23 @@ export function renderCatanBarbarianHudPure(state: CatanState): string {
       isAttack ? "is-target" : ""
     }"></span>`;
   }).join("");
+
+  const personalRiskHtml = (() => {
+    if (!viewerPlayer || isSafe || barbStrength === 0) return "";
+    const myVulnCities = getPlayerVulnerableCities(state, viewerPlayer.id);
+    if (myVulnCities.length === 0) {
+      return `<span class="ga-chip ga-chip--ok" style="height: 18px; padding: 0 5px; font-size: 10px;" title="You have no unprotected cities on the island">Cities safe</span>`;
+    }
+    const contenderStrengths = state.players
+      .filter((p) => getPlayerVulnerableCities(state, p.id).length > 0)
+      .map((p) => getPlayerActiveKnightStrength(state, p.id));
+    const minStr = Math.min(...contenderStrengths);
+    const myStr = getPlayerActiveKnightStrength(state, viewerPlayer.id);
+    if (myStr <= minStr) {
+      return `<span class="ga-chip ga-chip--danger" style="height: 18px; padding: 0 5px; font-size: 10px;" title="Your active knights (${myStr}) tie for lowest among unprotected city owners — activate a knight before step 7!">At risk</span>`;
+    }
+    return `<span class="ga-chip ga-chip--ok" style="height: 18px; padding: 0 5px; font-size: 10px;" title="Another player with an unprotected city has fewer active knights (${minStr} vs your ${myStr})">Cities safe</span>`;
+  })();
 
   const metroPills = IMPROVEMENT_DISCIPLINES.map((disc) => {
     const m = state.metropolises[disc];
@@ -2892,11 +3145,14 @@ export function renderCatanBarbarianHudPure(state: CatanState): string {
     <div class="map-barbarian-hud">
       <div class="map-barbarian-hud__top">
         <span class="map-barbarian-hud__title">Fleet ${state.barbarianPosition}/${BARBARIAN_TRACK_STEPS}</span>
-        <span class="ga-chip ${
-          isSafe ? "ga-chip--ok" : "ga-chip--danger"
-        } ga-num" style="height: 19px; padding: 0 6px; font-size: 10.5px;">
-          ⚔ ${defStrength} vs 🏰 ${barbStrength}
-        </span>
+        <div style="display: inline-flex; align-items: center; gap: 4px;">
+          ${personalRiskHtml}
+          <span class="ga-chip ${
+            isSafe ? "ga-chip--ok" : "ga-chip--danger"
+          } ga-num" style="height: 19px; padding: 0 6px; font-size: 10.5px;" title="Total active knight strength (${defStrength}) vs total island cities (${barbStrength})">
+            ⚔ ${defStrength} vs 🏰 ${barbStrength}
+          </span>
+        </div>
       </div>
       <div class="barb-track-bar" aria-hidden="true">${stepDots}</div>
       <div class="map-barbarian-hud__metros">
@@ -3361,16 +3617,19 @@ export function renderCatanSpotPopoverPure(
 
       const hintHtml = (() => {
         if (actionItems.length > 0) return "";
+        const effCityCost = state.config.enableCitiesAndKnights
+          ? getEffectiveCityCost(actingPlayer)
+          : BUILDING_COSTS.city;
         if (
           existing &&
           existing.ownerId === actingPlayer.id &&
           existing.type === "settlement" &&
-          !hasResources(actingPlayer.resources, BUILDING_COSTS.city)
+          !hasResources(actingPlayer.resources, effCityCost)
         ) {
           return `
             <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
               <span>City upgrade needs</span>
-              ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.city)}
+              ${renderMissingCostBadgePure(actingPlayer.resources, effCityCost)}
             </div>
             ${
               state.phase === "MAIN_PHASE" && legalActions.length > 0
@@ -4053,6 +4312,14 @@ export function renderCatanActionDockPure(
     return `<div class="action-buttons">
         ${renderActionPieceIconSvg("road_building", pColor, 22)}
         <span class="action-prompt"><strong>Road building active:</strong> Click a highlighted edge on the map (${state.freeRoadsRemaining} free ${state.freeRoadsRemaining === 1 ? "route" : "routes"} left).</span>
+        ${
+          state.config.enableSeafarers
+            ? `<button type="button" id="btn-toggle-setup-edge" class="btn btn--secondary btn--sm is-selected action-btn-graphic">
+                 ${renderActionPieceIconSvg(model.setupEdgeKind === "road" ? "ship" : "road", pColor, 18)}
+                 <span>Mode: ${model.setupEdgeKind === "road" ? "Road (switch to Ship)" : "Ship (switch to Road)"}</span>
+               </button>`
+            : ""
+        }
       </div>`;
   }
 
@@ -4680,14 +4947,21 @@ export function renderCatanActionDockPure(
             const check = canPlayerUpgradeDiscipline(state, actingPlayer, disc);
             const perkLabel =
               disc === "trade"
-                ? "Lv 3 Trading House (2:1)"
+                ? "Lv 3 Trading House: 2:1 all commodities"
                 : disc === "politics"
-                  ? "Lv 3 Fortress (Mighty Knights)"
-                  : "Lv 3 Aqueduct (free card)";
+                  ? "Lv 3 Fortress: promote Lv 3 Mighty Knights"
+                  : "Lv 3 Aqueduct: +1 free card on dry non-7 roll";
             const metro = state.metropolises[disc];
             const metroHolder = metro.ownerId
               ? state.players.find((p) => p.id === metro.ownerId)?.name
               : null;
+            const metroHint = metroHolder
+              ? metro.ownerId === actingPlayer.id
+                ? `You hold Metropolis (Lv ${metro.level})`
+                : metro.level < 5
+                  ? `Held by ${escapeAttr(metroHolder)} (snipe at Lv ${metro.level + 1})`
+                  : `Locked by ${escapeAttr(metroHolder)} (Lv 5)`
+              : "Unclaimed +2 VP Metropolis at Lv 4";
             const selectedMetroVId =
               model.selectedMetropolisVertexId &&
               check.eligibleMetropolisVertices.includes(
@@ -4702,7 +4976,8 @@ export function renderCatanActionDockPure(
                 <span class="ga-chip ga-num">Lv ${cur}/5</span>
               </div>
               <div class="ck-upgrade-col__perk ${cur >= 3 ? "is-unlocked" : ""}">
-                ${perkLabel}${metroHolder ? ` · Metro: ${escapeAttr(metroHolder)}` : ""}
+                <div>${perkLabel}</div>
+                <div class="muted" style="font-size: 10.5px; margin-top: 2px;">${metroHint}</div>
               </div>
               ${
                 check.claimsMetropolis &&
@@ -4809,6 +5084,15 @@ export function renderCatanActionDockPure(
             card.type === "master_merchant" ||
             card.type === "deserter"
           ) {
+            if (card.type === "deserter" && model.deserterTargetPlayerId) {
+              const targetOpp = state.players.find(
+                (o) => o.id === model.deserterTargetPlayerId
+              );
+              return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                <span class="t-small muted">Target <strong>${escapeAttr(targetOpp?.name ?? "opponent")}</strong> selected — click any highlighted open intersection on your road network to place the deserted knight:</span>
+                <button type="button" data-deserter-reset="true" class="btn btn--secondary btn--sm">Change target</button>
+              </div>`;
+            }
             const opps = state.players.filter((opp) =>
               matchingActions.some((a) => a.params?.targetPlayerId === opp.id)
             );
@@ -5375,26 +5659,52 @@ export function renderInGameViewPure(
 } {
   const usesServer = roomUsesServerPure(rawModel, room);
   const engine = getEngineForGamePure(room.gameId);
-  const actingPlayerId = usesServer
+  const baseActingPlayerId = usesServer
     ? room.remoteActingPlayerId ?? getActingPlayerIdPure(room.gameId, rawState)
     : getActingPlayerIdPure(room.gameId, rawState);
+  const actingPlayerId = ((): string | null => {
+    if (
+      room.gameId === "seven_wonders" &&
+      rawState.phase === "AGE_DRAFT" &&
+      Array.isArray(rawState.lockedPlayerIds)
+    ) {
+      const meRaw = rawState.players.find(
+        (p: any) =>
+          p.id === rawModel.currentUserId &&
+          !p.isBot &&
+          !rawState.lockedPlayerIds.includes(p.id) &&
+          canControlPlayerOnDevicePure(rawModel, room, p.id)
+      );
+      if (meRaw) return meRaw.id;
+      const unlockedControllable = rawState.players.find(
+        (p: any) =>
+          !p.isBot &&
+          !rawState.lockedPlayerIds.includes(p.id) &&
+          canControlPlayerOnDevicePure(rawModel, room, p.id)
+      );
+      if (unlockedControllable) return unlockedControllable.id;
+    }
+    return baseActingPlayerId;
+  })();
   const isMyTurn = canControlPlayerOnDevicePure(
     rawModel,
     room,
     actingPlayerId
   );
-  const model: AppModel = !isMyTurn
+  const clearedTurnModel: AppModel = !isMyTurn
     ? {
         ...rawModel,
         buildMode: null,
         selectedMoveFromEdgeId: null,
         selectedMoveKnightFromVertexId: null,
         selectedChaseKnightVertexId: null,
+        sevenWondersSelectedCardId: null,
       }
     : rawModel;
 
   const controllableHumans = rawState.players.filter(
-    (p: any) => !p.isBot && canControlPlayerOnDevicePure(model, room, p.id)
+    (p: any) =>
+      !p.isBot && canControlPlayerOnDevicePure(clearedTurnModel, room, p.id)
   );
   const controllableHumansCount = controllableHumans.length;
   const rawActingPlayer =
@@ -5402,7 +5712,12 @@ export function renderInGameViewPure(
 
   const effectiveViewerId = ((): string | null => {
     if (rawState.phase === "GAME_OVER") return null;
-    if (controllableHumansCount >= 2 && model.hidePassAndPlayHand) return null;
+    if (
+      controllableHumansCount >= 2 &&
+      clearedTurnModel.hidePassAndPlayHand
+    ) {
+      return null;
+    }
     if (isMyTurn && rawActingPlayer && !rawActingPlayer.isBot) {
       return rawActingPlayer.id;
     }
@@ -5412,10 +5727,44 @@ export function renderInGameViewPure(
     return null;
   })();
 
-  const state =
+  const state: any =
     room.gameId === "catan"
       ? CatanEngine.getPlayerView(rawState as CatanState, effectiveViewerId)
-      : rawState;
+      : room.gameId === "splendor"
+        ? SplendorEngine.getPlayerView(
+            rawState as SplendorState,
+            effectiveViewerId
+          )
+        : room.gameId === "seven_wonders"
+          ? SevenWondersEngine.getPlayerView(
+              rawState as SevenWondersState,
+              effectiveViewerId
+            )
+          : AzulEngine.getPlayerView(
+              rawState as AzulState,
+              effectiveViewerId
+            );
+
+  const model: AppModel = (() => {
+    const tut = clearedTurnModel.activeTutorial;
+    if (!tut || tut.roomId !== room.roomId) return clearedTurnModel;
+    const prevMaxAuto = tut.maxAutoStepIndex ?? tut.stepIndex;
+    const nextStep = computeSuggestedTutorialStepIndexPure(
+      room.gameId,
+      prevMaxAuto,
+      state,
+      effectiveViewerId ?? clearedTurnModel.currentUserId
+    );
+    if (nextStep <= prevMaxAuto) return clearedTurnModel;
+    return {
+      ...clearedTurnModel,
+      activeTutorial: {
+        ...tut,
+        stepIndex: nextStep,
+        maxAutoStepIndex: nextStep,
+      },
+    };
+  })();
 
   const actingPlayer =
     state.players.find((p: any) => p.id === actingPlayerId) ?? null;
@@ -5464,14 +5813,32 @@ export function renderInGameViewPure(
 
   const summaryInfo = getRoomSetupSummaryDataPure(model, room);
   const isOwner = Boolean(room.ownerId && room.ownerId === model.currentUserId);
+  const localUndoTargetId = ((): string | null => {
+    if (!room.session) return null;
+    if (isMyTurn && actingPlayerId && room.session.canPlayerUndo(actingPlayerId)) {
+      return actingPlayerId;
+    }
+    if (room.gameId === "seven_wonders" && rawState.phase === "AGE_DRAFT") {
+      const log = room.session.getActionLog();
+      const last = log[log.length - 1];
+      if (
+        last &&
+        canControlPlayerOnDevicePure(model, room, last.playerId) &&
+        room.session.canPlayerUndo(last.playerId)
+      ) {
+        return last.playerId;
+      }
+    }
+    return null;
+  })();
   const undoableSteps = usesServer
-    ? isMyTurn
+    ? isMyTurn || room.gameId === "seven_wonders"
       ? room.undoableSteps
       : 0
-    : isMyTurn && actingPlayerId && room.session
-      ? room.session.getUndoableStepCount(actingPlayerId)
+    : localUndoTargetId && room.session
+      ? room.session.getUndoableStepCount(localUndoTargetId)
       : 0;
-  const canUndo = isMyTurn && undoableSteps > 0;
+  const canUndo = undoableSteps > 0;
   const canRedo = usesServer
     ? isMyTurn && room.canRedo
     : Boolean(
@@ -5586,6 +5953,19 @@ export function renderInGameViewPure(
           }),
         };
       }
+      if (progressCard.type === "deserter" && model.deserterTargetPlayerId) {
+        return {
+          progressTargetVertexIds: cState.topology.vertexOrder.filter((vId) => {
+            if (cState.buildings[vId] || cState.knights[vId]) return false;
+            const vNode = cState.topology.vertices[vId];
+            return Boolean(
+              vNode?.incidentEdgeIds.some(
+                (eId) => cState.edges[eId]?.ownerId === actingPlayer.id
+              )
+            );
+          }),
+        };
+      }
       return {};
     })();
 
@@ -5599,6 +5979,45 @@ export function renderInGameViewPure(
       ...progressTargets,
     };
   })();
+
+  const sevenWondersLegalActions =
+    room.gameId === "seven_wonders" &&
+    actingPlayerId &&
+    isMyTurn &&
+    !(controllableHumansCount >= 2 && model.hidePassAndPlayHand)
+      ? SevenWondersEngine.getLegalActions(
+          state as SevenWondersState,
+          actingPlayerId
+        )
+      : [];
+
+  const catanDecisionPopupHtml =
+    room.gameId === "catan" && isMyTurn
+      ? renderCatanMapDecisionPopupPure(
+          model,
+          state as CatanState,
+          actingPlayer,
+          catanLegalActions
+        )
+      : "";
+
+  const tutorialCoachHtml =
+    model.activeTutorial && model.activeTutorial.roomId === room.roomId
+      ? renderTutorialCoachBannerPure(
+          room.gameId,
+          model.activeTutorial.stepIndex,
+          Boolean(isMyTurn && actingPlayerId && state.phase !== "GAME_OVER"),
+          state,
+          Boolean(catanDecisionPopupHtml)
+        )
+      : "";
+
+  const bannerPhaseLabel =
+    room.gameId === "catan" &&
+    state.phase === "SETUP_SETTLEMENT_2" &&
+    (state as CatanState).config.enableCitiesAndKnights
+      ? "Setup city 2"
+      : formatPhaseLabel(state.phase);
 
   const html = `
       <div class="ga-game-canvas">
@@ -5615,14 +6034,18 @@ export function renderInGameViewPure(
                     ? `<span class="player-dot" style="background: ${actingPlayer.color}"></span>
                        <strong style="font-weight: 500;">Active turn: ${escapeAttr(actingPlayer.name)}${
                          mySeatedPlayer && actingPlayer.id === mySeatedPlayer.id
-                           ? " (You)"
+                           ? actingPlayer.name.includes("(You)")
+                             ? ""
+                             : " (You)"
                            : isMyTurn && !actingPlayer.isBot
-                             ? " (Local)"
+                             ? actingPlayer.name.includes("(Local)")
+                               ? ""
+                               : " (Local)"
                              : ""
                        }</strong>`
                     : `<strong style="font-weight: 500;">Match complete</strong>`
                 }
-                <span class="ga-chip">${formatPhaseLabel(state.phase)}</span>
+                <span class="ga-chip">${bannerPhaseLabel}</span>
                 ${
                   room.gameId === "catan"
                     ? state.lastRoll
@@ -5641,7 +6064,9 @@ export function renderInGameViewPure(
                       : `<span class="ga-chip">Awaiting dice roll</span>`
                     : room.gameId === "splendor"
                       ? `<span class="ga-chip ga-num">Round ${state.round} · Target ${state.config.targetPoints}</span>`
-                      : `<span class="ga-chip ga-num">Round ${state.round} · Bag ${state.bag.length} · Lid ${state.discardLid.length}</span>`
+                      : room.gameId === "seven_wonders"
+                        ? `<span class="ga-chip ga-num">Age ${state.age} · Draft ${state.draftRound}/6</span>`
+                        : `<span class="ga-chip ga-num">Round ${state.round} · Bag ${state.bag.length} · Lid ${state.discardLid.length}</span>`
                 }
                 <span class="ga-chip ${invariantCheck.valid ? "ga-chip--ok" : "ga-chip--danger"}">
                   ${
@@ -5660,8 +6085,10 @@ export function renderInGameViewPure(
               </div>
 
               <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 5px;">
+                <button type="button" data-open-guide="${room.gameId}" class="btn btn--secondary btn--sm">Guide</button>
                 ${
-                  room.gameId === "catan" && controllableHumansCount >= 2
+                  (room.gameId === "catan" || room.gameId === "seven_wonders") &&
+                  controllableHumansCount >= 2
                     ? `<button type="button" id="btn-toggle-hand-privacy" class="btn btn--secondary btn--sm">
                         ${model.hidePassAndPlayHand ? "Show hand" : "Hide hand"}
                       </button>`
@@ -5670,7 +6097,7 @@ export function renderInGameViewPure(
                 <button type="button" id="btn-undo" class="btn btn--secondary btn--sm ga-num" title="${
                   canUndo
                     ? "Undo your last reversible step in this turn"
-                    : "Undo is only available during your turn for steps after a dice roll or card reveal"
+                    : "Undo is only available during your turn before a random roll or card reveal"
                 }" ${!canUndo ? "disabled" : ""}>Undo${
                   undoableSteps > 0 ? ` (${undoableSteps})` : ""
                 }</button>
@@ -5701,12 +6128,16 @@ export function renderInGameViewPure(
             </div>
 
             <div class="board-svg-wrap">
+              ${tutorialCoachHtml}
               ${
                 room.gameId === "catan"
                   ? `
                     ${renderCatanMapDiceHudPure(state as CatanState)}${
                       (state as CatanState).config.enableCitiesAndKnights
-                        ? `\n                    ${renderCatanBarbarianHudPure(state as CatanState)}`
+                        ? `\n                    ${renderCatanBarbarianHudPure(
+                            state as CatanState,
+                            handPlayer ?? mySeatedPlayer ?? actingPlayer
+                          )}`
                         : ""
                     }
                     ${renderCatanBoardSvg(
@@ -5729,32 +6160,50 @@ export function renderInGameViewPure(
                       isMyTurn ? actingPlayer : mySeatedPlayer ?? actingPlayer,
                       catanLegalActions
                     )}
-                    ${
-                      isMyTurn
-                        ? renderCatanMapDecisionPopupPure(
-                            model,
-                            state as CatanState,
-                            actingPlayer,
-                            catanLegalActions
-                          )
-                        : ""
-                    }
+                    ${catanDecisionPopupHtml}
                   `
                   : room.gameId === "splendor"
                     ? renderSplendorBoardView(
                         state as SplendorState,
-                        isMyTurn ? model.splendorDraftGems : {}
+                        isMyTurn ? model.splendorDraftGems : {},
+                        effectiveViewerId ?? mySeatedPlayer?.id ?? actingPlayerId,
+                        isMyTurn
                       )
-                    : renderAzulBoardView(
-                        state as AzulState,
-                        isMyTurn ? model.azulSelectedDraft : null
-                      )
+                    : room.gameId === "seven_wonders"
+                      ? renderSevenWondersBoardView(
+                          state as SevenWondersState,
+                          effectiveViewerId ?? mySeatedPlayer?.id ?? actingPlayerId,
+                          isMyTurn ? model.sevenWondersSelectedCardId : null,
+                          sevenWondersLegalActions,
+                          model.sevenWondersInspectedPlayerId,
+                          controllableHumansCount >= 2 && model.hidePassAndPlayHand
+                        )
+                      : renderAzulBoardView(
+                          state as AzulState,
+                          isMyTurn ? model.azulSelectedDraft : null,
+                          model.azulInspectedPlayerId ??
+                            (state.phase === "GAME_OVER"
+                              ? null
+                              : effectiveViewerId ??
+                                mySeatedPlayer?.id ??
+                                null),
+                          isMyTurn
+                        )
               }
             </div>
 
             <div class="action-dock">
               ${
-                state.phase !== "GAME_OVER" && !isMyTurn
+                state.phase !== "GAME_OVER" &&
+                !isMyTurn &&
+                !(
+                  room.gameId === "seven_wonders" &&
+                  (effectiveViewerId ?? mySeatedPlayer?.id) &&
+                  canPlayerUnselectDraftPick(
+                    state as SevenWondersState,
+                    (effectiveViewerId ?? mySeatedPlayer?.id)!
+                  )
+                )
                   ? `${
                       room.gameId === "catan" &&
                       canCancelMyTrade &&
@@ -5799,11 +6248,19 @@ export function renderInGameViewPure(
                           state as SplendorState,
                           actingPlayer
                         )
-                      : renderAzulActionDock(
-                          state as AzulState,
-                          actingPlayer,
-                          model.azulSelectedDraft
-                        )
+                      : room.gameId === "seven_wonders"
+                        ? renderSevenWondersActionDock(
+                            state as SevenWondersState,
+                            actingPlayer,
+                            model.sevenWondersSelectedCardId,
+                            sevenWondersLegalActions,
+                            effectiveViewerId ?? mySeatedPlayer?.id ?? null
+                          )
+                        : renderAzulActionDock(
+                            state as AzulState,
+                            actingPlayer,
+                            model.azulSelectedDraft
+                          )
               }
             </div>
 
@@ -5866,7 +6323,9 @@ export function renderInGameViewPure(
                   ? `Target ${state.config.targetVictoryPoints} VP`
                   : room.gameId === "splendor"
                     ? `Target ${state.config.targetPoints} VP`
-                    : `5×5 wall`
+                    : room.gameId === "seven_wonders"
+                      ? `Age ${state.age}/3 · VP`
+                      : `5×5 wall`
               }</span>
             </div>
             <div class="ga-standings-list">
@@ -5885,11 +6344,17 @@ export function renderInGameViewPure(
                           p,
                           p.id === actingPlayerId
                         )
-                      : renderAzulPlayerCard(
-                          state as AzulState,
-                          p,
-                          p.id === actingPlayerId
-                        )
+                      : room.gameId === "seven_wonders"
+                        ? renderSevenWondersPlayerCard(
+                            state as SevenWondersState,
+                            p,
+                            p.id === actingPlayerId
+                          )
+                        : renderAzulPlayerCard(
+                            state as AzulState,
+                            p,
+                            p.id === actingPlayerId
+                          )
                 )
                 .join("")}
             </div>
@@ -6042,6 +6507,11 @@ export function renderInGameViewPure(
             </div>
           </aside>
         </div>
+        ${
+          model.guideModalGameId
+            ? renderReferenceGuideModalPure(model.guideModalGameId, true)
+            : ""
+        }
       </div>
     `;
 
@@ -6335,6 +6805,7 @@ export interface MultiGamePlatformApp {
   enterOrJoinRoom(roomId: string): void;
   leaveActiveRoom(): void;
   startRoomMatch(roomId: string): void;
+  startInteractiveTutorial(gameId: SupportedGameId): ClientRoom;
   resetSubModes(): void;
   dispatchUiAction(playerId: string, action: any): void;
   dispatch(playerId: string, action: any): void;
@@ -7242,9 +7713,37 @@ export function createMultiGamePlatformApp(
 
     if (!model.autoRespondBotsToHuman || model.autoPlayBots) return;
     if (actor && actor.isBot) {
+      const delayMs =
+        room.gameId === "seven_wonders" &&
+        state.phase === "AGE_DRAFT" &&
+        state.players.some(
+          (p: any) => !p.isBot && state.lockedPlayerIds.includes(p.id)
+        )
+          ? 380
+          : 140;
       botResponseTimeout = setTimeout(() => {
         stepOneBotMove();
-      }, 140);
+      }, delayMs);
+      return;
+    }
+
+    if (
+      room.gameId === "catan" &&
+      state.phase === "SPECIAL_BUILDING" &&
+      actor &&
+      !actor.isBot &&
+      !room.allBots &&
+      canControlPlayerOnDevicePure(model, room, actor.id)
+    ) {
+      const spLegal = CatanEngine.getLegalActions(state, actor.id);
+      if (
+        spLegal.length === 1 &&
+        spLegal[0]?.type === "END_SPECIAL_BUILD"
+      ) {
+        botResponseTimeout = setTimeout(() => {
+          dispatch(actor.id, { type: "END_SPECIAL_BUILD" });
+        }, 160);
+      }
     }
   };
 
@@ -7391,11 +7890,34 @@ export function createMultiGamePlatformApp(
         rawState.activeTradeOffer?.fromPlayerId === playerId &&
         (action?.type === "CONFIRM_DOMESTIC_TRADE" ||
           action?.type === "CANCEL_DOMESTIC_TRADE");
-      if (playerId !== actingId && !isTradeProposerAction) {
+      const isSimultaneousSevenWondersDraft =
+        room.gameId === "seven_wonders" &&
+        rawState.phase === "AGE_DRAFT" &&
+        Array.isArray(rawState.lockedPlayerIds) &&
+        !rawState.lockedPlayerIds.includes(playerId);
+      const isSevenWondersUnselect =
+        room.gameId === "seven_wonders" &&
+        action?.type === "UNSELECT_DRAFT_ACTION" &&
+        canPlayerUnselectDraftPick(rawState as SevenWondersState, playerId);
+      if (
+        playerId !== actingId &&
+        !isTradeProposerAction &&
+        !isSimultaneousSevenWondersDraft &&
+        !isSevenWondersUnselect
+      ) {
         return;
       }
     }
     dispatch(playerId, action);
+  };
+
+  const startInteractiveTutorial = (gameId: SupportedGameId): ClientRoom => {
+    stopAutoPlay();
+    const res = startInteractiveTutorialPure(model, gameId, Date.now());
+    model = res.model;
+    render();
+    scheduleBotAutoResponseIfNeeded();
+    return getOrCreateRoomLens(res.roomId);
   };
 
   const stepOneBotMove = (): boolean => {
@@ -7515,15 +8037,32 @@ export function createMultiGamePlatformApp(
     }
     if (!room.session) return;
     const rawState = room.session.getState();
-    const actingId = getActingPlayerIdPure(room.gameId, rawState);
-    if (
-      !actingId ||
-      !canControlPlayerOnDevicePure(model, room, actingId) ||
-      !room.session.canPlayerUndo(actingId)
-    ) {
+    const baseActingId = getActingPlayerIdPure(room.gameId, rawState);
+    const undoTargetId = ((): string | null => {
+      if (
+        baseActingId &&
+        canControlPlayerOnDevicePure(model, room, baseActingId) &&
+        room.session.canPlayerUndo(baseActingId)
+      ) {
+        return baseActingId;
+      }
+      if (room.gameId === "seven_wonders" && rawState.phase === "AGE_DRAFT") {
+        const log = room.session.getActionLog();
+        const last = log[log.length - 1];
+        if (
+          last &&
+          canControlPlayerOnDevicePure(model, room, last.playerId) &&
+          room.session.canPlayerUndo(last.playerId)
+        ) {
+          return last.playerId;
+        }
+      }
+      return null;
+    })();
+    if (!undoTargetId) {
       return;
     }
-    room.session.undoForPlayer(actingId);
+    room.session.undoForPlayer(undoTargetId);
     model = resetSubModesPure(model);
     render();
   };
@@ -7628,8 +8167,181 @@ export function createMultiGamePlatformApp(
     model = setSharedTradeWantPure(model, resource, amount);
   };
 
+  const bindTutorialAndGuideEvents = (): void => {
+    root.querySelectorAll("[data-start-tutorial]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const gId = btn.getAttribute("data-start-tutorial") as SupportedGameId;
+        if (gId) {
+          startInteractiveTutorial(gId);
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-open-guide]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const gId = btn.getAttribute("data-open-guide") as SupportedGameId;
+        if (gId) {
+          model = { ...model, guideModalGameId: gId };
+          render();
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-guide-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const gId = btn.getAttribute("data-guide-tab") as SupportedGameId;
+        if (gId) {
+          model = { ...model, guideModalGameId: gId };
+          render();
+        }
+      });
+    });
+
+    root.querySelector("#btn-close-guide")?.addEventListener("click", () => {
+      model = { ...model, guideModalGameId: null };
+      render();
+    });
+
+    root
+      .querySelector("#btn-resume-from-guide")
+      ?.addEventListener("click", () => {
+        model = { ...model, guideModalGameId: null };
+        render();
+      });
+
+    root
+      .querySelector("#ga-guide-backdrop")
+      ?.addEventListener("click", (ev) => {
+        if (ev.target === ev.currentTarget) {
+          model = { ...model, guideModalGameId: null };
+          render();
+        }
+      });
+
+    root
+      .querySelector("#ga-guide-backdrop")
+      ?.addEventListener("keydown", (ev: any) => {
+        if (ev.key === "Escape") {
+          model = { ...model, guideModalGameId: null };
+          render();
+        }
+      });
+
+    root.querySelector("#btn-tutorial-prev")?.addEventListener("click", () => {
+      if (!model.activeTutorial) return;
+      model = {
+        ...model,
+        activeTutorial: {
+          ...model.activeTutorial,
+          stepIndex: Math.max(0, model.activeTutorial.stepIndex - 1),
+        },
+      };
+      render();
+    });
+
+    root.querySelector("#btn-tutorial-next")?.addEventListener("click", () => {
+      if (!model.activeTutorial) return;
+      const maxIdx = TUTORIAL_LESSONS[model.activeTutorial.gameId].length - 1;
+      const nextIdx = Math.min(maxIdx, model.activeTutorial.stepIndex + 1);
+      model = {
+        ...model,
+        activeTutorial: {
+          ...model.activeTutorial,
+          stepIndex: nextIdx,
+          maxAutoStepIndex: Math.max(
+            model.activeTutorial.maxAutoStepIndex,
+            nextIdx
+          ),
+        },
+      };
+      render();
+    });
+
+    root
+      .querySelector("#btn-tutorial-dismiss")
+      ?.addEventListener("click", () => {
+        model = { ...model, activeTutorial: null };
+        render();
+      });
+
+    root
+      .querySelector("#btn-tutorial-exit")
+      ?.addEventListener("click", () => {
+        const tutRoomId = model.activeTutorial?.roomId ?? null;
+        const nextRooms = tutRoomId
+          ? Object.fromEntries(
+              Object.entries(model.rooms).filter(([id]) => id !== tutRoomId)
+            )
+          : model.rooms;
+        const nextOrder = tutRoomId
+          ? model.roomOrder.filter((id) => id !== tutRoomId)
+          : model.roomOrder;
+        const fallbackId = nextOrder[0] ?? "";
+        model = {
+          ...model,
+          rooms: nextRooms,
+          roomOrder: nextOrder,
+          activeRoomId:
+            model.activeRoomId === tutRoomId ? fallbackId : model.activeRoomId,
+          activeTutorial: null,
+          viewMode: "lobby",
+        };
+        render();
+      });
+
+    root
+      .querySelector("#btn-tutorial-auto-step")
+      ?.addEventListener("click", () => {
+        const room = getActiveRoomPure(model);
+        const rawState = getRoomStatePure(model, room);
+        if (!rawState) return;
+        const actingId = getActingPlayerIdPure(room.gameId, rawState);
+        if (!actingId || !canControlPlayerOnDevicePure(model, room, actingId)) {
+          return;
+        }
+        const curStepIdx = model.activeTutorial?.stepIndex ?? 0;
+        const rec = chooseRecommendedTutorialActionPure(
+          room.gameId,
+          rawState,
+          actingId,
+          curStepIdx,
+          model.azulSelectedDraft
+        );
+        if (
+          rec &&
+          room.gameId === "azul" &&
+          curStepIdx === 0 &&
+          !model.azulSelectedDraft &&
+          rec.type === "DRAFT_TILES"
+        ) {
+          model = {
+            ...model,
+            azulSelectedDraft: {
+              source: rec.source,
+              color: rec.color,
+            },
+          };
+          render();
+          return;
+        }
+        if (rec) {
+          model = { ...model, azulSelectedDraft: null };
+          dispatchUiAction(actingId, rec);
+        }
+      });
+  };
+
   const bindCommonIdentityEvents = (): void => {
     bindDropdownEventsOnRoot(root);
+    bindTutorialAndGuideEvents();
+    root.querySelectorAll('[role="button"][tabindex="0"]').forEach((el) => {
+      el.addEventListener("keydown", (ev: any) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault?.();
+          (el as HTMLElement).click();
+        }
+      });
+    });
     root
       .querySelector("#sel-user-identity")
       ?.addEventListener("change", (e) => {
@@ -7856,8 +8568,32 @@ export function createMultiGamePlatformApp(
           const nextGame = (e.target as HTMLSelectElement)
             .value as SupportedGameId;
           model = updateRoomInModelPure(model, room.roomId, (r) =>
-            rebuildRoomSeatsPure({ ...r, gameId: nextGame })
+            rebuildRoomSeatsPure({
+              ...r,
+              gameId: nextGame,
+              botCount:
+                nextGame === "seven_wonders" && r.botCount < 2 ? 3 : r.botCount,
+            })
           );
+          const latest = model.rooms[room.roomId];
+          if (latest) pushServerRoomSetup(latest);
+          render();
+        });
+
+      root
+        .querySelector("#setup-sel-wonderside")
+        ?.addEventListener("change", (e) => {
+          const nextSide = (e.target as HTMLSelectElement).value as
+            | "random"
+            | "day"
+            | "night";
+          model = updateRoomInModelPure(model, room.roomId, (r) => ({
+            ...r,
+            config: {
+              ...r.config,
+              wonderSideMode: nextSide,
+            },
+          }));
           const latest = model.rooms[room.roomId];
           if (latest) pushServerRoomSetup(latest);
           render();
@@ -7959,7 +8695,7 @@ export function createMultiGamePlatformApp(
               scenarioId: toBaseMapScenarioId(r.config.scenarioId),
               enable56PlayerExtension: undefined,
               enableCitiesAndKnights: checked,
-              enableCityWalls: checked ? true : r.config.enableCityWalls,
+              enableCityWalls: checked,
             },
           }));
           const latest = model.rooms[room.roomId];
@@ -8129,18 +8865,10 @@ export function createMultiGamePlatformApp(
     root.querySelectorAll("[data-sp-return-one]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const c = btn.getAttribute("data-sp-return-one") as TokenColor;
-        const activePlayer = state.players[state.activePlayerIndex]!;
-        const excess =
-          Object.values(activePlayer.tokens).reduce((a, b) => a + b, 0) - 10;
-        if (excess === 1) {
-          dispatch(actingPlayerId, {
-            type: "RETURN_TOKENS",
-            tokens: { [c]: 1 },
-          });
-        } else {
-          const botAct = SplendorEngine.chooseBotAction(state, actingPlayerId);
-          if (botAct) dispatch(actingPlayerId, botAct);
-        }
+        dispatch(actingPlayerId, {
+          type: "RETURN_TOKENS",
+          tokens: { [c]: 1 },
+        });
       });
     });
 
@@ -8149,6 +8877,10 @@ export function createMultiGamePlatformApp(
         const nobleId = el.getAttribute("data-sp-noble")!;
         dispatch(actingPlayerId, { type: "SELECT_NOBLE", nobleId });
       });
+    });
+
+    root.querySelector("#btn-sp-pass-turn")?.addEventListener("click", () => {
+      dispatch(actingPlayerId, { type: "PASS_TURN" });
     });
   };
 
@@ -8159,6 +8891,7 @@ export function createMultiGamePlatformApp(
         const color = el.getAttribute("data-azul-color") as AzulTileColor;
         model = {
           ...model,
+          azulInspectedPlayerId: null,
           azulSelectedDraft: {
             source: { kind: "factory", factoryIndex },
             color,
@@ -8173,6 +8906,7 @@ export function createMultiGamePlatformApp(
         const color = el.getAttribute("data-azul-color") as AzulTileColor;
         model = {
           ...model,
+          azulInspectedPlayerId: null,
           azulSelectedDraft: {
             source: { kind: "center" },
             color,
@@ -8203,6 +8937,132 @@ export function createMultiGamePlatformApp(
         model = { ...model, azulSelectedDraft: null };
         render();
       });
+  };
+
+  const bindSevenWondersEvents = (
+    state: SevenWondersState,
+    actingPlayerId: string
+  ): void => {
+    const legalActions = SevenWondersEngine.getLegalActions(
+      state,
+      actingPlayerId
+    );
+
+    root.querySelectorAll("[data-sw-select-card]").forEach((cardEl) => {
+      cardEl.addEventListener("click", () => {
+        const cardId = cardEl.getAttribute("data-sw-select-card")!;
+        model = {
+          ...model,
+          sevenWondersSelectedCardId:
+            model.sevenWondersSelectedCardId === cardId ? null : cardId,
+        };
+        render();
+      });
+    });
+
+    root.querySelectorAll("[data-sw-quick-build]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const cardId = btn.getAttribute("data-sw-quick-build")!;
+        const buildActs = legalActions.filter(
+          (
+            a
+          ): a is Extract<SevenWondersAction, { type: "SELECT_DRAFT_ACTION" }> =>
+            a.type === "SELECT_DRAFT_ACTION" &&
+            a.kind === "build" &&
+            a.cardId === cardId
+        );
+        if (buildActs.length > 1) {
+          model = { ...model, sevenWondersSelectedCardId: cardId };
+          render();
+          return;
+        }
+        const preferred = buildActs[0] ?? null;
+        if (preferred) {
+          dispatchUiAction(actingPlayerId, preferred);
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-sw-quick-wonder]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const cardId = btn.getAttribute("data-sw-quick-wonder")!;
+        const wonderActs = legalActions.filter(
+          (
+            a
+          ): a is Extract<SevenWondersAction, { type: "SELECT_DRAFT_ACTION" }> =>
+            a.type === "SELECT_DRAFT_ACTION" &&
+            a.kind === "wonder" &&
+            a.cardId === cardId
+        );
+        if (wonderActs.length > 1) {
+          model = { ...model, sevenWondersSelectedCardId: cardId };
+          render();
+          return;
+        }
+        const wonderAct = wonderActs[0] ?? null;
+        if (wonderAct) {
+          dispatchUiAction(actingPlayerId, wonderAct);
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-sw-quick-discard]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const cardId = btn.getAttribute("data-sw-quick-discard")!;
+        const discardAct = legalActions.find(
+          (
+            a
+          ): a is Extract<SevenWondersAction, { type: "SELECT_DRAFT_ACTION" }> =>
+            a.type === "SELECT_DRAFT_ACTION" &&
+            a.kind === "discard" &&
+            a.cardId === cardId
+        );
+        if (discardAct) {
+          dispatchUiAction(actingPlayerId, discardAct);
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-sw-variant-card]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const cardId = btn.getAttribute("data-sw-variant-card")!;
+        const kind = (btn.getAttribute("data-sw-variant-kind") ?? "build") as
+          | "build"
+          | "wonder";
+        const idx = Number(btn.getAttribute("data-sw-variant-idx") ?? "0");
+        const variants = legalActions.filter(
+          (
+            a
+          ): a is Extract<SevenWondersAction, { type: "SELECT_DRAFT_ACTION" }> =>
+            a.type === "SELECT_DRAFT_ACTION" &&
+            a.kind === kind &&
+            a.cardId === cardId
+        );
+        const chosen = variants[idx];
+        if (chosen) {
+          dispatchUiAction(actingPlayerId, chosen);
+        }
+      });
+    });
+
+    root.querySelectorAll("[data-sw-discard-pick]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const cardId = btn.getAttribute("data-sw-discard-pick")!;
+        dispatchUiAction(actingPlayerId, {
+          type: "BUILD_FROM_DISCARD",
+          cardId,
+        });
+      });
+    });
+
+    root.querySelectorAll("[data-sw-skip-discard]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        dispatchUiAction(actingPlayerId, { type: "SKIP_DISCARD_BUILD" });
+      });
+    });
   };
 
   const bindCatanEvents = (state: CatanState, actingPlayerId: string): void => {
@@ -8910,6 +9770,25 @@ export function createMultiGamePlatformApp(
                 }
               }
             }
+            if (
+              card?.type === "deserter" &&
+              model.deserterTargetPlayerId &&
+              !state.buildings[vertexId] &&
+              !state.knights[vertexId] &&
+              state.topology.vertices[vertexId]?.incidentEdgeIds.some(
+                (eId) => state.edges[eId]?.ownerId === actingPlayerId
+              )
+            ) {
+              dispatchUiAction(actingPlayerId, {
+                type: "PLAY_PROGRESS_CARD",
+                cardId: card.id,
+                params: {
+                  targetPlayerId: model.deserterTargetPlayerId,
+                  placeVertexId: vertexId,
+                },
+              });
+              return;
+            }
           }
         }
         model = {
@@ -8930,15 +9809,23 @@ export function createMultiGamePlatformApp(
         const edgeId = el.getAttribute("data-spot-edge")!;
         if (state.phase === "SETUP_ROAD_1" || state.phase === "SETUP_ROAD_2") {
           const anchor = state.lastSetupSettlementVertexId;
-          const legals =
-            model.setupEdgeKind === "ship" && state.config.enableSeafarers
-              ? getLegalShipEdges(state, actingPlayerId, anchor)
-              : getLegalRoadEdges(state, actingPlayerId, anchor);
-          if (legals.includes(edgeId)) {
+          const legalRoads = getLegalRoadEdges(state, actingPlayerId, anchor);
+          const legalShips = state.config.enableSeafarers
+            ? getLegalShipEdges(state, actingPlayerId, anchor)
+            : [];
+          const canRoad = legalRoads.includes(edgeId);
+          const canShip = legalShips.includes(edgeId);
+          if (canRoad || canShip) {
+            const chosenEdgeKind: "road" | "ship" =
+              canRoad && canShip
+                ? model.setupEdgeKind
+                : canShip
+                  ? "ship"
+                  : "road";
             dispatch(actingPlayerId, {
               type: "PLACE_SETUP_EDGE",
               edgeId,
-              edgeKind: model.setupEdgeKind,
+              edgeKind: chosenEdgeKind,
             });
             return;
           }
@@ -8948,11 +9835,16 @@ export function createMultiGamePlatformApp(
             actingPlayerId,
             null
           ).includes(edgeId);
-          const isShip = getLegalShipEdges(
-            state,
-            actingPlayerId,
-            null
-          ).includes(edgeId);
+          const isShip = state.config.enableSeafarers
+            ? getLegalShipEdges(state, actingPlayerId, null).includes(edgeId)
+            : false;
+          if (isRoad && isShip) {
+            dispatch(actingPlayerId, {
+              type: model.setupEdgeKind === "ship" ? "BUILD_SHIP" : "BUILD_ROAD",
+              edgeId,
+            });
+            return;
+          }
           if (isRoad) {
             dispatch(actingPlayerId, { type: "BUILD_ROAD", edgeId });
             return;
@@ -9472,8 +10364,12 @@ export function createMultiGamePlatformApp(
       btn.addEventListener("click", () => {
         if (!model.selectedProgressCardId) return;
         const targetPlayerId = btn.getAttribute("data-prog-opp")!;
+        const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
+        const card = actingPlayer?.progressCards.find(
+          (c) => c.id === model.selectedProgressCardId
+        );
         const legals = CatanEngine.getLegalActions(state, actingPlayerId);
-        const matched = legals.find(
+        const matchingForOpp = legals.filter(
           (
             a
           ): a is Extract<CatanAction, { type: "PLAY_PROGRESS_CARD" }> =>
@@ -9481,6 +10377,16 @@ export function createMultiGamePlatformApp(
             a.cardId === model.selectedProgressCardId &&
             a.params?.targetPlayerId === targetPlayerId
         );
+        if (card?.type === "deserter" && matchingForOpp.length > 1) {
+          model = {
+            ...model,
+            deserterTargetPlayerId: targetPlayerId,
+            selectedBoardSpot: null,
+          };
+          render();
+          return;
+        }
+        const matched = matchingForOpp[0];
         dispatchUiAction(
           actingPlayerId,
           matched ?? {
@@ -9489,6 +10395,13 @@ export function createMultiGamePlatformApp(
             params: { targetPlayerId },
           }
         );
+      });
+    });
+
+    root.querySelectorAll("[data-deserter-reset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        model = { ...model, deserterTargetPlayerId: null };
+        render();
       });
     });
 
@@ -10179,6 +11092,66 @@ export function createMultiGamePlatformApp(
         }
       });
 
+    if (room.gameId === "azul") {
+      root.querySelectorAll("[data-azul-inspect-player]").forEach((el) => {
+        el.addEventListener("click", () => {
+          const pid = el.getAttribute("data-azul-inspect-player")!;
+          model = {
+            ...model,
+            azulInspectedPlayerId:
+              model.azulInspectedPlayerId === pid ? null : pid,
+          };
+          render();
+        });
+      });
+    }
+
+    if (room.gameId === "seven_wonders") {
+      root.querySelectorAll("[data-sw-inspect-player]").forEach((el) => {
+        el.addEventListener("click", () => {
+          const pid = el.getAttribute("data-sw-inspect-player")!;
+          model = {
+            ...model,
+            sevenWondersInspectedPlayerId:
+              model.sevenWondersInspectedPlayerId === pid ? null : pid,
+          };
+          render();
+        });
+      });
+
+      const handleUnselectSwPick = (ev?: any) => {
+        const swRaw = (getRoomStatePure(model, room) ?? state) as SevenWondersState;
+        const explicitId = ev?.currentTarget?.getAttribute?.(
+          "data-sw-unselect-player"
+        ) as string | null;
+        if (
+          explicitId &&
+          canControlPlayerOnDevicePure(model, room, explicitId) &&
+          canPlayerUnselectDraftPick(swRaw, explicitId)
+        ) {
+          dispatchUiAction(explicitId, { type: "UNSELECT_DRAFT_ACTION" });
+          return;
+        }
+        const lockedLocal = [...swRaw.players]
+          .reverse()
+          .find(
+            (p) =>
+              !p.isBot &&
+              canControlPlayerOnDevicePure(model, room, p.id) &&
+              canPlayerUnselectDraftPick(swRaw, p.id)
+          );
+        if (lockedLocal) {
+          dispatchUiAction(lockedLocal.id, { type: "UNSELECT_DRAFT_ACTION" });
+        }
+      };
+      root
+        .querySelector("#btn-sw-unselect-pick")
+        ?.addEventListener("click", handleUnselectSwPick);
+      root
+        .querySelector("#btn-sw-unselect-pick-dock")
+        ?.addEventListener("click", handleUnselectSwPick);
+    }
+
     if (!actingPlayerId) return;
 
     if (!canControlPlayerOnDevicePure(model, room, actingPlayerId)) {
@@ -10214,6 +11187,11 @@ export function createMultiGamePlatformApp(
 
     if (room.gameId === "azul") {
       bindAzulEvents(state as AzulState, actingPlayerId);
+      return;
+    }
+
+    if (room.gameId === "seven_wonders") {
+      bindSevenWondersEvents(state as SevenWondersState, actingPlayerId);
       return;
     }
 
@@ -10580,6 +11558,7 @@ export function createMultiGamePlatformApp(
     enterOrJoinRoom,
     leaveActiveRoom,
     startRoomMatch,
+    startInteractiveTutorial,
     resetSubModes,
     dispatchUiAction,
     dispatch,

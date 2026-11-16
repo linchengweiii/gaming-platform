@@ -8,6 +8,7 @@ import {
   getWallColumnForColor,
   scoreWallPlacement,
 } from "@gaming-platform/azul";
+import { renderAzulBoardView } from "../apps/web/src/azul-view.ts";
 
 const PLAYERS_2: PlayerDescriptor[] = [
   { id: "p1", name: "Artisan 1", color: "#e63946", isBot: true },
@@ -139,5 +140,40 @@ describe("@gaming-platform/azul - Executable Specification Suite", () => {
       expect(final.winnerId).not.toBeNull();
       expect(AzulEngine.checkInvariants(final).valid).toBe(true);
     }
+  });
+
+  test("SPEC 6: getPlayerView redacts bag draw order while preserving 100-tile invariants and multi-row chain UI preview", () => {
+    const state = AzulEngine.initGame(
+      [
+        { id: "p1", name: "Alice", color: "#e63946", isBot: false },
+        { id: "p2", name: "Bot", color: "#2563eb", isBot: true },
+      ],
+      {},
+      "azul-redaction-chain"
+    );
+    const view = AzulEngine.getPlayerView(state, "p1");
+    expect(view.rngState).toBe(0);
+    expect(view.bag).toEqual([...state.bag].sort());
+    expect(AzulEngine.checkInvariants(view).valid).toBe(true);
+
+    // Prepare lower-row chain: row 1 already full (2/2) in column `col`, and drafting row 0 completes `col` directly above it!
+    const col = 0;
+    const row0Color = AZUL_WALL_PATTERN[0]![col]!;
+    const row1Color = AZUL_WALL_PATTERN[1]![col]!;
+    state.players[0]!.patternLines[1] = {
+      capacity: 2,
+      color: row1Color,
+      count: 2,
+    };
+    state.factories[0] = [row0Color, "red", "yellow", "black"];
+
+    const html = renderAzulBoardView(
+      state,
+      { source: { kind: "factory", factoryIndex: 0 }, color: row0Color },
+      "p1",
+      true
+    );
+    // Row 0 scores +1 AND triggers row 1 below to link vertically for +2 (vs +1 without row 0) = +2 net gain on row 0!
+    expect(html).toContain("+2 pts");
   });
 });
