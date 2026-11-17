@@ -382,12 +382,20 @@
   }
 
   .map-build-dock__panel {
-    max-width: min(320px, calc(100vw - 24px));
+    max-width: calc(100vw - 16px);
   }
 
   .map-end-turn-hud {
     right: 8px;
     bottom: 8px;
     padding: 6px 8px;
+  }
+}
+
+@media (max-width: 460px) {
+  .map-build-dock__grid.is-two-col {
+    grid-template-columns: 1fr;
+    max-height: min(50vh, 260px);
+    overflow-y: auto;
   }
 }
