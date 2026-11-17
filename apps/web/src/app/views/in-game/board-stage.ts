@@ -156,15 +156,15 @@ export function renderInGameBoardStagePure(
                   !canRedo ? "disabled" : ""
                 }>Redo</button>
                 ${
-                  room.gameId === "catan" &&
-                  state.phase.startsWith("SETUP_") &&
-                  (!usesServer || isOwner)
-                    ? `<button type="button" id="btn-finish-setup" class="btn btn--secondary btn--sm">Auto-place setup</button>`
-                    : ""
-                }
-                ${
                   model.debugMode
-                    ? `<button type="button" id="btn-toggle-bot-response" class="btn btn--secondary btn--sm ${
+                    ? `${
+                        room.gameId === "catan" &&
+                        state.phase.startsWith("SETUP_") &&
+                        (!usesServer || isOwner)
+                          ? `<button type="button" id="btn-finish-setup" class="btn btn--secondary btn--sm">Auto-place setup</button>`
+                          : ""
+                      }
+                      <button type="button" id="btn-toggle-bot-response" class="btn btn--secondary btn--sm ${
                         (usesServer ? room.autoStepBots : model.autoRespondBotsToHuman)
                           ? "is-selected"
                           : ""

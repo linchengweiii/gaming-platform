@@ -30,7 +30,7 @@ export const TUTORIAL_LESSONS: Readonly<
       title: "Complete the snake draft & claim starting cards",
       body: "Draft order reverses for the 2nd settlement (1→2→3→4, then 4→3→2→1). Your 2nd settlement immediately grants 1 card from each adjacent terrain tile.",
       actionHint:
-        "Place your 2nd settlement and road (or click Auto-place setup / Perform step).",
+        "Place your 2nd settlement and road on the map, or click Perform step.",
     },
     {
       index: 3,

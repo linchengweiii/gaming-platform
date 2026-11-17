@@ -27,8 +27,9 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
     localRoom.startingPlayerMode = "first";
     uiApp.startRoomMatch("room-1");
 
-    // Normal player mode (debugMode = false by default): Auto-bots, Step bot, and Auto-sim are hidden so .board-banner stays uncluttered!
+    // Normal player mode (debugMode = false by default): Auto-place setup, Auto-bots, Step bot, and Auto-sim are hidden so .board-banner stays uncluttered!
     expect(uiApp.debugMode).toBe(false);
+    expect(fakeRoot.innerHTML).not.toContain('id="btn-finish-setup"');
     expect(fakeRoot.innerHTML).not.toContain('id="btn-toggle-bot-response"');
     expect(fakeRoot.innerHTML).not.toContain('id="btn-step-bot"');
     expect(fakeRoot.innerHTML).not.toContain('id="btn-autoplay"');
@@ -39,6 +40,7 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
     // Enable debugMode: debug controls appear, #btn-step-bot is disabled on Player 1's own turn, and stepOneBotMove(true) refuses to move Player 1
     uiApp.debugMode = true;
     uiApp.render();
+    expect(fakeRoot.innerHTML).toContain('id="btn-finish-setup"');
     expect(fakeRoot.innerHTML).toContain('id="btn-toggle-bot-response"');
     expect(fakeRoot.innerHTML).toContain('id="btn-step-bot"');
     expect(
