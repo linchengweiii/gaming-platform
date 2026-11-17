@@ -183,6 +183,7 @@ export function toRoomSummaryPure(
     ownerId: r.ownerId,
     ownerName: r.ownerName,
     status: r.status,
+    isPrivate: Boolean(r.isPrivate),
     botCount: r.botCount,
     botDifficulty: r.botDifficulty,
     allBots: r.allBots,
@@ -201,17 +202,34 @@ export function toRoomSummaryPure(
 
 export function listRoomsPure(
   managerState: RoomManagerState,
-  gameFilter?: string
+  gameFilter?: string,
+  viewerId?: string | null
 ): RoomSummary[] {
+  const canViewerSeeRoom = (r: RoomRecord): boolean => {
+    if (!r.isPrivate) return true;
+    if (!viewerId) return false;
+    return (
+      r.ownerId === viewerId ||
+      r.humanPlayers.some(
+        (p) => p.id === viewerId || p.controllerId === viewerId
+      ) ||
+      r.players.some(
+        (p) => !p.isBot && (p.id === viewerId || p.controllerId === viewerId)
+      )
+    );
+  };
+
   return managerState.roomOrder
     .map((id) => managerState.rooms[id])
     .filter(
       (r): r is RoomRecord =>
         Boolean(
-          r && (!gameFilter || gameFilter === "all" || r.gameId === gameFilter)
+          r &&
+            canViewerSeeRoom(r) &&
+            (!gameFilter || gameFilter === "all" || r.gameId === gameFilter)
         )
     )
-    .map((r) => toRoomSummaryPure(managerState.registry, r));
+    .map((r) => toRoomSummaryPure(managerState.registry, r, viewerId));
 }
 
 export function normalizeRoomHashIdPure(rawRoomId: string): string {

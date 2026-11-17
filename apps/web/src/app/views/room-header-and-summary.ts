@@ -48,12 +48,19 @@ export function renderRoomHeaderPure(
             ${statusChip}
             ${
               room.isOfflineLocal
-                ? `<span class="ga-chip ga-chip--ok">Offline local</span>`
-                : `<button type="button" id="btn-copy-room-link" data-copy-room-link="${escapeAttr(
-                    room.roomId
-                  )}" class="btn btn--secondary btn--sm ga-num" title="Copy shareable invite link (${escapeAttr(
-                    hashLabel
-                  )})">${isCopied ? "Copied ✓" : "Share link"}</button>`
+                ? `<span class="ga-chip ga-chip--ok">Offline local</span>${
+                    room.isPrivate
+                      ? `<span class="ga-chip ga-chip--warn">Private</span>`
+                      : ""
+                  }`
+                : `<span class="ga-chip ${
+                    room.isPrivate ? "ga-chip--warn" : ""
+                  }">${room.isPrivate ? "Private" : "Public"}</span>
+                   <button type="button" id="btn-copy-room-link" data-copy-room-link="${escapeAttr(
+                     room.roomId
+                   )}" class="btn btn--secondary btn--sm ga-num" title="Copy shareable invite link (${escapeAttr(
+                     hashLabel
+                   )})">${isCopied ? "Copied ✓" : "Share link"}</button>`
             }
           </div>
 
@@ -108,7 +115,9 @@ export function getRoomSetupSummaryDataPure(
   const firstTurnChip = getStartingPlayerSummaryLabelPure(room, state);
   const modeLabel = room.isOfflineLocal
     ? "Offline pass and play"
-    : "Online multiplayer";
+    : room.isPrivate
+      ? "Online · Private (link only)"
+      : "Online · Public room";
 
   if (room.gameId === "splendor") {
     const pts = state?.config?.targetPoints ?? 15;

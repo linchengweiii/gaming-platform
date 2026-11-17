@@ -290,6 +290,7 @@ export function createPlatformRoomManager(): PlatformRoomManager {
         ownerId: r.ownerId,
         ownerName: r.ownerName,
         status: r.status,
+        isPrivate: Boolean(r.isPrivate),
         humanPlayers: r.humanPlayers,
         botCount: r.botCount,
         botDifficulty: r.botDifficulty,
@@ -308,7 +309,8 @@ export function createPlatformRoomManager(): PlatformRoomManager {
       };
       return toRoomSummaryPure(state.registry, fallbackRec, viewerId);
     },
-    listRooms: (gameFilter) => listRoomsPure(state, gameFilter),
+    listRooms: (gameFilter, viewerId) =>
+      listRoomsPure(state, gameFilter, viewerId),
     getRoom(roomId) {
       return getOrCreateRoomLens(roomId);
     },

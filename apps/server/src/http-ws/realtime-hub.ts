@@ -169,8 +169,10 @@ export function createRealtimeHub(
   }
 
   function broadcastLobbyRooms(): void {
-    const rooms = roomManager.listRooms().map(enrichSummaryWithPresence);
     Object.values(wsClients).forEach((client) => {
+      const rooms = roomManager
+        .listRooms(undefined, client.playerId)
+        .map(enrichSummaryWithPresence);
       sendWsFrame(client.socket, {
         type: "LOBBY_ROOMS",
         rooms,
@@ -312,18 +314,29 @@ export function createRealtimeHub(
       ].join("\r\n")
     );
 
+    const initialPlayerId = (() => {
+      try {
+        const u = new URL(req.url ?? "/", "http://localhost");
+        return u.searchParams.get("playerId")?.trim() || null;
+      } catch {
+        return null;
+      }
+    })();
+
     const clientId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     upsertWsClient({
       id: clientId,
       socket,
       roomId: null,
-      playerId: null,
+      playerId: initialPlayerId,
     });
 
     // Send initial lobby rooms snapshot immediately on WS connect
     sendWsFrame(socket, {
       type: "LOBBY_ROOMS",
-      rooms: roomManager.listRooms().map(enrichSummaryWithPresence),
+      rooms: roomManager
+        .listRooms(undefined, initialPlayerId)
+        .map(enrichSummaryWithPresence),
     });
 
     let readBuffer: Buffer = Buffer.alloc(0);

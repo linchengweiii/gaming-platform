@@ -24,9 +24,16 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
         r.humanPlayers.some((p) => p.id === model.currentUserId)
     );
   const isVisibleLobbyRoom = (r: ClientRoom): boolean =>
-    r.status === "lobby" || r.status === "finished" || isUserInRoom(r);
+    r.isPrivate
+      ? isUserInRoom(r)
+      : r.status === "lobby" || r.status === "finished" || isUserInRoom(r);
   const countOpenForGame = (g: SupportedGameId): number =>
-    allRooms.filter((r) => r.gameId === g && r.status === "lobby").length;
+    allRooms.filter(
+      (r) =>
+        r.gameId === g &&
+        r.status === "lobby" &&
+        (!r.isPrivate || isUserInRoom(r))
+    ).length;
 
   const roomsList = allRooms
     .filter((r) => r.gameId === model.lobbyGameFilter && isVisibleLobbyRoom(r))
@@ -235,6 +242,11 @@ export function renderLobbyViewPure(model: Readonly<AppModel>): string {
                             </div>
                             <div class="room-card__meta">
                               ${modeChip}
+                              ${
+                                r.isPrivate
+                                  ? `<span class="ga-chip ga-chip--warn">Private · Link only</span>`
+                                  : ""
+                              }
                               <span class="ga-chip">${gameBadge}</span>
                               <span class="ga-chip ${isOwner ? "ga-chip--accent" : ""}">
                                 ${hostChipLabel}

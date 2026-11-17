@@ -14,6 +14,7 @@ export interface RoomSummary {
   ownerId: string;
   ownerName: string;
   status: "lobby" | "in_progress" | "finished";
+  isPrivate?: boolean;
   botCount: number;
   botDifficulty: BotDifficulty;
   allBots: boolean;
@@ -37,6 +38,7 @@ export interface RoomRecord {
   readonly ownerId: string;
   readonly ownerName: string;
   readonly status: "lobby" | "in_progress" | "finished";
+  readonly isPrivate: boolean;
   readonly humanPlayers: readonly PlayerDescriptor[];
   readonly botCount: number;
   readonly botDifficulty: BotDifficulty;
@@ -59,6 +61,7 @@ export interface RoomInstance {
   ownerId: string;
   ownerName: string;
   status: "lobby" | "in_progress" | "finished";
+  isPrivate: boolean;
   humanPlayers: PlayerDescriptor[];
   botCount: number;
   botDifficulty: BotDifficulty;
@@ -86,6 +89,7 @@ export interface CreateRoomOptions {
   gameId?: string;
   ownerId?: string;
   hostName?: string;
+  isPrivate?: boolean;
   botCount?: number;
   botDifficulty?: BotDifficulty;
   allBots?: boolean;
@@ -99,6 +103,7 @@ export interface CreateRoomOptions {
 export interface RoomSetupUpdates {
   name?: string;
   gameId?: string;
+  isPrivate?: boolean;
   botCount?: number;
   playerCount?: number;
   allBots?: boolean;
@@ -125,7 +130,7 @@ export interface PlatformRoomManager {
     actorId: string | null
   ): boolean;
   toRoomSummary(r: RoomInstance | RoomRecord, viewerId?: string | null): RoomSummary;
-  listRooms(gameFilter?: string): RoomSummary[];
+  listRooms(gameFilter?: string, viewerId?: string | null): RoomSummary[];
   getRoom(roomId: string): RoomInstance;
   createRoom(options: CreateRoomOptions): RoomInstance;
   updateRoomSetup(

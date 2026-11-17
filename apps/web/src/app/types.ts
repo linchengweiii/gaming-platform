@@ -68,6 +68,7 @@ export interface ClientRoom {
   name: string;
   gameId: SupportedGameId;
   isOfflineLocal: boolean;
+  isPrivate: boolean;
   ownerId: string;
   ownerName: string;
   status: "lobby" | "in_progress" | "finished";
@@ -99,6 +100,7 @@ export interface CreateLocalRoomOptions {
   readonly ownerId: string;
   readonly ownerName: string;
   readonly isOfflineLocal?: boolean;
+  readonly isPrivate?: boolean;
   readonly botCount?: number;
   readonly allBots?: boolean;
   readonly botDifficulty?: BotDifficulty;

@@ -90,6 +90,20 @@ export function bindRoomSetupEvents(
       });
     });
 
+    root.querySelectorAll("[data-setup-visibility]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const nextPrivate =
+          btn.getAttribute("data-setup-visibility") === "private";
+        ctx.model = updateRoomInModelPure(ctx.model, room.roomId, (r) => ({
+          ...r,
+          isPrivate: nextPrivate,
+        }));
+        const latest = ctx.model.rooms[room.roomId];
+        if (latest) ctx.pushServerRoomSetup(latest);
+        ctx.render();
+      });
+    });
+
     root.querySelector("#setup-sel-game")?.addEventListener("change", (e) => {
       const nextGame = (e.target as HTMLSelectElement).value as SupportedGameId;
       ctx.model = updateRoomInModelPure(ctx.model, room.roomId, (r) =>

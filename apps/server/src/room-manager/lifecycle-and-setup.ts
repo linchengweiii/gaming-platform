@@ -86,6 +86,7 @@ export function createRoomPure(
     ownerId,
     ownerName,
     status: "lobby",
+    isPrivate: Boolean(options.isPrivate),
     humanPlayers,
     botCount: defaultBotCount,
     botDifficulty,
@@ -222,6 +223,8 @@ export function updateRoomSetupPure(
   const nextSeed = updates.seed ? updates.seed : room.seed;
   const nextAllBots =
     updates.allBots !== undefined ? updates.allBots : room.allBots;
+  const nextIsPrivate =
+    updates.isPrivate !== undefined ? Boolean(updates.isPrivate) : room.isPrivate;
 
   const nextHumanPlayers =
     updates.allBots !== undefined &&
@@ -273,6 +276,7 @@ export function updateRoomSetupPure(
   const updatedRoom = rebuildRoomPlayersPure(managerState.registry, {
     ...room,
     name: nextName,
+    isPrivate: nextIsPrivate,
     gameId: nextGameId,
     config: nextConfig,
     botDifficulty: nextBotDifficulty,

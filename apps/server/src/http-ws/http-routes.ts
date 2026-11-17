@@ -49,9 +49,10 @@ export async function handleApiRequest(
 
   if (pathname === "/api/rooms" && req.method === "GET") {
     const gameFilter = url.searchParams.get("gameId") ?? undefined;
+    const viewerId = url.searchParams.get("playerId");
     sendJson(res, 200, {
       rooms: roomManager
-        .listRooms(gameFilter)
+        .listRooms(gameFilter, viewerId)
         .map(hub.enrichSummaryWithPresence),
     });
     return true;

@@ -107,7 +107,11 @@ export function renderRoomSetupViewPure(
             !room.isOfflineLocal
               ? `<div class="ga-invite-bar">
                    <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
-                     <span class="t-label" style="color:var(--ink);font-weight:500;">Invite friends via direct link</span>
+                     <span class="t-label" style="color:var(--ink);font-weight:500;">${
+                       room.isPrivate
+                         ? "Private room — players can only join via link"
+                         : "Invite friends via direct link"
+                     }</span>
                      <span class="t-label muted ga-num" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">#room=${escapeAttr(
                        room.roomId
                      )}</span>

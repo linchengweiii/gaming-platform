@@ -229,4 +229,123 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
       srv.server.close();
     }
   });
+
+  test("hides Private rooms from Open rooms for uninvited players while allowing direct hash-link join and Public toggle", async () => {
+    const fakeRoot = createFakeDomRoot();
+    const uiApp = new MultiGamePlatformApp(fakeRoot, {
+      forceLocalMode: true,
+      startAtLogin: false,
+    });
+    uiApp.enterOrJoinRoom("room-1");
+    expect(fakeRoot.innerHTML).toContain('id="setup-vis-public"');
+    expect(fakeRoot.innerHTML).toContain('id="setup-vis-private"');
+    expect(uiApp.getActiveRoom().isPrivate).toBe(false);
+
+    // Toggle local room-1 to Private and switch to Guest 2 in Lobby: Guest 2 cannot see room-1 in Open rooms!
+    const room1 = uiApp.getActiveRoom();
+    room1.isPrivate = true;
+    uiApp.switchActiveGuest("guest-2");
+    uiApp.viewMode = "lobby";
+    uiApp.render();
+    expect(fakeRoot.innerHTML).not.toContain('data-join-room="room-1"');
+
+    // Verify live HTTP & WS server enforces Private vs Public visibility
+    const srv = createPlatformServer();
+    await new Promise<void>((resolve) => srv.server.listen(0, resolve));
+    try {
+      const port = (srv.server.address() as { port: number }).port;
+      const base = `http://127.0.0.1:${port}`;
+
+      const createRes = await fetch(`${base}/api/rooms`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gameId: "catan",
+          ownerId: "host-1",
+          hostName: "Alice",
+        }),
+      });
+      const { room: created } = await createRes.json();
+      expect(created.isPrivate).toBe(false);
+
+      // Public by default: stranger sees it in Open rooms
+      const pubList = await (
+        await fetch(`${base}/api/rooms?playerId=stranger-9`)
+      ).json();
+      expect(pubList.rooms.some((r: any) => r.roomId === created.roomId)).toBe(
+        true
+      );
+
+      // Host switches room to Private in Room Setup
+      const privRes = await fetch(`${base}/api/rooms/${created.roomId}/setup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requesterId: "host-1",
+          isPrivate: true,
+        }),
+      });
+      const privData = await privRes.json();
+      expect(privData.room.isPrivate).toBe(true);
+
+      // Uninvited players (or anonymous lobby queries) do NOT see the private room in Open rooms
+      const anonList = await (await fetch(`${base}/api/rooms`)).json();
+      expect(anonList.rooms.some((r: any) => r.roomId === created.roomId)).toBe(
+        false
+      );
+      const strangerList = await (
+        await fetch(`${base}/api/rooms?playerId=stranger-9`)
+      ).json();
+      expect(
+        strangerList.rooms.some((r: any) => r.roomId === created.roomId)
+      ).toBe(false);
+
+      // Host still sees their own private room
+      const hostList = await (
+        await fetch(`${base}/api/rooms?playerId=host-1`)
+      ).json();
+      expect(hostList.rooms.some((r: any) => r.roomId === created.roomId)).toBe(
+        true
+      );
+
+      // Invited friend with the direct #room=<hash> link CAN fetch and join the private room!
+      const directJoinRes = await fetch(
+        `${base}/api/rooms/${created.roomId}/join`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            playerId: "friend-2",
+            playerName: "Bob",
+          }),
+        }
+      );
+      expect(directJoinRes.ok).toBe(true);
+      const friendList = await (
+        await fetch(`${base}/api/rooms?playerId=friend-2`)
+      ).json();
+      expect(
+        friendList.rooms.some((r: any) => r.roomId === created.roomId)
+      ).toBe(true);
+
+      // Host switches room back to Public -> visible to everyone in Open rooms again!
+      await fetch(`${base}/api/rooms/${created.roomId}/setup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requesterId: "host-1",
+          isPrivate: false,
+        }),
+      });
+      const reopenedList = await (
+        await fetch(`${base}/api/rooms?playerId=stranger-9`)
+      ).json();
+      expect(
+        reopenedList.rooms.some((r: any) => r.roomId === created.roomId)
+      ).toBe(true);
+    } finally {
+      (srv.server as any).closeAllConnections?.();
+      srv.server.close();
+    }
+  });
 });

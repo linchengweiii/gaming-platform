@@ -123,7 +123,10 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
     }
 
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${proto}//${window.location.host}`);
+    const wsQuery = ctx.model.currentUserId
+      ? `/?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
+      : "";
+    const socket = new WebSocket(`${proto}//${window.location.host}${wsQuery}`);
     ctx.ws = socket;
 
     socket.addEventListener("open", () => {
@@ -203,7 +206,10 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
   const fetchLobbyRooms = async (): Promise<void> => {
     if (!ctx.model.useServerBackend) return;
     try {
-      const res = await fetch("/api/rooms");
+      const playerQuery = ctx.model.currentUserId
+        ? `?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
+        : "";
+      const res = await fetch(`/api/rooms${playerQuery}`);
       const ct = res.headers.get("content-type") ?? "";
       if (!res.ok || !ct.includes("application/json")) {
         ctx.model = {
@@ -285,6 +291,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
               requesterId: ctx.model.currentUserId,
               name: latest.name,
               gameId: latest.gameId,
+              isPrivate: latest.isPrivate,
               botCount: latest.botCount,
               allBots: latest.allBots,
               botDifficulty: latest.botDifficulty,

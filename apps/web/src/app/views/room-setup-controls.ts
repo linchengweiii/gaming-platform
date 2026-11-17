@@ -39,6 +39,37 @@ export function renderRoomSetupControlsCardPure(
         }
 
         <div class="ga-field">
+          <label>Room visibility</label>
+          <div class="ga-seg-switch" role="group" aria-label="Room visibility">
+            <button
+              type="button"
+              id="setup-vis-public"
+              data-setup-visibility="public"
+              class="ga-seg-switch__btn ${!room.isPrivate ? "is-active" : ""}"
+              aria-pressed="${!room.isPrivate ? "true" : "false"}"
+            >
+              <span class="ga-seg-switch__title">Public</span>
+              <span class="ga-seg-switch__meta">Shown in Open rooms</span>
+            </button>
+            <button
+              type="button"
+              id="setup-vis-private"
+              data-setup-visibility="private"
+              class="ga-seg-switch__btn ${room.isPrivate ? "is-active" : ""}"
+              aria-pressed="${room.isPrivate ? "true" : "false"}"
+            >
+              <span class="ga-seg-switch__title">Private</span>
+              <span class="ga-seg-switch__meta">Invite link only</span>
+            </button>
+          </div>
+          <p class="t-small muted">${
+            room.isPrivate
+              ? "Hidden from Open rooms — other players can only join through your direct room link."
+              : "Visible to everyone in Open rooms, or joinable directly via room link."
+          }</p>
+        </div>
+
+        <div class="ga-field">
           <label for="setup-sel-game-btn">Board game</label>
           ${renderDropdown({
             id: "setup-sel-game",

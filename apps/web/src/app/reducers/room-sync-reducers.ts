@@ -54,6 +54,7 @@ export function createLocalRoomPure(
     name: roomName,
     gameId: opts.gameId,
     isOfflineLocal: opts.isOfflineLocal ?? true,
+    isPrivate: Boolean(opts.isPrivate),
     ownerId: opts.ownerId,
     ownerName: opts.ownerName,
     status: "lobby",
@@ -162,6 +163,10 @@ export function upsertRoomFromSummaryPure(
     name: summary.name ?? "Table",
     gameId: (summary.gameId as SupportedGameId) ?? "catan",
     isOfflineLocal: false,
+    isPrivate:
+      summary.isPrivate !== undefined
+        ? Boolean(summary.isPrivate)
+        : (existing?.isPrivate ?? false),
     ownerId: summary.ownerId ?? "p1",
     ownerName: summary.ownerName ?? "Host",
     status: summary.status ?? "lobby",
@@ -258,7 +263,12 @@ export function syncOnlineLobbyRoomsPure(
   const incomingIds = new Set(summaries.map((s) => s.roomId));
   const prunedModel = model.roomOrder.reduce<AppModel>((acc, id) => {
     const existing = acc.rooms[id];
-    if (existing && !existing.isOfflineLocal && !incomingIds.has(id)) {
+    if (
+      existing &&
+      !existing.isOfflineLocal &&
+      id !== acc.activeRoomId &&
+      !incomingIds.has(id)
+    ) {
       return removeRoomFromModelPure(acc, id);
     }
     return acc;

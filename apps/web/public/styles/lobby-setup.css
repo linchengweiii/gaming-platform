@@ -425,3 +425,52 @@
   padding: 12px 4px;
   border-bottom: 1px solid var(--line);
 }
+
+.ga-seg-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+}
+
+.ga-seg-switch__btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: calc(var(--r-md) - 3px);
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  transition: background-color 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
+}
+
+.ga-seg-switch__btn:hover:not(.is-active) {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ga-seg-switch__btn.is-active {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: color-mix(in oklab, var(--action) 58%, var(--line-strong));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+.ga-seg-switch__title {
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+
+.ga-seg-switch__meta {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  opacity: 0.78;
+}
