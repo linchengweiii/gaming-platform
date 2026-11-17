@@ -7,21 +7,28 @@ This repository is a TypeScript monorepo for an online multi-board-game platform
 - `packages/core/`: Game-agnostic platform primitives:
   - `rng.ts`: Deterministic seeded PRNG (`SeededRNG`)
   - `hex.ts`: Axial hex grid topology, canonical vertex/edge coordinates, pixel projection, and longest simple path graph algorithms
-  - `engine.ts`: Generic `GameEngine` state-machine contract, `GameRegistry`, `MatchSession` (with replay & undo/redo), and invariant verification
+  - `engine/` (`engine.ts` barrel): Generic `GameEngine` state-machine contract, `GameRegistry`, `MatchSession` (with replay & undo/redo), and invariant verification
 - `packages/games/catan/`: Pure, deterministic Catan engine plugin:
-  - `types.ts`: State, configuration, scenario presets, resources, commodities, progress cards, turn phases, and discriminated union actions
-  - `board.ts`: Board & scenario generators (Standard 3–4P, 5–6P Big Island, Cities & Knights 3–4P & 5–6P, Seafarers 3–4P & 5–6P: Heading for New Shores, Four/Six Islands, Fog Islands)
-  - `cities-and-knights.ts`: Pure Cities & Knights domain helpers (commodities, improvements, metropolises, knights, barbarian raids, and 54 Progress Cards)
-  - `rules.ts`: Legal action generator (`getLegalActions`), state transition reducer (`applyAction`), player redaction (`getPlayerView`), and invariant checker (`checkInvariants`)
-  - `bot.ts`: 4-tier AI bot (`easy`, `normal`, `smart`, `master`) operating strictly on redacted player views across base Catan and all expansions
+  - `config/`: Dedicated Catan configs (`costs-and-limits.ts`, `scenarios-config.ts`, `cities-knights-config.ts`, `bot-config.ts`)
+  - `types/` (`types.ts` barrel): State, configuration, scenario presets, resources, commodities, progress cards, turn phases, and discriminated union actions
+  - `board/` (`board.ts` barrel): Board & scenario generators (Standard 3–4P, 5–6P Big Island, Cities & Knights 3–4P & 5–6P, Seafarers 3–4P & 5–6P: Heading for New Shores, Four/Six Islands, Fog Islands)
+  - `cities-and-knights/` (`cities-and-knights.ts` barrel): Pure Cities & Knights domain helpers (commodities, improvements, metropolises, knights, barbarian raids, and 54 Progress Cards)
+  - `rules/` (`rules.ts` barrel): Legal action generator (`getLegalActions`), state transition reducer (`applyAction`), player redaction (`getPlayerView`), and invariant checker (`checkInvariants`)
+  - `bot/` (`bot.ts` barrel): 4-tier AI bot (`easy`, `normal`, `smart`, `master`) operating strictly on redacted player views across base Catan and all expansions
   - `cli-sim.ts`: Fast CLI simulation runner for multi-game validation
 - `packages/games/seven-wonders/`: Pure, deterministic 7 Wonders engine plugin (`@gaming-platform/seven-wonders`):
-  - `types.ts`, `cards.ts`, `rules.ts`, `bot.ts`: Official 3–7P simultaneous drafting, all 7 Wonders (Day A & Night B), Ages I–III + Guilds, Pareto neighbor commerce, Military Conflicts, Halikarnassus/Olympia/Babylon special phases, multi-wildcard Science optimizer, redaction, pre-reveal `UNSELECT_DRAFT_ACTION`, and 4-tier AI (`easy`–`master`)
-- `packages/games/splendor/`: Pure, deterministic Splendor engine plugin (`types.ts`, `cards.ts`, `rules.ts`, `bot.ts`) with 2–4P scaling, deck/blind-reserve redaction, and 4-tier lookahead AI
-- `packages/games/azul/`: Pure, deterministic Azul engine plugin (`types.ts`, `rules.ts`, `bot.ts`) with 2–4P Factory/Center drafting, wall chain scoring, bag conservation redaction, and 4-tier Negamax/MaxN AI
-- `apps/server/`: HTTP + WebSocket multiplayer platform server (rooms, lobbies, multi-guest + local pass-and-play control, bots, per-viewer state redaction, static web hosting)
-- `apps/web/`: Interactive pure-functional browser client (`app.ts`, `catan-graphics.ts`, `seven-wonders-view.ts`, `splendor-view.ts`, `azul-view.ts`, `tutorials.ts`) featuring **Online Multiplayer**, **Offline Pass-and-Play**, **Interactive Live-Board Tutorials**, and **Reference Guides** for all 4 games
-- `tests/`: Unit, expansion, parity snapshot, pure-functional audit, and full-game fuzz tests
+  - `config/`, `types.ts`, `cards/`, `rules/`, `bot/`: Official 3–7P simultaneous drafting, all 7 Wonders (Day A & Night B), Ages I–III + Guilds, Pareto neighbor commerce, Military Conflicts, Halikarnassus/Olympia/Babylon special phases, multi-wildcard Science optimizer, redaction, pre-reveal `UNSELECT_DRAFT_ACTION`, and 4-tier AI (`easy`–`master`)
+- `packages/games/splendor/`: Pure, deterministic Splendor engine plugin (`config.ts`, `types.ts`, `cards.ts`, `rules/`, `bot/`) with 2–4P scaling, deck/blind-reserve redaction, and 4-tier lookahead AI
+- `packages/games/azul/`: Pure, deterministic Azul engine plugin (`config.ts`, `types.ts`, `rules/`, `bot/`) with 2–4P Factory/Center drafting, wall chain scoring, bag conservation redaction, and 4-tier Negamax/MaxN AI
+- `apps/server/`: HTTP + WebSocket multiplayer platform server (`config.ts`, `room-manager/`, `http-ws/`) supporting rooms, lobbies, multi-guest + local pass-and-play control, bots, per-viewer state redaction, and static web hosting
+- `apps/web/`: Interactive pure-functional browser client (`src/config/`, `src/app/`, `src/catan-graphics/`, `src/views/`, `src/tutorials/`, `public/styles/`) featuring **Online Multiplayer**, **Offline Pass-and-Play**, **Interactive Live-Board Tutorials**, and **Reference Guides** for all 4 games
+- `tests/`: Modular unit, expansion, parity snapshot, pure-functional + `<= 500`-line file-size constraint (`tests/parity/codebase-constraints.test.ts`), and full-game fuzz tests
+
+## Code Organization & Readability Rules
+
+- **Max 500 Lines Per File**: Keep every source, stylesheet, script, and test file strictly `<= 500` lines (enforced automatically in `tests/parity/codebase-constraints.test.ts`). Group related modules into cohesive subdirectories with clean barrel re-exports.
+- **Dedicated Config Modules**: Place game constants, scaling tables, scenario definitions, palettes, and bot tuning weights in dedicated `config.ts` or `config/` modules rather than hardcoding them inside rule/view/controller logic.
+- **Pure Functional Style**: Zero `class`, zero `this`, and zero OOP project `new` calls across `packages/`, `apps/`, and `scripts/`.
 
 ## Build, Test, and Validation Commands
 

@@ -9,15 +9,11 @@ import {
 } from "./rules.ts";
 import type { SplendorAction, SplendorConfig, SplendorState } from "./types.ts";
 
+export * from "./config.ts";
 export * from "./types.ts";
 export * from "./cards.ts";
 export * from "./rules.ts";
 export * from "./bot.ts";
-
-export function getSplendorActingPlayerId(state: SplendorState): string | null {
-  if (state.phase === "GAME_OVER") return null;
-  return state.players[state.activePlayerIndex]?.id ?? null;
-}
 
 export const SplendorEngine: GameEngine<
   SplendorState,

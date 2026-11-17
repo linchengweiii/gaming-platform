@@ -1,6 +1,10 @@
 import type { GameEngine, GameEvent, PlayerDescriptor } from "@gaming-platform/core";
 import { chooseSevenWondersBotAction } from "./bot.ts";
 import {
+  SEVEN_WONDERS_MAX_PLAYERS,
+  SEVEN_WONDERS_MIN_PLAYERS,
+} from "./config/game-config.ts";
+import {
   applySevenWondersAction,
   checkSevenWondersInvariants,
   getSevenWondersActingPlayerId,
@@ -15,9 +19,15 @@ import type {
 } from "./types.ts";
 
 export * from "./types.ts";
+export * from "./config/index.ts";
 export * from "./cards.ts";
 export * from "./rules.ts";
 export * from "./bot.ts";
+export {
+  ALL_WONDER_IDS,
+  WONDER_BOARDS,
+  getWonderBoardDefinition,
+} from "./config/wonders-config.ts";
 
 export const SevenWondersEngine: GameEngine<
   SevenWondersState,
@@ -31,8 +41,8 @@ export const SevenWondersEngine: GameEngine<
     name: "7 Wonders",
     description:
       "Lead one of the Seven Wonders of the Ancient World across three Ages of simultaneous card drafting, neighbor commerce, military conflicts, science, and grand guilds.",
-    minPlayers: 3,
-    maxPlayers: 7,
+    minPlayers: SEVEN_WONDERS_MIN_PLAYERS,
+    maxPlayers: SEVEN_WONDERS_MAX_PLAYERS,
     supportsBots: true,
   },
 

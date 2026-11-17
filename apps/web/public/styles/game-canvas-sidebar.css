@@ -1,0 +1,194 @@
+/* ---------------------------------------------------------------- Action Dock & Sub-Modals */
+.action-dock {
+  width: 100%;
+  padding: var(--s-3) var(--s-4);
+  background: var(--bg);
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  position: relative;
+  z-index: 14;
+}
+
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  align-items: center;
+}
+
+#btn-mode-maritime,
+#btn-mode-domestic,
+#btn-end-turn {
+  flex-shrink: 0;
+}
+
+.action-prompt {
+  font-size: var(--t-small);
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.sub-modal {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  padding: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+/* ---------------------------------------------------------------- Sidebar Standings & Log */
+.ga-sidebar {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ga-standings-section,
+.ga-sidebar__secondary,
+.ga-bank-section,
+.ga-log-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ga-sidebar__secondary {
+  gap: 14px;
+}
+
+.ga-sidebar__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-2);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t-label);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.player-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.player-card.active-turn {
+  border-color: var(--action);
+}
+
+.player-header,
+.player-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.player-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  flex: none;
+}
+
+.res-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.res-pill {
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-label);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.res-brick {
+  background: #7c2d12;
+  color: #ffedd5;
+}
+.res-lumber {
+  background: #14532d;
+  color: #dcfce7;
+}
+.res-wool {
+  background: #365314;
+  color: #ecfccb;
+}
+.res-grain {
+  background: #713f12;
+  color: #fef9c3;
+}
+.res-ore {
+  background: #334155;
+  color: #e2e8f0;
+}
+
+.ga-stat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.ga-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.ga-stat-row strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.event-log {
+  flex: 1;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--t-label);
+  padding-right: 4px;
+}
+
+.event-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border-left: 2px solid var(--line-strong);
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.event-item strong {
+  font-family: var(--font-mono);
+  color: var(--ink);
+  font-weight: 500;
+}

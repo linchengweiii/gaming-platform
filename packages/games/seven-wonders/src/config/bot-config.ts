@@ -1,0 +1,157 @@
+import type { BotDifficulty } from "@gaming-platform/core";
+import type { SevenWondersAge, WonderResource } from "../types.ts";
+
+export const SEVEN_WONDERS_BOT_RESOURCES: readonly WonderResource[] = [
+  "wood",
+  "stone",
+  "clay",
+  "ore",
+  "glass",
+  "loom",
+  "papyrus",
+];
+
+export interface SevenWondersBotTierProfile {
+  readonly difficulty: BotDifficulty;
+  readonly usesWheelIntel: boolean;
+  readonly usesNeighborDenial: boolean;
+  readonly usesBabylonSeventhCardLookahead: boolean;
+  readonly spendCoinPenaltyWeight: number;
+  readonly neighborCoinFeedPenaltyWeight: number;
+  readonly wonderStageUtilityScale: number;
+  readonly discardZeroCoinAge12Score: number;
+  readonly discardDefaultScore: number;
+}
+
+export const SEVEN_WONDERS_BOT_TIER_PROFILES: Readonly<
+  Record<BotDifficulty, SevenWondersBotTierProfile>
+> = {
+  easy: {
+    difficulty: "easy",
+    usesWheelIntel: false,
+    usesNeighborDenial: false,
+    usesBabylonSeventhCardLookahead: false,
+    spendCoinPenaltyWeight: 0,
+    neighborCoinFeedPenaltyWeight: 0,
+    wonderStageUtilityScale: 1.0,
+    discardZeroCoinAge12Score: 0,
+    discardDefaultScore: 0,
+  },
+  normal: {
+    difficulty: "normal",
+    usesWheelIntel: false,
+    usesNeighborDenial: false,
+    usesBabylonSeventhCardLookahead: false,
+    spendCoinPenaltyWeight: 0.52,
+    neighborCoinFeedPenaltyWeight: 0.18,
+    wonderStageUtilityScale: 1.0,
+    discardZeroCoinAge12Score: 2.2,
+    discardDefaultScore: 1.25,
+  },
+  smart: {
+    difficulty: "smart",
+    usesWheelIntel: false,
+    usesNeighborDenial: false,
+    usesBabylonSeventhCardLookahead: false,
+    spendCoinPenaltyWeight: 0.38,
+    neighborCoinFeedPenaltyWeight: 0.18,
+    wonderStageUtilityScale: 0.88,
+    discardZeroCoinAge12Score: 2.2,
+    discardDefaultScore: 1.25,
+  },
+  master: {
+    difficulty: "master",
+    usesWheelIntel: true,
+    usesNeighborDenial: true,
+    usesBabylonSeventhCardLookahead: true,
+    spendCoinPenaltyWeight: 0.36,
+    neighborCoinFeedPenaltyWeight: 0.42,
+    wonderStageUtilityScale: 1.0,
+    discardZeroCoinAge12Score: 1.35,
+    discardDefaultScore: 1.08,
+  },
+};
+
+export const SEVEN_WONDERS_NORMAL_BOT_WEIGHTS = {
+  coinImmediateWeight: 0.34,
+  shieldWeightByAge: { 1: 1.5, 2: 2.1, 3: 2.6 } as Readonly<Record<SevenWondersAge, number>>,
+  resourceWeightByAge: { 1: 2.4, 2: 1.3, 3: 0.1 } as Readonly<Record<SevenWondersAge, number>>,
+  tradeDiscountAge1: 2.0,
+  tradeDiscountLater: 0.8,
+  scienceBase: 1.8,
+  sciencePerExistingGreen: 0.9,
+  scienceMaxGreenCap: 3,
+  perCardVpBonus: 4.2,
+  perCardCoinBonus: 1.8,
+  perWonderStageVpBonus: 3.5,
+  perWonderStageCoinBonus: 1.5,
+  fallbackEffectBonus: 2.0,
+  wonderBaseBias: 0.5,
+  wonderShieldWeight: 1.8,
+  wonderSpecialEffectBonus: 4.2,
+  wonderNeighborCoinPenalty: 0.52,
+  halikarnassusSkipScore: -0.1,
+} as const;
+
+export const SEVEN_WONDERS_SMART_BOT_WEIGHTS = {
+  immediateCoinsBuildWeight: 0.36,
+  wonderNeighborCoinPenalty: 0.4,
+  halikarnassusSkipScore: -0.1,
+} as const;
+
+export const SEVEN_WONDERS_MASTER_BOT_WEIGHTS = {
+  duplicateCardPenalty: -999,
+  halikarnassusSkipScore: -0.05,
+  ownOpportunityLeakCoinWeight: 0.35,
+  ownOpportunityLeakScale: 0.08,
+  babylonLookaheadDraftRound: 6,
+  babylonLookaheadHandSize: 2,
+  zeusEarlyRoundThreshold: 3,
+  zeusLowNormalCoinThreshold: 2,
+  zeusEarlyOpportunityCost: 3.2,
+  zeusPerRoundOpportunityCost: 0.52,
+  military: {
+    tableDenialByPlayers: {
+      3: 0.9,
+      4: 0.65,
+      5: 0.45,
+      default: 0.28,
+    },
+    persistenceByAge: { 1: 1.62, 2: 1.32, 3: 1.0 } as Readonly<Record<SevenWondersAge, number>>,
+    baseCertainty: 0.58,
+    roundCertaintySlope: 0.42,
+    wheelRiskDiscount: 0.88,
+    overkillEarlyAgeBonus: 0.16,
+    overkillAge3Bonus: 0.02,
+    oneAheadCushionFactor: 0.22,
+    closeDeficitPerShieldBonus: 0.48,
+  },
+  science: {
+    babylonFutureWildcardBoost: 0.85,
+    age1NewDistinct: 1.85,
+    age1RepeatSymbol: 1.45,
+    age2CompleteSet: 1.65,
+    age2SecondDistinct: 1.75,
+    age2ThreePlusTotal: 1.05,
+    age2Base: 0.6,
+    age2BabylonScale: 0.7,
+    age3FutureWildcardDeltaScale: 0.55,
+    age3EarlyPairBonus: 0.5,
+  },
+  denial: {
+    duplicateOpponentFallback: 1.0,
+    unaffordableOpponentFallback: 1.1,
+    zeusOnlyCostPenalty: 3.5,
+    minCostPenaltySlope: 0.36,
+    nextReceiverMinDrop: 0.6,
+    nextReceiverDiscardMult: 0.65,
+    nextReceiverPlayMult: 0.85,
+    secondReceiverMinVal: 8.0,
+    secondReceiverGapFromBest: 1.5,
+    secondReceiverMinDrop: 1.0,
+    secondReceiverMult: 0.45,
+    halikarnassusGrossThreshold: 5.5,
+    halikarnassusGrossOffset: 4.5,
+    halikarnassusPenaltyMult: 0.55,
+  },
+} as const;

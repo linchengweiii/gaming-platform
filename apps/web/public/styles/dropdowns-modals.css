@@ -1,0 +1,268 @@
+/* Custom architectural dropdown (replaces native OS <select> popup chrome) */
+.ga-dropdown {
+  position: relative;
+  width: 100%;
+  display: flex;
+}
+
+.ga-dropdown--inline {
+  width: auto;
+  display: inline-flex;
+}
+
+.ga-dropdown__native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  pointer-events: none;
+}
+
+.ga-dropdown__trigger {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px 0 14px;
+  border-radius: var(--r-btn);
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 var(--t-body)/1.2 var(--font-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.ga-dropdown--sm .ga-dropdown__trigger {
+  height: 36px;
+  padding: 0 10px 0 12px;
+  font-size: var(--t-small);
+}
+
+.ga-dropdown--inline .ga-dropdown__trigger {
+  width: auto;
+  min-width: 164px;
+}
+
+.ga-dropdown__trigger:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--ink) 36%, transparent);
+  background: color-mix(in oklab, var(--ink) 3%, var(--bg));
+}
+
+.ga-dropdown.is-open .ga-dropdown__trigger {
+  border-color: var(--action);
+  background: color-mix(in oklab, var(--action) 6%, var(--bg));
+}
+
+.ga-dropdown__trigger:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 2px;
+}
+
+.ga-dropdown__trigger:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.ga-dropdown__label-group {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ga-dropdown__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-dropdown__meta {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+  flex: none;
+}
+
+.ga-dropdown__chev {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--muted);
+  transition: transform var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.ga-dropdown__trigger:hover:not(:disabled) .ga-dropdown__chev {
+  color: var(--ink);
+}
+
+.ga-dropdown.is-open .ga-dropdown__chev {
+  transform: rotate(180deg);
+  color: var(--action);
+}
+
+.ga-dropdown__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 80;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 32px -8px rgba(0, 0, 0, 0.64);
+  animation: gaDropdownIn 140ms var(--ease);
+}
+
+.ga-dropdown--inline .ga-dropdown__menu {
+  right: auto;
+  min-width: max(100%, 224px);
+  max-width: min(360px, calc(100vw - 24px));
+}
+
+.ga-dropdown--end .ga-dropdown__menu {
+  left: auto;
+  right: 0;
+}
+
+.ga-dropdown--up .ga-dropdown__menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  animation-name: gaDropdownInUp;
+}
+
+@keyframes gaDropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gaDropdownInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ga-dropdown__option {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: calc(var(--r-sm) - 2px);
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 400 var(--t-small)/1.3 var(--font-text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease), color 120ms var(--ease);
+}
+
+.ga-dropdown__option:hover,
+.ga-dropdown__option:focus-visible {
+  background: color-mix(in oklab, var(--ink) 8%, var(--surface));
+  outline: none;
+}
+
+.ga-dropdown__option[aria-selected="true"] {
+  background: color-mix(in oklab, var(--action) 14%, var(--surface));
+  font-weight: 500;
+}
+
+.ga-dropdown__option-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.ga-dropdown__check {
+  width: 14px;
+  height: 14px;
+  color: var(--action);
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+
+.ga-dropdown__option[aria-selected="true"] .ga-dropdown__check {
+  opacity: 1;
+}
+
+.ga-check-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.ga-check-row input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  cursor: pointer;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.ga-check-row input[type="checkbox"]:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--ink) 40%, transparent);
+}
+
+.ga-check-row input[type="checkbox"]:checked {
+  background-color: var(--action);
+  border-color: var(--action);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2.2 6.2L4.8 8.8L9.8 3.4' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.ga-check-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 2px;
+}
+
+.ga-check-row input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

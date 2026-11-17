@@ -1,0 +1,295 @@
+/* ============================================================================
+   7 Wonders Board View (Ancient World Drafting, Commerce, Wonders, Scorepad)
+   ============================================================================ */
+
+.sw-board {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px;
+  box-sizing: border-box;
+  color: var(--ink);
+}
+
+.sw-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 216px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.sw-neighbor-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: var(--surface-hi);
+  border: 1px solid var(--line);
+}
+
+.sw-age-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 74, 31, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid rgba(255, 74, 31, 0.34);
+}
+
+.sw-empire-card {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+}
+
+.sw-empire-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sw-wonder-stages-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.sw-wonder-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px dashed var(--line-strong);
+}
+
+.sw-wonder-stage.is-built {
+  border-style: solid;
+  border-color: rgba(74, 222, 128, 0.48);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.sw-wonder-stage.is-next {
+  border-style: solid;
+  border-color: rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.06);
+}
+
+.sw-tableau-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sw-tableau-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+
+.sw-built-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  font-size: 11px;
+  font-weight: 500;
+  color: #f8fafc;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-hand-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.sw-cards-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 10px;
+}
+
+.sw-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--surface-hi);
+  border: 1px solid var(--line-strong);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.sw-card:hover {
+  transform: translateY(-2px);
+}
+
+.sw-card.is-affordable {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.sw-card.is-selected {
+  box-shadow: 0 0 0 2px var(--action);
+}
+
+.sw-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 11px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sw-card__title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-card__body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 11px;
+  flex: 1 1 auto;
+}
+
+.sw-card__effects {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+}
+
+.sw-card__cost {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+}
+
+.sw-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.sw-card__actions .btn--sm {
+  flex: 1 1 auto;
+  height: 26px;
+  min-height: 26px;
+  padding-inline: 6px;
+  font-size: 11px;
+}
+
+.sw-res-pill,
+.sw-coin-badge,
+.sw-shield-badge,
+.sw-sci-badge,
+.sw-vp-badge,
+.sw-effect-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+}
+
+.sw-vp-badge {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(37, 99, 235, 0.22);
+  color: #dbeafe;
+}
+
+.sw-shield-badge {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(185, 28, 28, 0.24);
+  color: #fee2e2;
+}
+
+.sw-sci-badge {
+  border-color: rgba(74, 222, 128, 0.5);
+  background: rgba(21, 128, 61, 0.24);
+  color: #dcfce7;
+}
+
+.sw-coin-badge {
+  border-color: rgba(250, 204, 21, 0.5);
+  background: rgba(161, 98, 7, 0.24);
+  color: #fef08a;
+}
+
+.sw-scorepad-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  overflow-x: auto;
+}
+
+.sw-scorepad-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.sw-scorepad-table th,
+.sw-scorepad-table td {
+  padding: 6px 8px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+}
+
+.sw-scorepad-table th:first-child,
+.sw-scorepad-table td:first-child {
+  text-align: left;
+}

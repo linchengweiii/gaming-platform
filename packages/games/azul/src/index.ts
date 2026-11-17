@@ -4,27 +4,15 @@ import {
   applyAzulAction,
   checkAzulInvariants,
   getAzulLegalActions,
+  getAzulPlayerView,
   initAzulGame,
 } from "./rules.ts";
 import type { AzulAction, AzulConfig, AzulState } from "./types.ts";
 
+export * from "./config.ts";
 export * from "./types.ts";
 export * from "./rules.ts";
 export * from "./bot.ts";
-
-export function getAzulActingPlayerId(state: AzulState): string | null {
-  if (state.phase === "GAME_OVER") return null;
-  return state.players[state.activePlayerIndex]?.id ?? null;
-}
-
-export function getAzulPlayerView(state: AzulState): AzulState {
-  if (state.phase === "GAME_OVER") return state;
-  return {
-    ...state,
-    bag: [...state.bag].sort(),
-    rngState: 0,
-  };
-}
 
 export const AzulEngine: GameEngine<
   AzulState,

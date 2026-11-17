@@ -1,22 +1,13 @@
 import type { BotDifficulty, GameEvent } from "@gaming-platform/core";
+import {
+  AZUL_COLORS,
+  AZUL_WALL_PATTERN,
+  FLOOR_PENALTIES,
+} from "./config.ts";
 
-export const AZUL_COLORS = ["blue", "yellow", "red", "black", "teal"] as const;
+export { AZUL_COLORS, AZUL_WALL_PATTERN, FLOOR_PENALTIES };
 export type AzulTileColor = (typeof AZUL_COLORS)[number];
 export type FloorToken = AzulTileColor | "first_player";
-
-export const FLOOR_PENALTIES = [-1, -1, -2, -2, -2, -3, -3] as const;
-
-/**
- * Standard 5x5 Portuguese Azulejo Wall color pattern.
- * Each row shifts the color cycle right by 1 so no row or column repeats a color.
- */
-export const AZUL_WALL_PATTERN: readonly (readonly AzulTileColor[])[] = [
-  ["blue", "yellow", "red", "black", "teal"],
-  ["teal", "blue", "yellow", "red", "black"],
-  ["black", "teal", "blue", "yellow", "red"],
-  ["red", "black", "teal", "blue", "yellow"],
-  ["yellow", "red", "black", "teal", "blue"],
-];
 
 export interface PatternLineState {
   capacity: number; // 1..5 for rows 0..4

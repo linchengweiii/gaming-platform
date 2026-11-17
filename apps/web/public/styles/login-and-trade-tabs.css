@@ -1,0 +1,313 @@
+/* ---------------------------------------------------------------- Guest Login Page & User Pill */
+.ga-login-shell {
+  min-height: calc(100vh - 76px);
+  padding-top: var(--s-6);
+  padding-bottom: var(--s-6);
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 440px);
+  gap: var(--s-6);
+  align-items: center;
+}
+
+.ga-login-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  max-width: 60ch;
+}
+
+.ga-login-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-5);
+}
+
+.ga-login-error {
+  font-size: var(--t-small);
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.42);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+}
+
+.ga-user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--r-btn);
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  font-size: var(--t-small);
+  color: var(--ink);
+}
+
+.ga-user-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  flex: none;
+}
+
+.ga-user-pill__name {
+  font-weight: 500;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ga-seat-bot-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.ga-local-friend-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-2);
+  align-items: center;
+}
+
+.ga-saved-guests {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.ga-saved-guests__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ga-empty-rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line-strong);
+  background: var(--bg);
+}
+
+.ga-hand-privacy-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+/* ---------------------------------------------------------------- Trade Mode Switcher & Unified Matrix */
+.ga-trade-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 34px;
+}
+
+.ga-trade-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+}
+
+.ga-trade-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: var(--t-label);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease), color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+.ga-trade-tab:hover {
+  color: var(--ink);
+}
+
+.ga-trade-tab.is-active {
+  background: color-mix(in oklab, var(--action) 18%, var(--surface));
+  border-color: var(--action);
+  color: var(--ink);
+}
+
+.ga-res-col-head__card-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ga-res-col-head__rate {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+  background: rgba(24, 25, 27, 0.9);
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.ga-res-col-head__rate.is-port {
+  color: #fde047;
+  border-color: rgba(250, 204, 21, 0.55);
+  background: rgba(24, 25, 27, 0.95);
+}
+
+.ga-trade-bundle {
+  min-height: 28px;
+}
+
+.ga-trade-submit-btn {
+  min-width: 158px;
+  justify-content: center;
+}
+
+.ga-res-cell--stack {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 4px;
+}
+
+.ga-res-cell__stepper {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+}
+
+.ga-res-cell__meta {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  line-height: 1.1;
+  color: var(--muted);
+}
+
+.res-pill--hidden {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- Full-Viewport Zero-Scroll Game Canvas */
+.player-card__name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-card__hud-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.player-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.player-card__stats strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.player-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--line);
+  line-height: 1.25;
+}
+
+.player-stat-chip--ck {
+  gap: 6px;
+  padding: 3px 9px;
+}
+
+.player-stat-sep {
+  opacity: 0.48;
+}
+
+.ga-inline-summary__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ga-standings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.res-pills--bank {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.res-pills--bank[data-bank-mode="ck"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.res-pills--bank .res-pill {
+  justify-content: center;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.ga-stat-list--compact {
+  gap: 5px;
+  font-size: 12px;
+  padding-top: 2px;
+}

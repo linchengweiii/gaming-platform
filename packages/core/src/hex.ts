@@ -139,10 +139,7 @@ export function hexToPixel(
   r: number,
   hexSize = 56
 ): { x: number; y: number } {
-  return {
-    x: hexSize * SQRT3 * (q + r / 2),
-    y: hexSize * 1.5 * r,
-  };
+  return { x: hexSize * SQRT3 * (q + r / 2), y: hexSize * 1.5 * r };
 }
 
 /**
@@ -155,10 +152,7 @@ export function vertexToPixel(
   hexSize = 56
 ): { x: number; y: number } {
   const center = hexToPixel(q, r, hexSize);
-  return {
-    x: center.x,
-    y: dir === "N" ? center.y - hexSize : center.y + hexSize,
-  };
+  return { x: center.x, y: dir === "N" ? center.y - hexSize : center.y + hexSize };
 }
 
 /**
@@ -239,9 +233,7 @@ function createEdgeNode(
   const midX = Number(((node1.x + node2.x) / 2).toFixed(3));
   const midY = Number(((node1.y + node2.y) / 2).toFixed(3));
   const angleDeg = Number(
-    ((Math.atan2(node2.y - node1.y, node2.x - node1.x) * 180) / Math.PI).toFixed(
-      2
-    )
+    ((Math.atan2(node2.y - node1.y, node2.x - node1.x) * 180) / Math.PI).toFixed(2)
   );
 
   return {
@@ -346,23 +338,12 @@ export function buildHexBoardTopology(
         };
 
         return {
-          vertices: {
-            ...eAcc.vertices,
-            [vA]: updatedVA,
-            [vB]: updatedVB,
-          },
-          edges: {
-            ...eAcc.edges,
-            [eId]: updatedEdge,
-          },
+          vertices: { ...eAcc.vertices, [vA]: updatedVA, [vB]: updatedVB },
+          edges: { ...eAcc.edges, [eId]: updatedEdge },
           edgeOrder: existingEdge ? eAcc.edgeOrder : [...eAcc.edgeOrder, eId],
         };
       },
-      {
-        vertices: withCorners.vertices,
-        edges: acc.edges,
-        edgeOrder: acc.edgeOrder,
-      }
+      { vertices: withCorners.vertices, edges: acc.edges, edgeOrder: acc.edgeOrder }
     );
 
     return {
@@ -449,33 +430,14 @@ export function computeLongestSimpleEdgePath(
   const longestPath = playerEdgeIds.reduce<readonly EdgeId[]>(
     (bestAcc, startEdgeId) => {
       const edge = topology.edges[startEdgeId];
-      if (!edge) {
-        return bestAcc;
-      }
-      const initialVisited: ReadonlySet<EdgeId> = new Set<EdgeId>([
-        startEdgeId,
-      ]);
+      if (!edge) return bestAcc;
+      const initialVisited: ReadonlySet<EdgeId> = new Set<EdgeId>([startEdgeId]);
       const initialPath: readonly EdgeId[] = [startEdgeId];
-      const afterV1 = exploreFrom(
-        startEdgeId,
-        edge.v1,
-        initialVisited,
-        initialPath,
-        bestAcc
-      );
-      return exploreFrom(
-        startEdgeId,
-        edge.v2,
-        initialVisited,
-        initialPath,
-        afterV1
-      );
+      const afterV1 = exploreFrom(startEdgeId, edge.v1, initialVisited, initialPath, bestAcc);
+      return exploreFrom(startEdgeId, edge.v2, initialVisited, initialPath, afterV1);
     },
     []
   );
 
-  return {
-    length: longestPath.length,
-    bestPath: [...longestPath],
-  };
+  return { length: longestPath.length, bestPath: [...longestPath] };
 }

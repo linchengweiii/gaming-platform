@@ -1,0 +1,319 @@
+/* ---------------------------------------------------------------- Active Game Board Stage */
+
+.board-container {
+  background: radial-gradient(circle at 50% 42%, #0d628c 0%, #094566 48%, #062b42 82%, #031724 100%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  overflow: hidden;
+  min-height: 690px;
+}
+
+.board-container--neutral {
+  background: radial-gradient(circle at 50% 35%, #23262a 0%, #191b1e 70%, #141518 100%);
+}
+
+.board-banner {
+  width: 100%;
+  padding: 10px var(--s-4);
+  background: rgba(24, 25, 27, 0.92);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-3);
+  z-index: 2;
+}
+
+.board-svg-wrap {
+  width: 100%;
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-2) var(--s-3);
+  min-height: 460px;
+}
+
+.board-svg {
+  width: 100%;
+  height: 100%;
+  max-height: 560px;
+  user-select: none;
+}
+
+/* ---------------------------------------------------------------- On-Map Dice HUD, Contextual Spot Popover & Decision Popup */
+.map-dice-hud {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 16;
+  background: rgba(24, 25, 27, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.48);
+  pointer-events: none;
+  max-width: min(340px, calc(100% - 24px));
+}
+
+.map-dice-hud--rolled {
+  border-color: rgba(251, 191, 36, 0.55);
+}
+
+.map-dice-hud--seven {
+  border-color: rgba(248, 113, 113, 0.65);
+}
+
+.map-dice-hud__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-dice-hud__total {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fde047;
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.42);
+}
+
+.map-dice-hud__total--seven {
+  color: #fecaca;
+  background: rgba(220, 38, 38, 0.24);
+  border-color: rgba(248, 113, 113, 0.55);
+}
+
+.map-dice-hud__yields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.map-yield-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px 2px 3px;
+  border-radius: 6px;
+  background: rgba(34, 36, 39, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--ink);
+  pointer-events: auto;
+}
+
+.map-spot-popover {
+  position: absolute;
+  z-index: 24;
+  transform: translate(-50%, -108%);
+  min-width: 224px;
+  max-width: 300px;
+  background: rgba(24, 25, 27, 0.96);
+  backdrop-filter: blur(10px);
+  border: 1.5px solid #38bdf8;
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.62);
+}
+
+.map-spot-popover--below {
+  transform: translate(-50%, 16%);
+}
+
+.map-spot-popover__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.map-spot-popover__title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-spot-popover__close {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.map-spot-popover__close:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.map-spot-popover__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.map-decision-popup {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: min(640px, calc(100% - 24px));
+  background: rgba(24, 25, 27, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1.5px solid color-mix(in oklab, var(--action) 65%, var(--line-strong));
+  border-radius: var(--r-lg);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.62);
+}
+
+.map-decision-popup--compact {
+  width: auto;
+  max-width: calc(100% - 24px);
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+}
+
+.btn-roll-graphic {
+  height: 48px;
+  padding: 0 18px 0 12px;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 20px rgba(255, 74, 31, 0.35);
+}
+
+.action-btn-graphic {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding-inline: 10px;
+}
+
+.cost-pip-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.cost-pip {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------------------------------------------------------------- Bottom-Left Build Palette & Bottom-Right End Turn on Map */
+.map-build-dock {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 18;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--r-md);
+  background: rgba(24, 25, 27, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+
+.map-build-dock--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, auto));
+  gap: 6px;
+}
+
+.map-build-btn {
+  justify-content: space-between;
+  min-width: 164px;
+  height: 32px;
+  padding: 0 10px;
+  gap: 10px;
+}
+
+.map-build-dock--grid .map-build-btn {
+  min-width: 146px;
+}
+
+.map-build-btn__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.map-end-turn-hud {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 18;
+  padding: 8px 10px;
+  border-radius: var(--r-lg);
+  background: rgba(24, 25, 27, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid color-mix(in oklab, var(--action) 55%, var(--line-strong));
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.56);
+}
+
+.btn-end-turn-graphic {
+  height: 40px;
+  padding: 0 18px;
+  gap: 9px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: var(--r-md);
+  display: inline-flex;
+  align-items: center;
+  box-shadow: 0 8px 20px rgba(255, 74, 31, 0.32);
+}

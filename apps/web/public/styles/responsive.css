@@ -1,0 +1,390 @@
+@media (min-width: 1024px) {
+  /* Right sidebar HUD — Player status (Standings) is prioritized at top and LAST to scroll;
+     Game settings (folded by default), Bank & progress decks, and Match log scroll first below it */
+  .ga-game-canvas .ga-sidebar {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .ga-game-canvas .ga-standings-section {
+    flex: 0 0 auto;
+    max-height: calc(100% - 148px);
+    min-height: 0;
+    gap: 8px;
+  }
+
+  .ga-game-canvas .ga-standings-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+    gap: 8px;
+  }
+
+  .ga-game-canvas .ga-sidebar__secondary {
+    flex: 1 1 0;
+    min-height: 136px;
+    overflow-y: auto;
+    padding-right: 4px;
+    gap: 14px;
+  }
+
+  .ga-game-canvas .ga-bank-section,
+  .ga-game-canvas .ga-log-section {
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  .ga-game-canvas .ga-sidebar__head {
+    padding-bottom: 5px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .ga-game-canvas .ga-inline-summary {
+    padding: 10px 12px;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .ga-game-canvas .ga-settings-fold {
+    padding: 0;
+    gap: 0;
+    flex-shrink: 0;
+  }
+
+  .ga-game-canvas .ga-settings-fold__btn {
+    padding: 9px 12px;
+  }
+
+  .ga-game-canvas .ga-settings-fold__body {
+    padding: 9px 12px 11px;
+    gap: 7px;
+  }
+
+  .ga-game-canvas .ga-inline-summary .ga-chip {
+    height: 22px;
+    padding-inline: 8px;
+    font-size: 11px;
+  }
+
+  .ga-game-canvas .player-card {
+    padding: 12px 14px;
+    gap: 9px;
+  }
+
+  .ga-game-canvas .player-card .ga-chip {
+    height: 22px;
+    padding-inline: 8px;
+    font-size: 11px;
+  }
+
+  .ga-game-canvas .player-card .res-pill {
+    padding: 3px 8px;
+    font-size: 11.5px;
+    gap: 4px;
+  }
+
+  .ga-game-canvas .event-log {
+    flex: 0 0 auto;
+    max-height: none;
+    overflow: visible;
+    gap: 6px;
+    padding-right: 0;
+  }
+
+  .ga-game-canvas .event-item {
+    padding: 6px 10px;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+
+  /* Well-padded Splendor & Azul stages inside neutral scrollable board wrapper */
+  .ga-game-canvas .sp-board,
+  .ga-game-canvas .az-board {
+    padding: 16px 20px;
+    gap: 14px;
+  }
+
+  .ga-game-canvas .sp-noble-card {
+    padding: 8px 12px;
+    min-width: 144px;
+    gap: 6px;
+  }
+
+  .ga-game-canvas .sp-deck-card {
+    width: 98px;
+    min-height: 132px;
+    padding: 10px 8px;
+  }
+
+  .ga-game-canvas .sp-dev-card {
+    width: 136px;
+    min-height: 132px;
+    padding: 10px 11px;
+  }
+
+  .ga-game-canvas .sp-bank-bar {
+    padding: 10px 16px;
+    gap: 12px;
+  }
+
+  .ga-game-canvas .az-factory {
+    width: 96px;
+    height: 96px;
+    gap: 5px;
+  }
+
+  .ga-game-canvas .az-center-pool {
+    min-height: 64px;
+    padding: 10px 16px;
+  }
+
+  .ga-game-canvas .az-palace-card {
+    padding: 14px 18px;
+    gap: 10px;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1220px) {
+  .ga-game-canvas .ga-room-shell--game {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .ga-game-canvas .board-container {
+    min-height: 0;
+  }
+
+  .ga-game-canvas .board-container:not(.board-container--neutral) .board-svg-wrap {
+    height: clamp(360px, 52svh, 480px);
+    min-height: clamp(360px, 52svh, 480px);
+    max-height: clamp(360px, 52svh, 480px);
+    flex: 0 0 auto;
+    overflow: hidden;
+  }
+
+  .ga-game-canvas .map-decision-popup--compact {
+    left: auto;
+    right: 10px;
+    bottom: 10px;
+    transform: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .ga-login-shell {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    padding-top: var(--s-4);
+    gap: var(--s-4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ga-dropdown__menu,
+  .pulse-highlight {
+    animation: none;
+  }
+}
+
+/* ============================================================================
+   Cities & Knights Expansion UI (Barbarian HUD, Commodities, Flip-Chart, 8-Col Matrix)
+   ============================================================================ */
+
+.res-paper {
+  background: #14532d;
+  border-color: rgba(74, 222, 128, 0.55);
+  color: #dcfce7;
+}
+
+.res-cloth {
+  background: #365314;
+  border-color: rgba(163, 230, 53, 0.55);
+  color: #ecfccb;
+}
+
+.res-coin {
+  background: #334155;
+  border-color: rgba(148, 163, 184, 0.55);
+  color: #e2e8f0;
+}
+
+.ga-res-matrix--ck {
+  grid-template-columns: 64px repeat(8, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.ga-res-matrix--ck .ga-res-col-head {
+  padding: 2px 3px;
+}
+
+.ga-res-matrix--ck .ga-res-col-head__top {
+  font-size: 10px;
+}
+
+.ga-res-matrix--ck .ga-res-cell {
+  padding: 2px 2px;
+  gap: 2px;
+}
+
+.ga-res-matrix--ck .ga-res-step-btn {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+}
+
+.ga-res-matrix--ck .ga-res-step-val {
+  min-width: 15px;
+  font-size: 11.5px;
+}
+
+.map-barbarian-hud {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 184px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(18, 19, 22, 0.88);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.36);
+}
+
+.map-barbarian-hud__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.map-barbarian-hud__title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.barb-track-bar {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.barb-track-dot {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.barb-track-dot.is-target {
+  border-color: rgba(248, 113, 113, 0.65);
+  background: rgba(239, 68, 68, 0.22);
+}
+
+.barb-track-dot.is-ship {
+  background: #fbbf24;
+  border-color: #fef08a;
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.75);
+}
+
+.map-barbarian-hud__metros {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ck-metro-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--metro-accent, #fde047);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--metro-accent, rgba(253, 224, 71, 0.45));
+  pointer-events: auto;
+}
+
+.ck-upgrades-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ck-upgrade-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--disc-border, rgba(255, 255, 255, 0.14));
+}
+
+.ck-upgrade-col__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ck-upgrade-col__perk {
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--muted);
+}
+
+.ck-upgrade-col__perk.is-unlocked {
+  color: #bbf7d0;
+  font-weight: 500;
+}
+
+.ck-upgrade-col__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .ga-res-matrix--ck {
+    overflow-x: auto;
+    min-width: 520px;
+  }
+
+  .ck-upgrades-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .map-build-dock {
+    position: static;
+    margin: 8px 8px 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .map-end-turn-hud {
+    right: 8px;
+    bottom: 8px;
+    padding: 6px 8px;
+  }
+}
