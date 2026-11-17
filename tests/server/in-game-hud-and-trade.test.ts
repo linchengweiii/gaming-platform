@@ -177,13 +177,26 @@ describe("@gaming-platform/server - Zero-Scroll Canvas, Shared Trade Request & L
     uiApp.switchTradeMode("maritime_trade");
     expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('class="board-svg"');
     expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('class="map-build-dock ');
+    expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('id="btn-toggle-build-menu"');
+    expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('aria-expanded="false"');
+    expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('class="map-build-dock__panel " hidden>');
     expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('class="map-end-turn-hud"');
     expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('id="btn-end-turn"');
     expect(uiRoot.innerHTML).toContain('class="player-stat-chip"');
     expect(getBoardWrapHtml(uiRoot.innerHTML)).not.toContain("sub-modal");
     expect(getBoardWrapHtml(uiRoot.innerHTML)).not.toContain("map-decision-popup");
 
+    // Expand build menu, then verify switching modes folds it back automatically
+    uiApp.mapBuildMenuExpanded = true;
+    uiApp.render();
+    expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('class="map-build-dock is-open"');
+    expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('aria-expanded="true"');
+    expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('id="btn-fold-build-menu"');
+    expect(getBoardWrapHtml(uiRoot.innerHTML)).not.toContain('class="map-build-dock__panel " hidden>');
+
     uiApp.switchTradeMode("domestic_trade");
+    expect(uiApp.mapBuildMenuExpanded).toBe(false);
+    expect(getBoardWrapHtml(uiRoot.innerHTML)).toContain('aria-expanded="false"');
     expect(getBoardWrapHtml(uiRoot.innerHTML)).not.toContain("sub-modal");
     expect(getBoardWrapHtml(uiRoot.innerHTML)).not.toContain("map-decision-popup");
 

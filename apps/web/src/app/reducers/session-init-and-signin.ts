@@ -165,6 +165,7 @@ export function createInitialAppModelPure(
     activeTutorial: null,
     guideModalGameId: null,
     sidebarSettingsExpanded: false,
+    mapBuildMenuExpanded: false,
     debugMode:
       options?.debugMode !== undefined
         ? Boolean(options.debugMode)

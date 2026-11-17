@@ -98,6 +98,7 @@ export function bindCatanEvents(
         ...ctx.model,
         selectedBoardSpot: null,
         buildMode: null,
+        mapBuildMenuExpanded: false,
         selectedProgressCardId: null,
         inventorHex1: null,
         smithVertex1: null,
@@ -105,6 +106,17 @@ export function bindCatanEvents(
       };
       ctx.render();
     });
+  });
+
+  root.querySelector(".board-svg")?.addEventListener("click", () => {
+    if (ctx.model.mapBuildMenuExpanded || ctx.model.selectedBoardSpot) {
+      ctx.model = {
+        ...ctx.model,
+        mapBuildMenuExpanded: false,
+        selectedBoardSpot: null,
+      };
+      ctx.render();
+    }
   });
 
   root.querySelectorAll("[data-hand-res-card]").forEach((cardEl) => {
@@ -165,6 +177,7 @@ export function bindCatanEvents(
   root.querySelectorAll("[data-spot-hex]").forEach((el) => {
     el.addEventListener("click", (e) => {
       e.stopPropagation();
+      ctx.model = { ...ctx.model, mapBuildMenuExpanded: false };
       const hexId = el.getAttribute("data-spot-hex")!;
       handleCatanHexSpotClick(ctx, state, actingPlayerId, hexId);
     });
@@ -173,6 +186,7 @@ export function bindCatanEvents(
   root.querySelectorAll("[data-spot-vertex]").forEach((el) => {
     el.addEventListener("click", (e) => {
       e.stopPropagation();
+      ctx.model = { ...ctx.model, mapBuildMenuExpanded: false };
       const vertexId = el.getAttribute("data-spot-vertex")!;
       handleCatanVertexSpotClick(ctx, state, actingPlayerId, vertexId);
     });
@@ -181,6 +195,7 @@ export function bindCatanEvents(
   root.querySelectorAll("[data-spot-edge]").forEach((el) => {
     el.addEventListener("click", (e) => {
       e.stopPropagation();
+      ctx.model = { ...ctx.model, mapBuildMenuExpanded: false };
       const edgeId = el.getAttribute("data-spot-edge")!;
       handleCatanEdgeSpotClick(ctx, state, actingPlayerId, edgeId);
     });
@@ -190,6 +205,7 @@ export function bindCatanEvents(
   bindCatanTradeEvents(ctx, state, actingPlayerId);
 
   root.querySelector("#btn-buy-dev")?.addEventListener("click", () => {
+    ctx.model = { ...ctx.model, mapBuildMenuExpanded: false };
     ctx.dispatch(actingPlayerId, { type: "BUY_DEV_CARD" });
   });
 

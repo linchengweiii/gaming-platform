@@ -203,6 +203,28 @@ export function bindCatanPhasesAndCkEvents(
     ctx.dispatchUiAction(actingPlayerId, { type: "ROLL_DICE" });
   });
 
+  root
+    .querySelector("#btn-toggle-build-menu")
+    ?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      ctx.model = {
+        ...ctx.model,
+        mapBuildMenuExpanded: !ctx.model.mapBuildMenuExpanded,
+      };
+      ctx.render();
+    });
+
+  root
+    .querySelector("#btn-fold-build-menu")
+    ?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      ctx.model = {
+        ...ctx.model,
+        mapBuildMenuExpanded: false,
+      };
+      ctx.render();
+    });
+
   const bindToggleBuildMode = (
     selector: string,
     mode: Exclude<BuildMode, null>,
@@ -212,6 +234,7 @@ export function bindCatanPhasesAndCkEvents(
       ctx.model = {
         ...ctx.model,
         selectedBoardSpot: null,
+        mapBuildMenuExpanded: false,
         buildMode: ctx.model.buildMode === mode ? null : mode,
         ...(extraPatch ?? {}),
       };

@@ -281,6 +281,12 @@ export function buildMultiGamePlatformAppFacade(
     set sidebarSettingsExpanded(v: boolean) {
       ctx.model = { ...ctx.model, sidebarSettingsExpanded: v };
     },
+    get mapBuildMenuExpanded() {
+      return ctx.model.mapBuildMenuExpanded;
+    },
+    set mapBuildMenuExpanded(v: boolean) {
+      ctx.model = { ...ctx.model, mapBuildMenuExpanded: Boolean(v) };
+    },
     get debugMode() {
       return ctx.model.debugMode;
     },

@@ -376,10 +376,13 @@
   }
 
   .map-build-dock {
-    position: static;
-    margin: 8px 8px 0;
-    flex-direction: row;
-    flex-wrap: wrap;
+    left: 8px;
+    bottom: 8px;
+    max-width: calc(100% - 16px);
+  }
+
+  .map-build-dock__panel {
+    max-width: min(320px, calc(100vw - 24px));
   }
 
   .map-end-turn-hud {

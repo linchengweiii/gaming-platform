@@ -18,6 +18,7 @@ export function resetSubModesPure(model: Readonly<AppModel>): AppModel {
   return {
     ...model,
     buildMode: null,
+    mapBuildMenuExpanded: false,
     selectedBoardSpot: null,
     setupEdgeKind: "road",
     robberOrPirateMode: "robber",
@@ -142,6 +143,7 @@ export function switchTradeModePure(
   return {
     ...model,
     selectedBoardSpot: null,
+    mapBuildMenuExpanded: false,
     maritimeWant: syncedWants.maritimeWant,
     domesticWant: syncedWants.domesticWant,
     maritimeCommWant: syncedWants.maritimeCommWant,

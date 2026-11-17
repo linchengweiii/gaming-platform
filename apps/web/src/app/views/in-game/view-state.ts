@@ -95,6 +95,7 @@ export function computeInGameViewStatePure(
     ? {
         ...rawModel,
         buildMode: null,
+        mapBuildMenuExpanded: false,
         selectedMoveFromEdgeId: null,
         selectedMoveKnightFromVertexId: null,
         selectedChaseKnightVertexId: null,

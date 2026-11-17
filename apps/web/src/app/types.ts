@@ -191,6 +191,7 @@ export interface AppModel {
   } | null;
   readonly guideModalGameId: SupportedGameId | null;
   readonly sidebarSettingsExpanded: boolean;
+  readonly mapBuildMenuExpanded: boolean;
   readonly debugMode: boolean;
   readonly autoPlayBots: boolean;
   readonly autoRespondBotsToHuman: boolean;
@@ -276,6 +277,7 @@ export interface MultiGamePlatformApp {
   } | null;
   autoPlayBots: boolean;
   sidebarSettingsExpanded: boolean;
+  mapBuildMenuExpanded: boolean;
   debugMode: boolean;
   autoRespondBotsToHuman: boolean;
   autoPlaySpeedMs: number;

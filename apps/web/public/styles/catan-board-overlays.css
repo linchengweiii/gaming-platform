@@ -251,7 +251,7 @@
   justify-content: center;
 }
 
-/* ---------------------------------------------------------------- Bottom-Left Build Palette & Bottom-Right End Turn on Map */
+/* ---------------------------------------------------------------- Bottom-Left Foldable Build Menu & Bottom-Right End Turn on Map */
 .map-build-dock {
   position: absolute;
   left: 14px;
@@ -259,37 +259,122 @@
   z-index: 18;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border-radius: var(--r-md);
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.map-build-dock__bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--r-lg);
   background: rgba(24, 25, 27, 0.92);
   backdrop-filter: blur(8px);
   border: 1px solid var(--line-strong);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.52);
 }
 
-.map-build-dock--grid {
+.btn-build-toggle {
+  height: 36px;
+  padding: 0 13px;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: var(--r-md);
+  display: inline-flex;
+  align-items: center;
+}
+
+.map-build-ready-badge {
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  justify-content: center;
+}
+
+.map-build-chev {
+  width: 12px;
+  height: 12px;
+  opacity: 0.78;
+  transition: transform 150ms var(--ease);
+}
+
+.map-build-dock.is-open .map-build-chev {
+  transform: rotate(180deg);
+}
+
+.map-build-active-pill {
+  height: 34px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 12px;
+  border-color: color-mix(in oklab, var(--action) 65%, var(--line-strong));
+  background: color-mix(in oklab, var(--action) 16%, var(--surface));
+  color: var(--ink);
+}
+
+.map-build-dock__panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 10px;
+  border-radius: var(--r-md);
+  background: rgba(24, 25, 27, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.6);
+}
+
+.map-build-dock__panel[hidden] {
+  display: none !important;
+}
+
+.map-build-dock__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.map-build-dock__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.map-build-dock__grid.is-two-col {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, auto));
-  gap: 6px;
+  gap: 5px;
 }
 
 .map-build-btn {
   justify-content: space-between;
-  min-width: 164px;
-  height: 32px;
-  padding: 0 10px;
-  gap: 10px;
+  min-width: 152px;
+  height: 30px;
+  padding: 0 9px;
+  gap: 8px;
+  font-size: 12.5px;
 }
 
-.map-build-dock--grid .map-build-btn {
-  min-width: 146px;
+.map-build-dock__grid.is-two-col .map-build-btn {
+  min-width: 136px;
 }
 
 .map-build-btn__label {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   white-space: nowrap;
 }
 
@@ -298,7 +383,7 @@
   right: 14px;
   bottom: 14px;
   z-index: 18;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-radius: var(--r-lg);
   background: rgba(24, 25, 27, 0.92);
   backdrop-filter: blur(8px);
@@ -307,10 +392,10 @@
 }
 
 .btn-end-turn-graphic {
-  height: 40px;
-  padding: 0 18px;
-  gap: 9px;
-  font-size: 14px;
+  height: 36px;
+  padding: 0 16px;
+  gap: 8px;
+  font-size: 13.5px;
   font-weight: 600;
   border-radius: var(--r-md);
   display: inline-flex;
