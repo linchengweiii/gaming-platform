@@ -107,23 +107,21 @@ export function scoreMasterMainProgressCard(
       break;
     }
     case "commercial_harbor": {
-      const giveRes = act.params?.resource;
-      if (giveRes) {
-        const totalOppComms = COMMODITIES.reduce(
-          (sum, c) =>
-            sum +
-            Math.max(
-              0,
-              maxCommBank - state.commodityBank[c] - player.commodities[c]
-            ),
-          0
-        );
-        if (totalOppComms >= 2) {
-          const giveCostPenalty =
-            (giveRes === "ore" || giveRes === "grain" ? 9 : 3) -
-            Math.min(4, player.resources[giveRes]);
-          s = 22 + Math.min(3, totalOppComms) * 7 - giveCostPenalty;
-        }
+      const totalOppComms = COMMODITIES.reduce(
+        (sum, c) =>
+          sum +
+          Math.max(
+            0,
+            maxCommBank - state.commodityBank[c] - player.commodities[c]
+          ),
+        0
+      );
+      if (totalOppComms >= 2) {
+        const spareRes =
+          player.resources.brick +
+          player.resources.lumber +
+          player.resources.wool;
+        s = 20 + Math.min(3, totalOppComms) * 7 + Math.min(4, spareRes);
       }
       break;
     }

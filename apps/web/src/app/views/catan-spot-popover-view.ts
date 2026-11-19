@@ -10,6 +10,7 @@ import {
 import {
   RESOURCE_META,
   getBoardSpotPercentPosition,
+  getBoardSpotSvgCoords,
   renderActionPieceIconSvg,
   renderMiniResourceCardSvg,
 } from "../../catan-graphics.ts";
@@ -39,6 +40,7 @@ export function renderCatanSpotPopoverPure(
 
   const spot = model.selectedBoardSpot;
   const { xPct, yPct } = getBoardSpotPercentPosition(state, spot);
+  const { x: svgX, y: svgY } = getBoardSpotSvgCoords(state, spot);
   const belowClass = yPct < 36 ? "map-spot-popover--below" : "";
   const pColor = actingPlayer.color;
 
@@ -257,7 +259,7 @@ export function renderCatanSpotPopoverPure(
   if (!details.valid) return "";
 
   return `
-      <div class="map-spot-popover ${belowClass}" style="left: ${xPct.toFixed(1)}%; top: ${yPct.toFixed(1)}%;">
+      <div class="map-spot-popover ${belowClass}" data-spot-svg-x="${svgX.toFixed(2)}" data-spot-svg-y="${svgY.toFixed(2)}" style="left: ${xPct.toFixed(1)}%; top: ${yPct.toFixed(1)}%;">
         <div class="map-spot-popover__head">
           <div class="map-spot-popover__title">${details.titleHtml}</div>
           <button type="button" id="btn-close-spot-popover" class="map-spot-popover__close" aria-label="Close spot menu">×</button>

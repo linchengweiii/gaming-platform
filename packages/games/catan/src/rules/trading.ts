@@ -10,6 +10,7 @@ import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import {
   addResourcesPure,
   appendCatanEvent,
+  assertNonNegativeIntGoodMapPure,
   hasResources,
   subtractResourcesPure,
   totalResourceCount,
@@ -25,6 +26,10 @@ export function applyOfferDomesticTradePure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Can only offer domestic trade on your main phase");
   }
+  assertNonNegativeIntGoodMapPure(action.give, "Trade give resource");
+  assertNonNegativeIntGoodMapPure(action.want, "Trade want resource");
+  assertNonNegativeIntGoodMapPure(action.giveCommodities, "Trade give commodity");
+  assertNonNegativeIntGoodMapPure(action.wantCommodities, "Trade want commodity");
   const giveCommTotal = totalCommodityCount(action.giveCommodities);
   const wantCommTotal = totalCommodityCount(action.wantCommodities);
   if (

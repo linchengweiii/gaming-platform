@@ -132,7 +132,8 @@ export function applyPlayRoadBuildingPure(
   const availableSpots =
     getLegalRoadEdges(currentState, playerId, null).length +
     getLegalShipEdges(currentState, playerId, null).length;
-  const freeRoadsRemaining = Math.min(2, availablePieces, availableSpots);
+  const freeRoadsRemaining =
+    availableSpots > 0 ? Math.min(2, availablePieces) : 0;
 
   const playedState: CatanState = {
     ...currentState,

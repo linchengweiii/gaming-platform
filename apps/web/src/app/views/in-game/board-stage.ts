@@ -310,14 +310,20 @@ export function renderInGameBoardStagePure(
                       </div>
                     </div>`
                   : room.gameId === "catan"
-                    ? renderCatanActionDockPure(
-                        model,
-                        room,
-                        state as CatanState,
-                        actingPlayer,
-                        catanLegalActions,
-                        canCancelMyTrade
-                      )
+                    ? Boolean(handPlayer) &&
+                      controllableHumansCount >= 2 &&
+                      model.hidePassAndPlayHand
+                      ? `<div class="action-buttons" style="justify-content: space-between;">
+                          <span class="action-prompt">Pass device to <strong>${escapeAttr(handPlayer!.name)}</strong> and reveal their hand below to continue (${formatPhaseLabel(state.phase)}).</span>
+                        </div>`
+                      : renderCatanActionDockPure(
+                          model,
+                          room,
+                          state as CatanState,
+                          actingPlayer,
+                          catanLegalActions,
+                          canCancelMyTrade
+                        )
                     : room.gameId === "splendor"
                        ? renderSplendorActionDock(
                           state as SplendorState,

@@ -28,6 +28,7 @@ const IMMEDIATE_PROGRESS_CARD_TYPES = new Set([
   "warlord",
   "saboteur",
   "wedding",
+  "commercial_harbor",
 ]);
 
 export function attachCatanUiActions(ctx: AppRuntimeContext): void {

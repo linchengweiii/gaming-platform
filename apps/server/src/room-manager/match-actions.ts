@@ -31,7 +31,10 @@ export function startGamePure(
   requesterId?: string
 ): { state: RoomManagerState; gameState: any } {
   const rawRoom = getRoomRecordPure(managerState, roomId);
-  if (requesterId && rawRoom.ownerId && requesterId !== rawRoom.ownerId) {
+  if (rawRoom.status === "in_progress") {
+    throw new Error("Match is already in progress");
+  }
+  if (rawRoom.ownerId && requesterId !== rawRoom.ownerId) {
     throw new Error("Only the room owner can start the game");
   }
 

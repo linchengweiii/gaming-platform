@@ -1,13 +1,11 @@
-import { type EdgeId, type HexId, type RngState, pickPure } from "@gaming-platform/core";
+import type { EdgeId, GameEvent, HexId } from "@gaming-platform/core";
 import type { ProgressCardPlayParams } from "../types/actions.ts";
 import { type ProgressCardInstance, RESOURCES } from "../types/domain.ts";
-import type { CatanPlayerState, CatanState } from "../types/state.ts";
+import type { CatanState, PendingCkInteraction } from "../types/state.ts";
 import {
   type StateEventsPair,
-  drawOneRandomHandGoodPure,
   pushCkEvent,
   totalCommodityCount,
-  transferGoodBetweenPlayersPure,
 } from "./helpers.ts";
 import { applyPoliticsBoardProgressCardPure } from "./progress-politics-board.ts";
 
@@ -18,7 +16,13 @@ export function applyPoliticsProgressCardPure(
   params: ProgressCardPlayParams | undefined,
   computeVpFn: (s: CatanState, pid: string, visibleOnly?: boolean) => number,
   getLegalRoadEdgesFn: (s: CatanState, pid: string) => EdgeId[],
-  getLegalRobberHexesFn: (s: CatanState, pid: string) => HexId[]
+  getLegalRobberHexesFn: (s: CatanState, pid: string) => HexId[],
+  revealAdjacentFogFn: (
+    s: CatanState,
+    pid: string,
+    edgeId: EdgeId,
+    emitted: readonly GameEvent[]
+  ) => { readonly state: CatanState; readonly emitted: GameEvent[] }
 ): StateEventsPair {
   const actor = stateAfterConsume.players.find((p) => p.id === playerId)!;
 
@@ -34,7 +38,8 @@ export function applyPoliticsProgressCardPure(
         card,
         params,
         getLegalRoadEdgesFn,
-        getLegalRobberHexesFn
+        getLegalRobberHexesFn,
+        revealAdjacentFogFn
       );
 
     case "saboteur": {
@@ -76,47 +81,21 @@ export function applyPoliticsProgressCardPure(
       if (!victim || victim.id === playerId || victim.progressCards.length === 0) {
         throw new Error("Invalid Spy target player");
       }
-      const [stolenCard, nextRng] = pickPure(
-        stateAfterConsume.rngState,
-        victim.progressCards
-      );
-      const nextPlayers = stateAfterConsume.players.map((p) => {
-        if (p.id === victim.id) {
-          return {
-            ...p,
-            progressCards: p.progressCards.filter((c) => c.id !== stolenCard.id),
-          };
-        }
-        if (p.id === playerId) {
-          return {
-            ...p,
-            progressCards: [...p.progressCards, stolenCard],
-          };
-        }
-        return p;
-      });
-      const updatedActor = nextPlayers.find((p) => p.id === playerId)!;
-      const nextPendingDiscards =
-        updatedActor.progressCards.length > 4 &&
-        !stateAfterConsume.pendingProgressDiscards.includes(playerId)
-          ? [...stateAfterConsume.pendingProgressDiscards, playerId]
-          : stateAfterConsume.pendingProgressDiscards;
-
+      const pending: PendingCkInteraction = {
+        kind: "spy_choose_card",
+        actorId: playerId,
+        targetPlayerId: victim.id,
+      };
       const nextState: CatanState = {
         ...stateAfterConsume,
-        rngState: nextRng,
-        players: nextPlayers,
-        pendingProgressDiscards: nextPendingDiscards,
-        phase:
-          nextPendingDiscards.length > 0
-            ? "PROGRESS_CARD_SELECTION"
-            : stateAfterConsume.phase,
+        phase: "CK_INTERACTION",
+        pendingCkInteraction: pending,
       };
       return pushCkEvent(
         nextState,
         [],
         "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Spy and stole 1 Progress Card from ${victim.name}.`,
+        `${actor.name} played Spy against ${victim.name} to inspect and take 1 Progress Card.`,
         playerId,
         { cardType: card.type, targetPlayerId: victim.id }
       );
@@ -124,74 +103,53 @@ export function applyPoliticsProgressCardPure(
 
     case "wedding": {
       const myVp = computeVpFn(stateAfterConsume, playerId, true);
-      const leaders = stateAfterConsume.players.filter(
-        (opp) =>
-          opp.id !== playerId &&
-          computeVpFn(stateAfterConsume, opp.id, true) > myVp
-      );
+      const n = stateAfterConsume.players.length;
+      const orderedGivers = Array.from({ length: Math.max(0, n - 1) }, (_, i) => {
+        const idx = (stateAfterConsume.activePlayerIndex + 1 + i) % n;
+        return stateAfterConsume.players[idx]!;
+      }).filter((opp) => {
+        if (opp.id === playerId) return false;
+        if (computeVpFn(stateAfterConsume, opp.id, true) <= myVp) return false;
+        const handCount =
+          RESOURCES.reduce<number>((s, r) => s + opp.resources[r], 0) +
+          totalCommodityCount(opp.commodities);
+        return handCount > 0;
+      });
 
-      const gifted = leaders.reduce<{
-        rngState: RngState;
-        players: CatanPlayerState[];
-        totalGained: number;
-      }>(
-        (acc, leader) => {
-          const step1 = (() => {
-            const curLeader = acc.players.find((p) => p.id === leader.id)!;
-            const [g1, r1] = drawOneRandomHandGoodPure(acc.rngState, curLeader);
-            if (!g1) return { rng: r1, players: acc.players, gained: 0 };
-            return {
-              rng: r1,
-              players: transferGoodBetweenPlayersPure(
-                acc.players,
-                leader.id,
-                playerId,
-                g1,
-                1
-              ),
-              gained: 1,
-            };
-          })();
-          const curLeader2 = step1.players.find((p) => p.id === leader.id)!;
-          const [g2, r2] = drawOneRandomHandGoodPure(step1.rng, curLeader2);
-          if (!g2) {
-            return {
-              rngState: r2,
-              players: step1.players,
-              totalGained: acc.totalGained + step1.gained,
-            };
-          }
-          return {
-            rngState: r2,
-            players: transferGoodBetweenPlayersPure(
-              step1.players,
-              leader.id,
-              playerId,
-              g2,
-              1
-            ),
-            totalGained: acc.totalGained + step1.gained + 1,
-          };
-        },
-        {
-          rngState: stateAfterConsume.rngState,
-          players: stateAfterConsume.players,
-          totalGained: 0,
-        }
-      );
+      if (orderedGivers.length === 0) {
+        return pushCkEvent(
+          stateAfterConsume,
+          [],
+          "PROGRESS_CARD_PLAYED",
+          `${actor.name} played Wedding (no leaders held cards to gift).`,
+          playerId,
+          { cardType: card.type }
+        );
+      }
 
+      const firstGiver = orderedGivers[0]!;
+      const firstHandCount =
+        RESOURCES.reduce<number>((s, r) => s + firstGiver.resources[r], 0) +
+        totalCommodityCount(firstGiver.commodities);
+      const pending: PendingCkInteraction = {
+        kind: "wedding_give_cards",
+        actorId: firstGiver.id,
+        initiatorId: playerId,
+        remainingGiverIds: orderedGivers.slice(1).map((p) => p.id),
+        requiredCount: Math.min(2, firstHandCount),
+      };
       const nextState: CatanState = {
         ...stateAfterConsume,
-        rngState: gifted.rngState,
-        players: gifted.players,
+        phase: "CK_INTERACTION",
+        pendingCkInteraction: pending,
       };
       return pushCkEvent(
         nextState,
         [],
         "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Wedding and received ${gifted.totalGained} gift card(s).`,
+        `${actor.name} played Wedding! Leaders must each gift up to 2 cards.`,
         playerId,
-        { cardType: card.type, totalGained: gifted.totalGained }
+        { cardType: card.type }
       );
     }
 

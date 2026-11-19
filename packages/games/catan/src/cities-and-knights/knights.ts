@@ -25,7 +25,40 @@ export function getTotalActiveKnightStrength(state: CatanState): number {
 }
 
 /**
- * Returns valid empty vertices connected to `playerId`'s roads/ships for `BUILD_KNIGHT`.
+ * Returns true iff `vertexId` borders at least one land hex (non-sea, non-fog).
+ * Official Seafarers + C&K rule: Knights may only stand on land intersections.
+ */
+export function isLandVertexPure(state: CatanState, vertexId: VertexId): boolean {
+  const vNode = state.topology.vertices[vertexId];
+  if (!vNode) return false;
+  return vNode.adjacentHexIds.some((hId) => {
+    const t = state.hexes[hId]?.terrain;
+    return Boolean(t && t !== "sea" && t !== "fog");
+  });
+}
+
+/**
+ * Returns valid empty land vertices connected to `playerId`'s own roads (ignoring knight supply).
+ */
+export function getLegalKnightPlacementVerticesPure(
+  state: CatanState,
+  playerId: string
+): VertexId[] {
+  if (!state.config.enableCitiesAndKnights) return [];
+  return state.topology.vertexOrder.filter((vId) => {
+    if (state.buildings[vId] || state.knights[vId]) return false;
+    if (!isLandVertexPure(state, vId)) return false;
+    const vNode = state.topology.vertices[vId]!;
+    return vNode.incidentEdgeIds.some(
+      (eId) =>
+        state.edges[eId]?.ownerId === playerId &&
+        state.edges[eId]?.type === "road"
+    );
+  });
+}
+
+/**
+ * Returns valid empty land vertices connected to `playerId`'s roads for `BUILD_KNIGHT`.
  */
 export function getLegalBuildKnightVertices(
   state: CatanState,
@@ -34,15 +67,7 @@ export function getLegalBuildKnightVertices(
   if (!state.config.enableCitiesAndKnights) return [];
   const player = state.players.find((p) => p.id === playerId);
   if (!player || player.basicKnightsRemaining <= 0) return [];
-
-  return state.topology.vertexOrder.filter((vId) => {
-    if (state.buildings[vId] || state.knights[vId]) return false;
-    const vNode = state.topology.vertices[vId]!;
-    const touchesLandOrSeaRoute = vNode.incidentEdgeIds.some(
-      (eId) => state.edges[eId]?.ownerId === playerId
-    );
-    return touchesLandOrSeaRoute;
-  });
+  return getLegalKnightPlacementVerticesPure(state, playerId);
 }
 
 export function canPromoteKnightAtVertex(
@@ -90,8 +115,8 @@ export function getLegalActivateKnightVertices(
 }
 
 /**
- * Pure BFS along `playerId`'s own roads/ships from `startVertexId`, stopping at vertices
- * blocked by an opponent's building or knight.
+ * Pure BFS along `playerId`'s own roads (land intersections only) from `startVertexId`,
+ * stopping at vertices blocked by an opponent's building or knight.
  */
 export function getReachableKnightVertices(
   state: CatanState,
@@ -111,11 +136,11 @@ export function getReachableKnightVertices(
 
     for (const edgeId of vNode.incidentEdgeIds) {
       const route = state.edges[edgeId];
-      if (!route || route.ownerId !== playerId) continue;
+      if (!route || route.ownerId !== playerId || route.type !== "road") continue;
       const eNode = state.topology.edges[edgeId];
       if (!eNode) continue;
       const neighbor = eNode.v1 === current ? eNode.v2 : eNode.v1;
-      if (visited.has(neighbor)) continue;
+      if (visited.has(neighbor) || !isLandVertexPure(state, neighbor)) continue;
       visited.add(neighbor);
 
       const b = state.buildings[neighbor];
@@ -264,8 +289,36 @@ export function takeKnightFromSupplyPure(
 }
 
 /**
+ * Prepares displacement of `displacedKnight` from `fromVertexId` on `stateAfterDisplacerPlaced`
+ * (where `fromVertexId` is already occupied by an attacking knight or vacated by Intrigue).
+ * Returns legal retreat vertices along the victim's own road network.
+ */
+export function prepareDisplaceKnightPure(
+  stateAfterDisplacerPlaced: CatanState,
+  displacedKnight: KnightPiece,
+  fromVertexId: VertexId
+): {
+  candidateVertexIds: VertexId[];
+  playersIfRemoved: CatanPlayerState[];
+} {
+  const candidateVertexIds = getReachableKnightVertices(
+    stateAfterDisplacerPlaced,
+    displacedKnight.ownerId,
+    fromVertexId,
+    displacedKnight.level,
+    false
+  );
+  const playersIfRemoved = stateAfterDisplacerPlaced.players.map((p) =>
+    p.id === displacedKnight.ownerId
+      ? returnKnightToSupplyPure(p, displacedKnight.level)
+      : p
+  );
+  return { candidateVertexIds, playersIfRemoved };
+}
+
+/**
  * Relocates a displaced opponent knight at `displacedVertexId` to the highest-pip connected
- * empty vertex on its owner's road/ship network, or returns it to supply if none exists.
+ * empty vertex on its owner's road network, or returns it to supply if none exists.
  */
 export function displaceKnightAtVertexPure(
   state: CatanState,

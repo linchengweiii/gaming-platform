@@ -348,11 +348,15 @@ export function buildHexAndHarborParts(
     const adjHexId = eNode.adjacentHexIds.find(
       (id) => state.hexes[id]?.terrain !== "sea"
     );
+    const adjSeaHexId = eNode.adjacentHexIds.find(
+      (id) => state.hexes[id]?.terrain === "sea"
+    );
     const landHex = adjHexId ? topo.hexes[adjHexId] : null;
     const dx = landHex ? eNode.midX - landHex.centerX : 0;
     const dy = landHex ? eNode.midY - landHex.centerY : 0;
-    const bx = Number((eNode.midX + dx * 0.72).toFixed(2));
-    const by = Number((eNode.midY + dy * 0.72).toFixed(2));
+    const buoyOffset = adjSeaHexId ? 0.56 : 0.72;
+    const bx = Number((eNode.midX + dx * buoyOffset).toFixed(2));
+    const by = Number((eNode.midY + dy * buoyOffset).toFixed(2));
 
     const isGeneric = harbor.type === "generic";
     const ratioText = isGeneric ? "3:1" : "2:1";
@@ -363,7 +367,7 @@ export function buildHexAndHarborParts(
     const badgeW = isGeneric ? 46 : 58;
 
     parts.push(`
-      <g filter="url(#piece-shadow)" class="harbor-marker">
+      <g filter="url(#piece-shadow)" class="harbor-marker" pointer-events="none">
         <!-- Timber pier pilings to coastal vertices -->
         <line x1="${bx}" y1="${by}" x2="${eNode.x1}" y2="${eNode.y1}" stroke="#451a03" stroke-width="5.2" stroke-linecap="round" />
         <line x1="${bx}" y1="${by}" x2="${eNode.x1}" y2="${eNode.y1}" stroke="#b45309" stroke-width="2.6" stroke-dasharray="2.5,2.5" />

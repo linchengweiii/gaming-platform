@@ -22,7 +22,11 @@ import {
   assertCanBuildInCurrentPhase,
   updatePlayerById,
 } from "./helpers.ts";
-import { getLegalRoadEdges } from "./network.ts";
+import {
+  getLegalRoadEdges,
+  getLegalShipEdges,
+  revealAdjacentFogHexesPure,
+} from "./network.ts";
 import { getLegalRobberHexes } from "./robber-pirate.ts";
 
 export function applyUpgradeCityImprovementPure(
@@ -258,7 +262,10 @@ export function applyPlayProgressCardPure(
     action.params,
     computePlayerVictoryPoints,
     (s, pid) => getLegalRoadEdges(s, pid, null),
-    getLegalRobberHexes
+    (s, pid) => getLegalShipEdges(s, pid, null),
+    getLegalRobberHexes,
+    (s, pid, edgeId, emitted) =>
+      revealAdjacentFogHexesPure(s, edgeId, pid, emitted)
   );
 
   const awardedState = recalculateAwardsPure(applied.state);

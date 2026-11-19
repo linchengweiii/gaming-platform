@@ -19,6 +19,7 @@ import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import {
   addResourcesPure,
   appendCatanEvent,
+  assertNonNegativeIntGoodMapPure,
   hasResources,
   omitRecordKey,
   subtractResourcesPure,
@@ -124,9 +125,13 @@ export function applyDiscardCardsPure(
   if (required <= 0) {
     throw new Error("You do not need to discard");
   }
-  const discardSum =
-    totalResourceCount(action.resources) +
-    totalCommodityCount(action.commodities);
+  assertNonNegativeIntGoodMapPure(action.resources, "Discard resource");
+  assertNonNegativeIntGoodMapPure(action.commodities, "Discard commodity");
+  const discardCommSum = totalCommodityCount(action.commodities);
+  if (!currentState.config.enableCitiesAndKnights && discardCommSum > 0) {
+    throw new Error("Commodities are only available in Cities & Knights");
+  }
+  const discardSum = totalResourceCount(action.resources) + discardCommSum;
   if (discardSum !== required) {
     throw new Error(
       `Must discard exactly ${required} cards (got ${discardSum})`

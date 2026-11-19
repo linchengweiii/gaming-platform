@@ -1,4 +1,4 @@
-import type { EdgeId, HexId } from "@gaming-platform/core";
+import type { EdgeId, GameEvent, HexId } from "@gaming-platform/core";
 import type { ProgressCardPlayParams } from "../types/actions.ts";
 import type { ProgressCardInstance } from "../types/domain.ts";
 import type { CatanState } from "../types/state.ts";
@@ -17,7 +17,14 @@ export function applyMainPhaseProgressCardPure(
   params: ProgressCardPlayParams | undefined,
   computeVpFn: (s: CatanState, pid: string, visibleOnly?: boolean) => number,
   getLegalRoadEdgesFn: (s: CatanState, pid: string) => EdgeId[],
-  getLegalRobberHexesFn: (s: CatanState, pid: string) => HexId[]
+  getLegalShipEdgesFn: (s: CatanState, pid: string) => EdgeId[],
+  getLegalRobberHexesFn: (s: CatanState, pid: string) => HexId[],
+  revealAdjacentFogFn: (
+    s: CatanState,
+    pid: string,
+    edgeId: EdgeId,
+    emitted: readonly GameEvent[]
+  ) => { readonly state: CatanState; readonly emitted: GameEvent[] }
 ): StateEventsPair {
   switch (card.type) {
     case "mining":
@@ -32,7 +39,9 @@ export function applyMainPhaseProgressCardPure(
         stateAfterConsume,
         playerId,
         card,
-        params
+        params,
+        getLegalRoadEdgesFn,
+        getLegalShipEdgesFn
       );
 
     case "warlord":
@@ -50,7 +59,8 @@ export function applyMainPhaseProgressCardPure(
         params,
         computeVpFn,
         getLegalRoadEdgesFn,
-        getLegalRobberHexesFn
+        getLegalRobberHexesFn,
+        revealAdjacentFogFn
       );
 
     case "merchant":

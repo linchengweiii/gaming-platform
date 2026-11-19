@@ -16,7 +16,7 @@ import {
   clearActiveRoomIdFromStorage,
 } from "./context.ts";
 import {
-  fetchWithTimeout,
+  attachGuestTokenAndFetchHelpers,
   isLikelyStaticHostResponsePure,
 } from "./http-fetch-helper.ts";
 import {
@@ -25,6 +25,7 @@ import {
 } from "./realtime-ws.ts";
 
 export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
+  attachGuestTokenAndFetchHelpers(ctx);
   attachRealtimeWsActions(ctx);
 
   const cancelPendingSetupSync = (): void => {
@@ -78,8 +79,10 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
     const requestedPlayerId = ctx.model.currentUserId;
     const capturedEpoch = ctx.navEpoch;
     try {
-      const res = await fetchWithTimeout(
-        `/api/rooms/${encodeURIComponent(requestedRoomId)}?playerId=${encodeURIComponent(requestedPlayerId)}`
+      const res = await ctx.fetchApi(
+        `/api/rooms/${encodeURIComponent(requestedRoomId)}`,
+        undefined,
+        { guestId: requestedPlayerId }
       );
       if (
         ctx.navEpoch !== capturedEpoch ||
@@ -178,10 +181,9 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
     if (!ctx.model.useServerBackend) return;
     const requestedPlayerId = ctx.model.currentUserId;
     try {
-      const playerQuery = requestedPlayerId
-        ? `?playerId=${encodeURIComponent(requestedPlayerId)}`
-        : "";
-      const res = await fetchWithTimeout(`/api/rooms${playerQuery}`);
+      const res = await ctx.fetchApi(`/api/rooms`, undefined, {
+        guestId: requestedPlayerId || null,
+      });
       const ct = res.headers.get("content-type") ?? "";
 
       if (
@@ -298,7 +300,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
       const p = (async () => {
         try {
           const latest = ctx.model.rooms[room.roomId] ?? room;
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(latest.roomId)}/setup`,
             {
               method: "POST",

@@ -19,11 +19,13 @@ import type {
   Harbor,
   HexTile,
   ImprovementDiscipline,
+  KnightLevel,
   KnightPiece,
   MetropolisState,
   ProgressCardInstance,
   ProgressCardType,
   ResourceMap,
+  ResourceType,
   TradeOffer,
   VertexBuilding,
 } from "./domain.ts";
@@ -41,9 +43,65 @@ export type TurnPhase =
   | "MOVE_ROBBER_OR_PIRATE"
   | "STEAL_RESOURCE"
   | "ROAD_BUILDING_DEV"
+  | "CK_INTERACTION"
   | "MAIN_PHASE"
   | "SPECIAL_BUILDING"
   | "GAME_OVER";
+
+export type PendingCkInteraction =
+  | {
+      kind: "displace_knight";
+      actorId: string;
+      knight: KnightPiece;
+      fromVertexId: VertexId;
+      candidateVertexIds: VertexId[];
+    }
+  | {
+      kind: "deserter_choose_knight";
+      actorId: string;
+      initiatorId: string;
+      candidateVertexIds: VertexId[];
+    }
+  | {
+      kind: "deserter_place_knight";
+      actorId: string;
+      targetPlayerId: string;
+      vacatedVertexId: VertexId;
+      knightLevel: KnightLevel;
+      knightActive: boolean;
+      candidateVertexIds: VertexId[];
+    }
+  | {
+      kind: "spy_choose_card";
+      actorId: string;
+      targetPlayerId: string;
+    }
+  | {
+      kind: "master_merchant_choose_cards";
+      actorId: string;
+      targetPlayerId: string;
+      maxCards: number;
+    }
+  | {
+      kind: "wedding_give_cards";
+      actorId: string;
+      initiatorId: string;
+      remainingGiverIds: string[];
+      requiredCount: number;
+    }
+  | {
+      kind: "commercial_harbor_offer";
+      actorId: string;
+      offeredPlayerIds: string[];
+      eligibleTargetIds: string[];
+    }
+  | {
+      kind: "commercial_harbor_respond";
+      actorId: string;
+      initiatorId: string;
+      offeredResource: ResourceType;
+      offeredPlayerIds: string[];
+    };
 
 export interface CatanPlayerState {
   id: string;
@@ -154,6 +212,8 @@ export interface CatanState {
   stealCandidates: string[];
   /** Remaining free roads/ships during Road Building card */
   freeRoadsRemaining: number;
+  /** Pending multi-step Cities & Knights player choice interaction */
+  pendingCkInteraction: PendingCkInteraction | null;
   /** Active domestic trade offer */
   activeTradeOffer: TradeOffer | null;
   /** Special awards */

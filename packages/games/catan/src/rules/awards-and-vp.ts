@@ -154,17 +154,30 @@ export function recalculateAwardsPure(state: CatanState): CatanState {
         { ownerId: state.largestArmyOwnerId, size: state.largestArmySize }
       );
 
-  // 3. Harbormaster (>= 3 harbor points)
-  const nextHarborAward = state.config.enableHarbormaster
-    ? nextPlayers.reduce(
-        (acc, player) =>
-          player.harborPoints >= AWARD_THRESHOLDS.harbormasterMinPoints &&
-          player.harborPoints > acc.points
-            ? { ownerId: player.id as string | null, points: player.harborPoints }
-            : acc,
-        { ownerId: state.harbormasterOwnerId, points: state.harbormasterPoints }
-      )
-    : { ownerId: state.harbormasterOwnerId, points: state.harbormasterPoints };
+  // 3. Harbormaster (>= 3 harbor points; freshly recomputed so pillaged harbor cities update properly)
+  const nextHarborAward = (() => {
+    if (!state.config.enableHarbormaster) {
+      return {
+        ownerId: state.harbormasterOwnerId,
+        points: state.harbormasterPoints,
+      };
+    }
+    const maxHarbor = Math.max(0, ...nextPlayers.map((p) => p.harborPoints));
+    if (maxHarbor < AWARD_THRESHOLDS.harbormasterMinPoints) {
+      return { ownerId: null as string | null, points: 0 };
+    }
+    const leaders = nextPlayers.filter((p) => p.harborPoints === maxHarbor);
+    if (
+      state.harbormasterOwnerId &&
+      leaders.some((p) => p.id === state.harbormasterOwnerId)
+    ) {
+      return { ownerId: state.harbormasterOwnerId, points: maxHarbor };
+    }
+    if (leaders.length === 1) {
+      return { ownerId: leaders[0]!.id, points: maxHarbor };
+    }
+    return { ownerId: null as string | null, points: 0 };
+  })();
 
   return {
     ...state,
@@ -195,6 +208,10 @@ export function checkAndAssignWinnerPure(
   actingPlayerId: string
 ): { state: CatanState; won: boolean } {
   const awarded = recalculateAwardsPure(state);
+  // Official 5–6P rule: players may only win on their own turn, never during Special Building Phase.
+  if (awarded.phase === "SPECIAL_BUILDING") {
+    return { state: awarded, won: false };
+  }
   const vp = computePlayerVictoryPoints(awarded, actingPlayerId, false);
   if (vp >= awarded.config.targetVictoryPoints) {
     return {

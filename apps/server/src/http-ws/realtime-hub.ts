@@ -14,6 +14,7 @@ import {
   type RoomSummary,
   getRoomActingPlayerId,
 } from "../room-manager.ts";
+import type { GuestSessionStore } from "./guest-sessions.ts";
 import { resolveEffectiveViewerIdPure } from "./viewer-and-static.ts";
 import { handleClientJsonMessage } from "./ws-client-messages.ts";
 import {
@@ -31,7 +32,8 @@ import {
 export type { RealtimeHub } from "./ws-hub-types-and-presence.ts";
 
 export function createRealtimeHub(
-  roomManager: PlatformRoomManager
+  roomManager: PlatformRoomManager,
+  guestSessions: GuestSessionStore
 ): RealtimeHub {
   let wsClients: Readonly<Record<string, WsClient>> = {};
   const roomBotTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -124,8 +126,8 @@ export function createRealtimeHub(
           ? engine.getPlayerView(state, effectiveViewerId)
           : null;
         const legalActions =
-          state && actingId
-            ? engine.getLegalActions(state, effectiveViewerId ?? actingId)
+          state && actingId && effectiveViewerId
+            ? engine.getLegalActions(state, effectiveViewerId)
             : [];
         sendWsFrameSafe(client.socket, {
           type: "ROOM_STATE",
@@ -194,14 +196,31 @@ export function createRealtimeHub(
   }, WS_HEARTBEAT_INTERVAL_MS);
   heartbeatTimer.unref?.();
 
+  function evictPlayerFromRoom(roomId: string, targetPlayerId: string): void {
+    Object.values(wsClients).forEach((client) => {
+      if (client.playerId === targetPlayerId && client.roomId === roomId) {
+        upsertWsClient({ ...client, roomId: null });
+        sendWsFrameSafe(client.socket, {
+          type: "ROOM_REMOVED",
+          roomId,
+          reason: "You were removed from the room by the host.",
+        });
+      }
+    });
+    presence.removePlayerRoomPresence(roomId, targetPlayerId);
+    refreshRoomDisconnectClock(roomId);
+  }
+
   function sweepAbandonedRooms(
     nowMs = Date.now(),
     maxIdleMs = ABANDONED_ROOM_IDLE_MS
   ): string[] {
     const swept: string[] = [];
-    for (const [roomId] of Array.from(
-      presence.roomAllDisconnectedSince.entries()
-    )) {
+    const candidateRoomIds = new Set<string>([
+      ...presence.roomAllDisconnectedSince.keys(),
+      ...Object.keys(roomManager.getStateSnapshot().rooms),
+    ]);
+    for (const roomId of candidateRoomIds) {
       refreshRoomDisconnectClock(roomId, nowMs);
       const refreshedSince = presence.roomAllDisconnectedSince.get(roomId);
       if (refreshedSince !== undefined && nowMs - refreshedSince >= maxIdleMs) {
@@ -260,6 +279,7 @@ export function createRealtimeHub(
 
   const messageDeps = {
     roomManager,
+    guestSessions,
     presence,
     getClient: (clientId: string) => wsClients[clientId],
     upsertWsClient,
@@ -301,7 +321,12 @@ export function createRealtimeHub(
     const initialPlayerId = (() => {
       try {
         const u = new URL(req.url ?? "/", "http://localhost");
-        return u.searchParams.get("playerId")?.trim() || null;
+        const token = u.searchParams.get("token")?.trim() || null;
+        const verified = guestSessions.verifyToken(token);
+        if (!verified) return null;
+        const claimed = u.searchParams.get("playerId")?.trim() || null;
+        if (claimed && claimed !== verified) return null;
+        return verified;
       } catch {
         return null;
       }
@@ -388,6 +413,7 @@ export function createRealtimeHub(
     enrichSummaryWithPresence,
     refreshRoomDisconnectClock,
     removePlayerRoomPresence: presence.removePlayerRoomPresence,
+    evictPlayerFromRoom,
     signOutGuestConnections,
     cleanupDeletedRoomMeta,
     notifyRoomClosed,

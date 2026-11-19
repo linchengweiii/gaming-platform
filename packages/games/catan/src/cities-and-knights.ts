@@ -36,11 +36,14 @@ export {
   getLegalActivateKnightVertices,
   getLegalBuildKnightVertices,
   getLegalChaseRobberActions,
+  getLegalKnightPlacementVerticesPure,
   getLegalMoveKnightActions,
   getLegalPromoteKnightVertices,
   getPlayerActiveKnightStrength,
   getReachableKnightVertices,
   getTotalActiveKnightStrength,
+  isLandVertexPure,
+  prepareDisplaceKnightPure,
   returnKnightToSupplyPure,
   takeKnightFromSupplyPure,
 } from "./cities-and-knights/knights.ts";
@@ -51,3 +54,7 @@ export {
 } from "./cities-and-knights/barbarians.ts";
 export { getLegalProgressCardActions } from "./cities-and-knights/legal-actions.ts";
 export { applyMainPhaseProgressCardPure } from "./cities-and-knights/apply-actions.ts";
+export {
+  applyCkInteractionActionPure,
+  getCkInteractionLegalActionsPure,
+} from "./cities-and-knights/interactions.ts";

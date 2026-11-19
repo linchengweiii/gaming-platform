@@ -147,6 +147,48 @@ export function bindDropdownEventsOnRoot(root: HTMLElement): void {
   });
 }
 
+function alignCatanSpotPopoverToSvg(root: HTMLElement): void {
+  const wrap = root.querySelector(".board-svg-wrap") as HTMLElement | null;
+  if (!wrap || typeof wrap.querySelector !== "function") return;
+  const svg = wrap.querySelector(".board-svg") as SVGSVGElement | null;
+  const pop = wrap.querySelector(".map-spot-popover") as HTMLElement | null;
+  if (!svg || !pop || typeof wrap.getBoundingClientRect !== "function") {
+    return;
+  }
+  const sx = Number(pop.getAttribute("data-spot-svg-x"));
+  const sy = Number(pop.getAttribute("data-spot-svg-y"));
+  const vbAttr = svg.getAttribute("viewBox");
+  if (!Number.isFinite(sx) || !Number.isFinite(sy) || !vbAttr) return;
+  const parts = vbAttr.trim().split(/\s+/).map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return;
+  const [vbX, vbY, vbW, vbH] = parts as [number, number, number, number];
+  const wrapRect = wrap.getBoundingClientRect();
+  const svgRect = svg.getBoundingClientRect();
+  if (wrapRect.width <= 0 || wrapRect.height <= 0 || svgRect.width <= 0 || svgRect.height <= 0) {
+    return;
+  }
+  const scale = Math.min(svgRect.width / Math.max(1, vbW), svgRect.height / Math.max(1, vbH));
+  const renderedW = vbW * scale;
+  const renderedH = vbH * scale;
+  const offsetX = svgRect.left - wrapRect.left + (svgRect.width - renderedW) / 2;
+  const offsetY = svgRect.top - wrapRect.top + (svgRect.height - renderedH) / 2;
+  const px = offsetX + (sx - vbX) * scale;
+  const py = offsetY + (sy - vbY) * scale;
+  const popW = pop.offsetWidth || 240;
+  const popH = pop.offsetHeight || 120;
+  const pad = 8;
+  const clampedLeft = Math.max(pad, Math.min(wrapRect.width - popW - pad, px - popW / 2));
+  const aboveTop = py - popH - 14;
+  const belowTop = py + 16;
+  const clampedTop =
+    aboveTop >= pad
+      ? aboveTop
+      : Math.max(pad, Math.min(wrapRect.height - popH - pad, belowTop));
+  pop.classList.add("map-spot-popover--aligned");
+  pop.style.left = `${clampedLeft.toFixed(1)}px`;
+  pop.style.top = `${clampedTop.toFixed(1)}px`;
+}
+
 export function attachRenderHandlers(ctx: AppRuntimeContext): void {
   const { root } = ctx;
 
@@ -245,6 +287,7 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
     const inGameRendered = renderInGameViewPure(ctx.model, room, rawState);
     ctx.model = inGameRendered.model;
     root.innerHTML = inGameRendered.html;
+    alignCatanSpotPopoverToSvg(root);
     bindInGameEvents(
       ctx,
       room,

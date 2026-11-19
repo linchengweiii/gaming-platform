@@ -12,6 +12,7 @@ import {
   getLegalChaseRobberActions,
   getLegalMoveKnightActions,
 } from "../cities-and-knights/knights.ts";
+import { getCkInteractionLegalActionsPure } from "../cities-and-knights/interactions.ts";
 import { getLegalProgressCardActions } from "../cities-and-knights/legal-actions.ts";
 import type { CatanAction } from "../types/actions.ts";
 import {
@@ -102,6 +103,10 @@ export function getCatanLegalActions(
       return [{ type: "SELECT_GOLD_RESOURCE", resource: "grain" }];
     }
     return available.map((r) => ({ type: "SELECT_GOLD_RESOURCE", resource: r }));
+  }
+
+  if (state.phase === "CK_INTERACTION") {
+    return getCkInteractionLegalActionsPure(state, playerId);
   }
 
   // If there is an active domestic trade offer and a non-active player is responding

@@ -16,7 +16,6 @@ import {
   clearActiveRoomIdFromStorage,
   saveActiveRoomIdToStorage,
 } from "./context.ts";
-import { fetchWithTimeout } from "./http-fetch-helper.ts";
 import { evictDeletedActiveRoom } from "./realtime-ws.ts";
 
 export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
@@ -33,8 +32,10 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
       if (ctx.model.useServerBackend) {
         void (async () => {
           try {
-            const getRes = await fetchWithTimeout(
-              `/api/rooms/${encodeURIComponent(roomId)}?playerId=${encodeURIComponent(requestedPlayerId)}`
+            const getRes = await ctx.fetchApi(
+              `/api/rooms/${encodeURIComponent(roomId)}`,
+              undefined,
+              { guestId: requestedPlayerId }
             );
             if (ctx.navEpoch !== capturedEpoch) return;
             if (!getRes.ok) {
@@ -49,7 +50,7 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
             let latestRoom: ClientRoom;
 
             if (fetchedStatus === "lobby" || fetchedStatus === "finished") {
-              const joinRes = await fetchWithTimeout(
+              const joinRes = await ctx.fetchApi(
                 `/api/rooms/${encodeURIComponent(getData.room.roomId)}/join`,
                 {
                   method: "POST",
@@ -58,7 +59,8 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
                     playerId: requestedPlayerId,
                     playerName: ctx.model.currentUserName,
                   }),
-                }
+                },
+                { guestId: requestedPlayerId }
               );
               const joinData = await joinRes.json();
               if (ctx.navEpoch !== capturedEpoch) return;
@@ -133,7 +135,7 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
         try {
           let latestRoom = room;
           if (room.status === "lobby" || room.status === "finished") {
-            const joinRes = await fetchWithTimeout(
+            const joinRes = await ctx.fetchApi(
               `/api/rooms/${encodeURIComponent(room.roomId)}/join`,
               {
                 method: "POST",
@@ -142,7 +144,8 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
                   playerId: requestedPlayerId,
                   playerName: ctx.model.currentUserName,
                 }),
-              }
+              },
+              { guestId: requestedPlayerId }
             );
             if (ctx.navEpoch !== capturedEpoch) return;
             if (joinRes.status === 404) {
@@ -165,8 +168,10 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
             ctx.model = upserted.model;
             latestRoom = upserted.room;
           } else {
-            const getRes = await fetchWithTimeout(
-              `/api/rooms/${encodeURIComponent(room.roomId)}?playerId=${encodeURIComponent(requestedPlayerId)}`
+            const getRes = await ctx.fetchApi(
+              `/api/rooms/${encodeURIComponent(room.roomId)}`,
+              undefined,
+              { guestId: requestedPlayerId }
             );
             if (ctx.navEpoch !== capturedEpoch) return;
             if (getRes.status === 404) {
@@ -232,13 +237,14 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
       ctx.render();
       void (async () => {
         try {
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(leavingRoomId)}/leave`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ playerId: leavingPlayerId }),
-            }
+            },
+            { guestId: leavingPlayerId }
           );
           if (res.ok) {
             const data = await res.json();

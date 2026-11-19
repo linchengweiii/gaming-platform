@@ -21,7 +21,6 @@ import {
   saveActiveRoomIdToStorage,
 } from "./context.ts";
 import { attachGuestProfileActions } from "./guest-actions.ts";
-import { fetchWithTimeout } from "./http-fetch-helper.ts";
 import { attachRoomMembershipActions } from "./room-membership-actions.ts";
 
 export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
@@ -58,7 +57,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
     if (roomUsesServerPure(ctx.model, liveRoom)) {
       void (async () => {
         try {
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(liveRoom.roomId)}/local-players`,
             {
               method: "POST",
@@ -105,7 +104,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
     if (roomUsesServerPure(ctx.model, liveRoom)) {
       void (async () => {
         try {
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(liveRoom.roomId)}/remove-player`,
             {
               method: "POST",
@@ -155,7 +154,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
       const capturedEpoch = ctx.navEpoch;
       void (async () => {
         try {
-          const res = await fetchWithTimeout("/api/rooms", {
+          const res = await ctx.fetchApi("/api/rooms", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

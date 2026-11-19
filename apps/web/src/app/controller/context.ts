@@ -47,8 +47,17 @@ export interface AppRuntimeContext {
   isInitialReloadRoomRestore: boolean;
   navEpoch: number;
   createRoomInFlight: boolean;
+  readonly tokenPromises: Map<string, Promise<string | null>>;
   readonly roomLensCache: Map<string, ClientRoom>;
   readonly roomsFacade: RoomsMapView;
+  getGuestToken: (guestId?: string | null) => string | null;
+  clearGuestToken: (guestId: string) => void;
+  ensureGuestToken: (guestId?: string | null) => Promise<string | null>;
+  fetchApi: (
+    input: string,
+    init?: RequestInit,
+    opts?: { readonly guestId?: string | null; readonly explicitToken?: string | null }
+  ) => Promise<Response>;
   getOrCreateRoomLens: (roomId: string) => ClientRoom;
   syncUrlRoomHash: (roomId: string | null) => void;
   copyRoomShareLink: (roomId: string) => string;
@@ -127,8 +136,13 @@ export function createAppRuntimeContext(
     isInitialReloadRoomRestore,
     navEpoch: 0,
     createRoomInFlight: false,
+    tokenPromises: new Map<string, Promise<string | null>>(),
     roomLensCache,
     roomsFacade: null as unknown as RoomsMapView,
+    getGuestToken: () => null,
+    clearGuestToken: noop,
+    ensureGuestToken: async () => null,
+    fetchApi: (input: string, init?: RequestInit) => fetch(input, init),
     getOrCreateRoomLens: null as unknown as (roomId: string) => ClientRoom,
     syncUrlRoomHash: noop,
     copyRoomShareLink: () => "",

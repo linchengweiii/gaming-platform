@@ -125,8 +125,10 @@
   position: absolute;
   z-index: 24;
   transform: translate(-50%, -108%);
-  min-width: 224px;
-  max-width: 300px;
+  min-width: 216px;
+  max-width: min(300px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
   background: rgba(24, 25, 27, 0.96);
   backdrop-filter: blur(10px);
   border: 1.5px solid #38bdf8;
@@ -140,6 +142,10 @@
 
 .map-spot-popover--below {
   transform: translate(-50%, 16%);
+}
+
+.map-spot-popover--aligned {
+  transform: none;
 }
 
 .map-spot-popover__head {
@@ -322,6 +328,8 @@
   bottom: calc(100% + 6px);
   width: max-content;
   max-width: calc(100vw - 28px);
+  max-height: min(240px, 34dvh);
+  overflow-y: auto;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;

@@ -1,3 +1,4 @@
+import type { EdgeId } from "@gaming-platform/core";
 import { PROGRESS_CARD_CATALOG } from "../config/cities-knights-config.ts";
 import type { ProgressCardPlayParams } from "../types/actions.ts";
 import type {
@@ -17,7 +18,9 @@ export function applyScienceProgressCardPure(
   stateAfterConsume: CatanState,
   playerId: string,
   card: ProgressCardInstance,
-  params: ProgressCardPlayParams | undefined
+  params: ProgressCardPlayParams | undefined,
+  getLegalRoadEdgesFn: (s: CatanState, pid: string) => EdgeId[],
+  getLegalShipEdgesFn: (s: CatanState, pid: string) => EdgeId[]
 ): StateEventsPair {
   const actor = stateAfterConsume.players.find((p) => p.id === playerId)!;
   const cardTitle = PROGRESS_CARD_CATALOG[card.type].title;
@@ -152,16 +155,24 @@ export function applyScienceProgressCardPure(
     }
 
     case "road_building": {
+      const availablePieces = actor.roadsRemaining + actor.shipsRemaining;
+      const availableSpots =
+        getLegalRoadEdgesFn(stateAfterConsume, playerId).length +
+        getLegalShipEdgesFn(stateAfterConsume, playerId).length;
+      const freeRoadsRemaining =
+        availableSpots > 0 ? Math.min(2, availablePieces) : 0;
       const nextState: CatanState = {
         ...stateAfterConsume,
-        freeRoadsRemaining: 2,
-        phase: "ROAD_BUILDING_DEV",
+        freeRoadsRemaining,
+        phase: freeRoadsRemaining > 0 ? "ROAD_BUILDING_DEV" : "MAIN_PHASE",
       };
       return pushCkEvent(
         nextState,
         [],
         "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Road Building (2 free roads/ships).`,
+        freeRoadsRemaining > 0
+          ? `${actor.name} played Road Building (up to ${freeRoadsRemaining} free road(s)/ship(s)).`
+          : `${actor.name} played Road Building (no legal road/ship spots available).`,
         playerId,
         { cardType: card.type }
       );

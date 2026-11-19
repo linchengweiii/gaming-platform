@@ -1,4 +1,5 @@
 import type { PlatformRoomManager, RoomInstance } from "../room-manager.ts";
+import type { GuestSessionStore } from "./guest-sessions.ts";
 import {
   type WsClient,
   type createPresenceTracker,
@@ -7,6 +8,7 @@ import {
 
 export interface WsMessageHandlerDeps {
   readonly roomManager: PlatformRoomManager;
+  readonly guestSessions: GuestSessionStore;
   readonly presence: ReturnType<typeof createPresenceTracker>;
   readonly getClient: (clientId: string) => WsClient | undefined;
   readonly upsertWsClient: (client: WsClient) => void;
@@ -16,6 +18,18 @@ export interface WsMessageHandlerDeps {
   readonly broadcastLobbyRooms: () => void;
   readonly broadcastRoomState: (roomId: string) => void;
   readonly scheduleRoomBotTurn: (roomId: string) => void;
+}
+
+function isViewerSeatedOrOwnerPure(
+  room: RoomInstance,
+  viewerId: string
+): boolean {
+  return (
+    room.ownerId === viewerId ||
+    room.humanPlayers.some(
+      (p) => p.id === viewerId || p.controllerId === viewerId
+    )
+  );
 }
 
 export function handleClientJsonMessage(
@@ -32,21 +46,67 @@ export function handleClientJsonMessage(
   }
 
   if (msg.type === "IDENTIFY_PLAYER") {
-    const nextPlayerId =
+    const claimedPlayerId =
       typeof msg.playerId === "string" && msg.playerId.trim()
         ? msg.playerId.trim()
         : null;
+    const rawToken =
+      typeof msg.token === "string" && msg.token.trim()
+        ? msg.token.trim()
+        : null;
     const prevPlayerId = curClient.playerId;
     const prevRoomId = curClient.roomId;
+
+    let nextPlayerId: string | null = null;
+    if (claimedPlayerId || rawToken) {
+      const verifiedId = deps.guestSessions.verifyToken(rawToken);
+      if (!verifiedId || (claimedPlayerId && verifiedId !== claimedPlayerId)) {
+        deps.upsertWsClient({
+          ...curClient,
+          playerId: null,
+          roomId: null,
+        });
+        const affected = new Set<string>();
+        if (prevRoomId) affected.add(prevRoomId);
+        if (prevPlayerId) {
+          deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
+            if (seen.has(prevPlayerId)) affected.add(rid);
+          });
+        }
+        affected.forEach((rid) => {
+          deps.refreshRoomDisconnectClock(rid);
+          deps.broadcastRoomState(rid);
+        });
+        sendWsFrameSafe(curClient.socket, {
+          type: "ERROR",
+          error: "Invalid guest session token",
+        });
+        if (prevPlayerId !== null) deps.broadcastLobbyRooms();
+        return;
+      }
+      nextPlayerId = verifiedId;
+    }
+
     const nextRoomId = nextPlayerId ? curClient.roomId : null;
     deps.upsertWsClient({
       ...curClient,
       playerId: nextPlayerId,
       roomId: nextRoomId,
     });
-    if (prevRoomId && !nextRoomId) {
-      deps.refreshRoomDisconnectClock(prevRoomId);
+
+    const affectedRooms = new Set<string>();
+    if (prevRoomId && !nextRoomId) affectedRooms.add(prevRoomId);
+    if (prevPlayerId && prevPlayerId !== nextPlayerId) {
+      if (prevRoomId) affectedRooms.add(prevRoomId);
+      deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
+        if (seen.has(prevPlayerId)) affectedRooms.add(rid);
+      });
     }
+    affectedRooms.forEach((rid) => {
+      deps.refreshRoomDisconnectClock(rid);
+      deps.broadcastRoomState(rid);
+    });
+
     if (nextRoomId && nextPlayerId) {
       deps.presence.recordPlayerRoomPresence(nextRoomId, nextPlayerId);
       deps.broadcastRoomState(nextRoomId);
@@ -61,10 +121,33 @@ export function handleClientJsonMessage(
   }
 
   if (msg.type === "SUBSCRIBE_ROOM") {
-    const nextPlayerId =
+    const claimedPlayerId =
       typeof msg.playerId === "string" && msg.playerId.trim()
         ? msg.playerId.trim()
-        : curClient.playerId;
+        : null;
+    const rawToken =
+      typeof msg.token === "string" && msg.token.trim()
+        ? msg.token.trim()
+        : null;
+    let nextPlayerId = curClient.playerId;
+    if (rawToken) {
+      const verifiedId = deps.guestSessions.verifyToken(rawToken);
+      if (!verifiedId || (claimedPlayerId && verifiedId !== claimedPlayerId)) {
+        sendWsFrameSafe(curClient.socket, {
+          type: "ERROR",
+          error: "Invalid guest session token",
+        });
+        return;
+      }
+      nextPlayerId = verifiedId;
+    } else if (claimedPlayerId && claimedPlayerId !== curClient.playerId) {
+      sendWsFrameSafe(curClient.socket, {
+        type: "ERROR",
+        error: "Valid guest session token required to switch identity",
+      });
+      return;
+    }
+
     const requestedRoomId =
       typeof msg.roomId === "string" ? msg.roomId.trim() : "";
     if (!requestedRoomId) {
@@ -119,9 +202,11 @@ export function handleClientJsonMessage(
   }
 
   if (msg.type === "DISPATCH_ACTION" && curClient.roomId) {
+    if (!curClient.playerId) {
+      throw new Error("Authentication required to dispatch actions");
+    }
     const room = deps.roomManager.getRoom(curClient.roomId);
     if (
-      curClient.playerId &&
       !deps.roomManager.canViewerControlActor(
         room,
         curClient.playerId,
@@ -141,7 +226,13 @@ export function handleClientJsonMessage(
   }
 
   if (msg.type === "STEP_BOT" && curClient.roomId) {
+    if (!curClient.playerId) {
+      throw new Error("Authentication required to step bots");
+    }
     const room = deps.roomManager.getRoom(curClient.roomId);
+    if (!room.allBots && !isViewerSeatedOrOwnerPure(room, curClient.playerId)) {
+      throw new Error("Only seated players or room host can step bots");
+    }
     const prevStatus = room.status;
     deps.roomManager.stepBot(curClient.roomId, { onlyBots: true });
     deps.broadcastRoomState(curClient.roomId);

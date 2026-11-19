@@ -37,6 +37,10 @@ export function getNextActingPlayerId(state: CatanState): string | null {
     return Object.keys(state.pendingGoldPicks)[0] ?? null;
   }
 
+  if (state.phase === "CK_INTERACTION") {
+    return state.pendingCkInteraction?.actorId ?? null;
+  }
+
   if (state.phase === "MAIN_PHASE" && state.activeTradeOffer) {
     const offer = state.activeTradeOffer;
     const accepted = offer.acceptedBy ?? [];
@@ -186,6 +190,15 @@ const IRREVERSIBLE_CATAN_ACTIONS = new Set<CatanAction["type"]>([
   "STEAL_FROM_PLAYER",
   "PLAY_MONOPOLY",
   "PLAY_PROGRESS_CARD",
+  "RESOLVE_DISPLACED_KNIGHT",
+  "SELECT_DESERTER_KNIGHT",
+  "PLACE_DESERTED_KNIGHT",
+  "SELECT_SPY_CARD",
+  "SELECT_MASTER_MERCHANT_CARDS",
+  "GIVE_WEDDING_CARDS",
+  "OFFER_COMMERCIAL_HARBOR",
+  "END_COMMERCIAL_HARBOR",
+  "RESPOND_COMMERCIAL_HARBOR",
   "CHASE_ROBBER_WITH_KNIGHT",
   "SELECT_PILLAGED_CITY",
   "SELECT_PROGRESS_DECK",

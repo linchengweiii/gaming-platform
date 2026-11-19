@@ -79,6 +79,27 @@ export type CatanAction =
       cardId: string;
       params?: ProgressCardPlayParams;
     }
+  | { type: "RESOLVE_DISPLACED_KNIGHT"; vertexId: VertexId }
+  | { type: "SELECT_DESERTER_KNIGHT"; vertexId: VertexId }
+  | { type: "PLACE_DESERTED_KNIGHT"; vertexId: VertexId }
+  | { type: "SELECT_SPY_CARD"; stolenCardId: string }
+  | {
+      type: "SELECT_MASTER_MERCHANT_CARDS";
+      resources: Partial<ResourceMap>;
+      commodities?: Partial<CommodityMap>;
+    }
+  | {
+      type: "GIVE_WEDDING_CARDS";
+      resources: Partial<ResourceMap>;
+      commodities?: Partial<CommodityMap>;
+    }
+  | {
+      type: "OFFER_COMMERCIAL_HARBOR";
+      targetPlayerId: string;
+      resource: ResourceType;
+    }
+  | { type: "END_COMMERCIAL_HARBOR" }
+  | { type: "RESPOND_COMMERCIAL_HARBOR"; commodity: CommodityType }
   | { type: "BUY_DEV_CARD" }
   | { type: "PLAY_KNIGHT" }
   | { type: "PLAY_ROAD_BUILDING" }

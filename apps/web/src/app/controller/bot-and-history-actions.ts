@@ -11,7 +11,6 @@ import { upsertRoomFromSummaryPure } from "../reducers/room-sync-reducers.ts";
 import { stepSetupBotsRecursive } from "../reducers/session-signout-and-match.ts";
 import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
 import type { AppRuntimeContext } from "./context.ts";
-import { fetchWithTimeout } from "./http-fetch-helper.ts";
 import { evictDeletedActiveRoom } from "./realtime-ws.ts";
 
 export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
@@ -54,7 +53,7 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
       ctx.connectServerRealtime();
       void (async () => {
         try {
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(room.roomId)}/bot-step`,
             {
               method: "POST",
@@ -128,7 +127,7 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     if (roomUsesServerPure(ctx.model, room)) {
       void (async () => {
         try {
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(room.roomId)}/finish-setup`,
             {
               method: "POST",
@@ -173,7 +172,7 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     if (roomUsesServerPure(ctx.model, room)) {
       void (async () => {
         try {
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(room.roomId)}/undo`,
             {
               method: "POST",
@@ -242,7 +241,7 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     if (roomUsesServerPure(ctx.model, room)) {
       void (async () => {
         try {
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(room.roomId)}/redo`,
             {
               method: "POST",
@@ -304,7 +303,7 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
       ctx.connectServerRealtime();
       void (async () => {
         try {
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(room.roomId)}/auto-bots`,
             {
               method: "POST",

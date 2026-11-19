@@ -167,6 +167,15 @@ export function computeInGameOverlayHtmlPure(
         )
       : "";
 
+  const hasBottomMapHud = Boolean(
+    catanDecisionPopupHtml ||
+      (room.gameId === "catan" &&
+        isMyTurn &&
+        !model.autoPlayBots &&
+        !(state as CatanState).activeTradeOffer &&
+        (state.phase === "MAIN_PHASE" || state.phase === "SPECIAL_BUILDING"))
+  );
+
   const tutorialCoachHtml =
     model.activeTutorial && model.activeTutorial.roomId === room.roomId
       ? renderTutorialCoachBannerPure(
@@ -174,7 +183,7 @@ export function computeInGameOverlayHtmlPure(
           model.activeTutorial.stepIndex,
           Boolean(isMyTurn && actingPlayerId && state.phase !== "GAME_OVER"),
           state,
-          Boolean(catanDecisionPopupHtml)
+          hasBottomMapHud
         )
       : "";
 

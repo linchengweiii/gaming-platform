@@ -29,6 +29,10 @@
 }
 
 .board-container:not(.board-container--neutral) .board-svg-wrap > .ga-tutorial-coach--lifted,
+.board-container:not(.board-container--neutral) .board-svg-wrap:has(.map-build-dock, .map-end-turn-hud) > .ga-tutorial-coach {
+  bottom: 70px;
+}
+
 .board-container:not(.board-container--neutral) .board-svg-wrap:has(.map-decision-popup) > .ga-tutorial-coach {
   bottom: 92px;
 }

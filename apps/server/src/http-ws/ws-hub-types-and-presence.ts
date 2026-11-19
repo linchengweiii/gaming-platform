@@ -20,6 +20,7 @@ export interface RealtimeHub {
   enrichSummaryWithPresence(summary: RoomSummary): RoomSummary;
   refreshRoomDisconnectClock(roomId: string, nowMs?: number): void;
   removePlayerRoomPresence(roomId: string, playerId: string): void;
+  evictPlayerFromRoom(roomId: string, targetPlayerId: string): void;
   signOutGuestConnections(playerId: string): void;
   cleanupDeletedRoomMeta(roomId: string): void;
   notifyRoomClosed(roomId: string): void;
@@ -77,7 +78,18 @@ export function createPresenceTracker(roomManager: PlatformRoomManager) {
       seenConnectedPlayersByRoom.set(roomId, seen);
     }
     seen.add(playerId);
-    roomAllDisconnectedSince.delete(roomId);
+    try {
+      const room = roomManager.getRoom(roomId);
+      const isParticipant =
+        room.humanPlayers.length > 0
+          ? room.humanPlayers.some((p) => (p.controllerId ?? p.id) === playerId)
+          : room.ownerId === playerId;
+      if (isParticipant) {
+        roomAllDisconnectedSince.delete(roomId);
+      }
+    } catch {
+      // Ignore deleted room
+    }
   }
 
   function refreshRoomDisconnectClock(
@@ -93,14 +105,16 @@ export function createPresenceTracker(roomManager: PlatformRoomManager) {
       roomAllDisconnectedSince.delete(roomId);
       return;
     }
-    if (room.humanPlayers.length === 0) {
-      roomAllDisconnectedSince.delete(roomId);
-      return;
-    }
     const connectedIds = getConnectedPlayerIds(wsClients);
-    const anyHumanConnected = room.humanPlayers.some((p) =>
-      connectedIds.has(p.controllerId ?? p.id)
-    );
+    const anyHumanConnected =
+      room.humanPlayers.length > 0
+        ? room.humanPlayers.some((p) =>
+            connectedIds.has(p.controllerId ?? p.id)
+          )
+        : Boolean(
+            (room.ownerId && connectedIds.has(room.ownerId)) ||
+              Object.values(wsClients).some((c) => c.roomId === roomId)
+          );
     if (anyHumanConnected) {
       roomAllDisconnectedSince.delete(roomId);
     } else if (!roomAllDisconnectedSince.has(roomId)) {

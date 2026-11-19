@@ -20,7 +20,6 @@ import {
   saveDeviceGuestsToStorage,
   saveGuestSessionToStorage,
 } from "./context.ts";
-import { fetchWithTimeout } from "./http-fetch-helper.ts";
 
 export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
   const signInAsGuest = (
@@ -182,9 +181,12 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
         roomId: targetRoomId,
         playerId: requestedGuestId,
       });
-      void fetchWithTimeout(
-        `/api/rooms/${encodeURIComponent(targetRoomId)}?playerId=${encodeURIComponent(requestedGuestId)}`
-      )
+      void ctx
+        .fetchApi(
+          `/api/rooms/${encodeURIComponent(targetRoomId)}`,
+          undefined,
+          { guestId: requestedGuestId }
+        )
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (
@@ -212,6 +214,7 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
 
   const performGuestCleanup = (targetGuestId: string): void => {
     if (!targetGuestId) return;
+    const tokenForTarget = ctx.getGuestToken(targetGuestId);
     const isSigningOutCurrent = targetGuestId === ctx.model.currentUserId;
     if (isSigningOutCurrent) {
       ctx.navEpoch += 1;
@@ -273,12 +276,17 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
       }
     }
 
-    if (ctx.model.useServerBackend) {
-      void fetchWithTimeout("/api/guests/signout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId: targetGuestId }),
-      })
+    if (ctx.model.useServerBackend && tokenForTarget) {
+      void ctx
+        .fetchApi(
+          "/api/guests/signout",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ playerId: targetGuestId }),
+          },
+          { explicitToken: tokenForTarget }
+        )
         .then(() => {
           if (ctx.model.isAuthenticated && ctx.model.useServerBackend) {
             return ctx.fetchLobbyRooms();
@@ -313,14 +321,20 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
     saveDeviceGuestsToStorage(ctx.model.deviceGuests);
 
     if (ctx.model.useServerBackend) {
-      void fetchWithTimeout("/api/guests/rename", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          playerId: res.session.id,
-          newName: res.session.name,
-        }),
-      }).catch(() => {});
+      void ctx
+        .fetchApi(
+          "/api/guests/rename",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              playerId: res.session.id,
+              newName: res.session.name,
+            }),
+          },
+          { guestId: res.session.id }
+        )
+        .catch(() => {});
     }
 
     ctx.render();

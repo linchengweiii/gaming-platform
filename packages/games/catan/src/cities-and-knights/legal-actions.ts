@@ -208,7 +208,9 @@ export function getLegalProgressCardActions(
             const vNode = state.topology.vertices[vId];
             return Boolean(
               vNode?.incidentEdgeIds.some(
-                (eId) => state.edges[eId]?.ownerId === player.id
+                (eId) =>
+                  state.edges[eId]?.ownerId === player.id &&
+                  state.edges[eId]?.type === "road"
               )
             );
           })
@@ -226,51 +228,46 @@ export function getLegalProgressCardActions(
             opp.id !== player.id &&
             Object.values(state.knights).some((k) => k.ownerId === opp.id)
         );
-        if (opponentsWithKnights.length === 0) return [];
-        const ownSpots = state.topology.vertexOrder.filter((vId) => {
-          if (state.buildings[vId] || state.knights[vId]) return false;
-          const vNode = state.topology.vertices[vId]!;
-          return vNode.incidentEdgeIds.some(
-            (eId) => state.edges[eId]?.ownerId === player.id
-          );
-        });
-        return opponentsWithKnights.flatMap((opp) =>
-          ownSpots.length > 0
-            ? ownSpots.map((placeVertexId) => ({
-                type: "PLAY_PROGRESS_CARD" as const,
-                cardId: card.id,
-                params: { targetPlayerId: opp.id, placeVertexId },
-              }))
-            : [
-                {
-                  type: "PLAY_PROGRESS_CARD" as const,
-                  cardId: card.id,
-                  params: { targetPlayerId: opp.id },
-                },
-              ]
-        );
+        return opponentsWithKnights.map((opp) => ({
+          type: "PLAY_PROGRESS_CARD" as const,
+          cardId: card.id,
+          params: { targetPlayerId: opp.id },
+        }));
       }
 
       case "diplomat": {
         const openEdges = getDiplomatRemovableRoadEdges(state);
         if (openEdges.length === 0) return [];
-        const ownRebuilds = getLegalRoadEdgesFn(state, player.id);
         return openEdges.flatMap((edgeId) => {
           const isOwn = state.edges[edgeId]?.ownerId === player.id;
-          if (isOwn && ownRebuilds.length > 0) {
+          if (isOwn) {
+            const withoutEdge = Object.fromEntries(
+              Object.entries(state.edges).filter(([k]) => k !== edgeId)
+            );
+            const afterRemove: CatanState = {
+              ...state,
+              edges: withoutEdge,
+              players: state.players.map((p) =>
+                p.id === player.id
+                  ? { ...p, roadsRemaining: p.roadsRemaining + 1 }
+                  : p
+              ),
+            };
+            const validRebuilds = getLegalRoadEdgesFn(
+              afterRemove,
+              player.id
+            ).filter((rId) => rId !== edgeId);
             return [
               {
                 type: "PLAY_PROGRESS_CARD" as const,
                 cardId: card.id,
                 params: { edgeId },
               },
-              ...ownRebuilds
-                .filter((rId) => rId !== edgeId)
-                .map((rebuildEdgeId) => ({
-                  type: "PLAY_PROGRESS_CARD" as const,
-                  cardId: card.id,
-                  params: { edgeId, rebuildEdgeId },
-                })),
+              ...validRebuilds.map((rebuildEdgeId) => ({
+                type: "PLAY_PROGRESS_CARD" as const,
+                cardId: card.id,
+                params: { edgeId, rebuildEdgeId },
+              })),
             ];
           }
           return [
@@ -357,15 +354,17 @@ export function getLegalProgressCardActions(
       }
 
       case "commercial_harbor": {
-        const myAvailResources = RESOURCES.filter(
-          (r) => player.resources[r] > 0
-        );
-        if (myAvailResources.length === 0) return [];
-        return myAvailResources.map((resource) => ({
-          type: "PLAY_PROGRESS_CARD" as const,
-          cardId: card.id,
-          params: { resource },
-        }));
+        const hasAnyRes = RESOURCES.some((r) => player.resources[r] > 0);
+        if (!hasAnyRes) return [];
+        const hasEligibleOpp = state.players.some((opp) => {
+          if (opp.id === player.id) return false;
+          return opp.handRedacted
+            ? (opp.hiddenResourceCount ?? 0) > 0
+            : totalCommodityCount(opp.commodities) > 0;
+        });
+        return hasEligibleOpp
+          ? [{ type: "PLAY_PROGRESS_CARD" as const, cardId: card.id }]
+          : [];
       }
 
       default:

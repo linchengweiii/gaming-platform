@@ -100,6 +100,7 @@ export function renderDropdown(spec: DropdownSpec): string {
 }
 
 export function formatPhaseLabel(phase: string): string {
+  if (phase === "CK_INTERACTION") return "C&K choice";
   const clean = phase.replace(/_/g, " ").toLowerCase();
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }

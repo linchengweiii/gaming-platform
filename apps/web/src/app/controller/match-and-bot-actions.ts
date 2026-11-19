@@ -26,11 +26,11 @@ import type { ClientRoom, SupportedGameId } from "../types.ts";
 import { hasTradeGoodsForOfferPure } from "../views/catan-hud-view.ts";
 import { attachBotAndHistoryActions } from "./bot-and-history-actions.ts";
 import type { AppRuntimeContext } from "./context.ts";
-import { fetchWithTimeout } from "./http-fetch-helper.ts";
 import { evictDeletedActiveRoom } from "./realtime-ws.ts";
 
 export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
   attachBotAndHistoryActions(ctx);
+  const startingRoomIds = new Set<string>();
 
   const scheduleBotAutoResponseIfNeeded = (): void => {
     const room = findActiveRoomPure(ctx.model);
@@ -105,12 +105,14 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
     if (!room) return;
 
     if (roomUsesServerPure(ctx.model, room)) {
+      if (startingRoomIds.has(roomId)) return;
+      startingRoomIds.add(roomId);
       const capturedEpoch = ctx.navEpoch;
       void (async () => {
         try {
           await ctx.flushPendingSetupSync();
           if (ctx.navEpoch !== capturedEpoch) return;
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(roomId)}/start`,
             {
               method: "POST",
@@ -150,6 +152,8 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
         } catch (err: any) {
           if (ctx.navEpoch !== capturedEpoch) return;
           alert(`Unable to start match: ${err?.message ?? String(err)}`);
+        } finally {
+          startingRoomIds.delete(roomId);
         }
       })();
       return;
@@ -173,7 +177,7 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
       ctx.connectServerRealtime();
       void (async () => {
         try {
-          const res = await fetchWithTimeout(
+          const res = await ctx.fetchApi(
             `/api/rooms/${encodeURIComponent(room.roomId)}/action`,
             {
               method: "POST",

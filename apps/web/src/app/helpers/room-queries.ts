@@ -180,7 +180,14 @@ export function upsertDeviceGuestListPure(
 ): GuestSession[] {
   const idx = deviceGuests.findIndex((g) => g.id === session.id);
   if (idx >= 0) {
-    return deviceGuests.map((g, i) => (i === idx ? session : g));
+    const prev = deviceGuests[idx]!;
+    const merged: GuestSession =
+      session.token !== undefined
+        ? session
+        : prev.token
+          ? { ...session, token: prev.token }
+          : session;
+    return deviceGuests.map((g, i) => (i === idx ? merged : g));
   }
   return [...deviceGuests, session];
 }

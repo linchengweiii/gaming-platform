@@ -113,14 +113,27 @@ export function bindRoomSetupEvents(
 
     root.querySelector("#setup-sel-game")?.addEventListener("change", (e) => {
       const nextGame = (e.target as HTMLSelectElement).value as SupportedGameId;
-      ctx.model = updateRoomInModelPure(ctx.model, room.roomId, (r) =>
-        rebuildRoomSeatsPure({
+      ctx.model = updateRoomInModelPure(ctx.model, room.roomId, (r) => {
+        const gameChanged = r.gameId !== nextGame;
+        return rebuildRoomSeatsPure({
           ...r,
           gameId: nextGame,
+          ...(gameChanged
+            ? {
+                status: "lobby" as const,
+                session: null,
+                remoteState: null,
+                remoteActingPlayerId: null,
+                canUndo: false,
+                undoableSteps: 0,
+                canRedo: false,
+                step: 0,
+              }
+            : {}),
           botCount:
             nextGame === "seven_wonders" && r.botCount < 2 ? 3 : r.botCount,
-        })
-      );
+        });
+      });
       const latest = ctx.model.rooms[room.roomId];
       if (latest) ctx.pushServerRoomSetup(latest);
       ctx.render();

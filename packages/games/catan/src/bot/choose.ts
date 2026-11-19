@@ -7,6 +7,7 @@ import { getCatanLegalActions } from "../rules/legal-actions.ts";
 import type { CatanAction } from "../types/actions.ts";
 import type { CatanState } from "../types/state.ts";
 import {
+  chooseCkInteractionAction,
   chooseCkPillagedCityAction,
   chooseCkProgressSelectionAction,
 } from "./ck-phases-ai.ts";
@@ -125,6 +126,9 @@ export function chooseCatanBotAction(
   }
   if (state.phase === "PROGRESS_CARD_SELECTION") {
     return chooseCkProgressSelectionAction(state, player, legalActions);
+  }
+  if (state.phase === "CK_INTERACTION") {
+    return chooseCkInteractionAction(state, player, legalActions);
   }
 
   // 3. Discard on 7
