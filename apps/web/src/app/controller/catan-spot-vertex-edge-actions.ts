@@ -23,6 +23,43 @@ export function handleCatanVertexSpotClick(
   vertexId: string
 ): void {
   if (
+    state.phase === "CK_INTERACTION" &&
+    state.pendingCkInteraction &&
+    state.pendingCkInteraction.actorId === actingPlayerId
+  ) {
+    const pending = state.pendingCkInteraction;
+    if (
+      pending.kind === "displace_knight" &&
+      pending.candidateVertexIds.includes(vertexId)
+    ) {
+      ctx.dispatch(actingPlayerId, {
+        type: "RESOLVE_DISPLACED_KNIGHT",
+        vertexId,
+      });
+      return;
+    }
+    if (
+      pending.kind === "deserter_choose_knight" &&
+      pending.candidateVertexIds.includes(vertexId)
+    ) {
+      ctx.dispatch(actingPlayerId, {
+        type: "SELECT_DESERTER_KNIGHT",
+        vertexId,
+      });
+      return;
+    }
+    if (
+      pending.kind === "deserter_place_knight" &&
+      pending.candidateVertexIds.includes(vertexId)
+    ) {
+      ctx.dispatch(actingPlayerId, {
+        type: "PLACE_DESERTED_KNIGHT",
+        vertexId,
+      });
+      return;
+    }
+  }
+  if (
     state.phase === "BARBARIAN_PILLAGE_SELECTION" &&
     getPlayerVulnerableCities(state, actingPlayerId).includes(vertexId)
   ) {

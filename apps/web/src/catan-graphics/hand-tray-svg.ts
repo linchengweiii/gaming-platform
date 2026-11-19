@@ -171,10 +171,15 @@ export function renderCatanVisualHandTray(
                       const cat = PROGRESS_CARD_CATALOG[cardType];
                       const dMeta = DISCIPLINE_META[info.discipline];
                       const canPlayThis = Boolean(info.playableCardId);
+                      const safeTooltip = `${cat.title}: ${cat.description}`.replace(
+                        /"/g,
+                        "&quot;"
+                      );
                       return `
                         <div class="playing-card dev-playing-card ${
                           canPlayThis ? "playable-dev-card" : ""
                         }"
+                             title="${safeTooltip}"
                              style="--card-border: ${dMeta.border}; --card-accent: ${dMeta.accent};">
                           <div class="playing-card-top">
                             <span class="ga-chip" style="height: 22px; padding: 0 8px;">${
@@ -185,12 +190,12 @@ export function renderCatanVisualHandTray(
                           <div class="playing-card-art">
                             ${renderProgressCardIllustrationSvg(info.discipline)}
                           </div>
-                          <div class="dev-card-title">${cat.title}</div>
-                          <div class="dev-card-rule">${cat.description}</div>
+                          <div class="dev-card-title" title="${safeTooltip}">${cat.title}</div>
+                          <div class="dev-card-rule" title="${safeTooltip}">${cat.description}</div>
                           <div class="dev-card-action">
                             ${
                               canPlayThis
-                                ? `<button type="button" class="btn btn--primary btn--sm" data-play-progress-card="${info.playableCardId}" style="width: 100%;">Play ${cat.title.toLowerCase()}</button>`
+                                ? `<button type="button" class="btn btn--primary btn--sm" data-play-progress-card="${info.playableCardId}" title="${safeTooltip}" style="width: 100%;">Play</button>`
                                 : `<span class="ga-chip" style="width: 100%; justify-content: center;">${
                                     cat.phase === "PRE_ROLL"
                                       ? "Play pre-roll"
@@ -316,10 +321,15 @@ export function renderCatanVisualHandTray(
                       playBtnId = "btn-hand-play-mono";
                     }
 
+                    const safeDevTip = `${meta.title}: ${meta.rule}`.replace(
+                      /"/g,
+                      "&quot;"
+                    );
                     return `
                       <div class="playing-card dev-playing-card ${
                         canPlayThis ? "playable-dev-card" : ""
                       }"
+                           title="${safeDevTip}"
                            style="--card-border: ${meta.border}; --card-accent: ${meta.accent};">
                         <div class="playing-card-top">
                           <span class="ga-chip" style="height: 22px; padding: 0 8px;">${
@@ -330,14 +340,14 @@ export function renderCatanVisualHandTray(
                         <div class="playing-card-art">
                           ${renderDevCardIllustrationSvg(devType)}
                         </div>
-                        <div class="dev-card-title">${meta.title}</div>
-                        <div class="dev-card-rule">${meta.rule}</div>
+                        <div class="dev-card-title" title="${safeDevTip}">${meta.title}</div>
+                        <div class="dev-card-rule" title="${safeDevTip}">${meta.rule}</div>
                         <div class="dev-card-action">
                           ${
                             devType === "victory_point"
                               ? `<span class="ga-chip ga-chip--warn" style="width: 100%; justify-content: center;">+1 VP active</span>`
                               : canPlayThis
-                                ? `<button id="${playBtnId}" type="button" class="btn btn--primary btn--sm" style="width: 100%;">Play ${meta.title.toLowerCase()}</button>`
+                                ? `<button id="${playBtnId}" type="button" class="btn btn--primary btn--sm" title="${safeDevTip}" style="width: 100%;">Play</button>`
                                 : info.boughtThisTurn === info.total
                                   ? `<span class="ga-chip" style="width: 100%; justify-content: center;">Bought this turn</span>`
                                   : `<span class="ga-chip" style="width: 100%; justify-content: center;">Play on your turn</span>`

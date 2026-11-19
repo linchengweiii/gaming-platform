@@ -217,25 +217,49 @@ export function placeCoastalHarborsPure(
 
   const { harbors } = indices.reduce<{
     usedVertices: ReadonlySet<VertexId>;
+    usedSeaHexes: ReadonlySet<HexId>;
     harbors: Harbor[];
   }>(
     (acc, i) => {
       const startIdx = Math.floor(i * stride);
-      const chosenEdgeId: EdgeId | undefined = offsets
-        .map((offset) => sortedCandidates[(startIdx + offset) % sortedCandidates.length]!)
-        .find((eId) => {
-          const edge = topology.edges[eId]!;
-          return !acc.usedVertices.has(edge.v1) && !acc.usedVertices.has(edge.v2);
-        });
+      const getSeaHex = (eId: EdgeId): HexId | undefined =>
+        topology.edges[eId]!.adjacentHexIds.find(
+          (id) => hexes[id]?.terrain === "sea"
+        );
+      // Prefer a coastal edge whose adjacent sea hex does not already host an opposite-shore harbor
+      const chosenEdgeId: EdgeId | undefined =
+        offsets
+          .map(
+            (offset) =>
+              sortedCandidates[(startIdx + offset) % sortedCandidates.length]!
+          )
+          .find((eId) => {
+            const edge = topology.edges[eId]!;
+            const sea = getSeaHex(eId);
+            return (
+              !acc.usedVertices.has(edge.v1) &&
+              !acc.usedVertices.has(edge.v2) &&
+              (!sea || !acc.usedSeaHexes.has(sea))
+            );
+          }) ??
+        offsets
+          .map(
+            (offset) =>
+              sortedCandidates[(startIdx + offset) % sortedCandidates.length]!
+          )
+          .find((eId) => {
+            const edge = topology.edges[eId]!;
+            return (
+              !acc.usedVertices.has(edge.v1) && !acc.usedVertices.has(edge.v2)
+            );
+          });
 
       if (!chosenEdgeId) {
         return acc;
       }
 
       const edge = topology.edges[chosenEdgeId]!;
-      const seaHex = edge.adjacentHexIds.find(
-        (id) => hexes[id]?.terrain === "sea"
-      );
+      const seaHex = getSeaHex(chosenEdgeId);
       const harbor: Harbor = {
         id: `harbor-${i + 1}`,
         type: shuffledTypes[i]!,
@@ -245,10 +269,13 @@ export function placeCoastalHarborsPure(
       };
       return {
         usedVertices: new Set([...acc.usedVertices, edge.v1, edge.v2]),
+        usedSeaHexes: seaHex
+          ? new Set([...acc.usedSeaHexes, seaHex])
+          : acc.usedSeaHexes,
         harbors: [...acc.harbors, harbor],
       };
     },
-    { usedVertices: new Set<VertexId>(), harbors: [] }
+    { usedVertices: new Set<VertexId>(), usedSeaHexes: new Set<HexId>(), harbors: [] }
   );
 
   return [harbors, nextRng];

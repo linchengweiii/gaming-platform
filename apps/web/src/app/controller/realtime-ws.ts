@@ -29,6 +29,7 @@ export function evictDeletedActiveRoom(
   ctx.model = removeRoomFromModelPure(ctx.model, closedRoomId);
   ctx.roomLensCache.delete(closedRoomId);
   if (isActive) {
+    ctx.navEpoch += 1;
     ctx.stopAutoPlay();
     ctx.cancelPendingSetupSync();
     clearActiveRoomIdFromStorage();
@@ -39,18 +40,48 @@ export function evictDeletedActiveRoom(
       inspectingSetupDuringMatch: false,
       viewMode: ctx.model.isAuthenticated ? "lobby" : "login",
     });
+    ctx.render();
+    return;
   }
   ctx.renderPreservingFocus();
 }
 
 export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
   const sendWsMessage = (msg: Record<string, unknown>): void => {
-    if (ctx.ws && ctx.ws.readyState === WebSocket.OPEN) {
-      try {
-        ctx.ws.send(JSON.stringify(msg));
-      } catch {
-        // Ignore send errors on closing socket
+    if (!ctx.ws || ctx.ws.readyState !== WebSocket.OPEN) return;
+    let payload: Record<string, unknown> = msg;
+    if (
+      (msg.type === "IDENTIFY_PLAYER" || msg.type === "SUBSCRIBE_ROOM") &&
+      typeof msg.playerId === "string" &&
+      msg.playerId.trim() &&
+      msg.token === undefined
+    ) {
+      const tok = ctx.getGuestToken(msg.playerId.trim());
+      if (tok) {
+        payload = { ...msg, token: tok };
+      } else {
+        const targetId = msg.playerId.trim();
+        void ctx.ensureGuestToken(targetId).then((issued) => {
+          if (
+            issued &&
+            ctx.model.currentUserId === targetId &&
+            ctx.ws &&
+            ctx.ws.readyState === WebSocket.OPEN
+          ) {
+            try {
+              ctx.ws.send(JSON.stringify({ ...msg, token: issued }));
+            } catch {
+              // Ignore send errors on closing socket
+            }
+          }
+        });
+        return;
       }
+    }
+    try {
+      ctx.ws.send(JSON.stringify(payload));
+    } catch {
+      // Ignore send errors on closing socket
     }
   };
 
@@ -115,9 +146,15 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
     }
 
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const authToken =
+      ctx.model.isAuthenticated && ctx.model.currentUserId
+        ? ctx.getGuestToken(ctx.model.currentUserId)
+        : null;
     const wsQuery =
       ctx.model.isAuthenticated && ctx.model.currentUserId
-        ? `/?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
+        ? authToken
+          ? `/?playerId=${encodeURIComponent(ctx.model.currentUserId)}&token=${encodeURIComponent(authToken)}`
+          : `/?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
         : "";
     const socket = new WebSocket(`${proto}//${window.location.host}${wsQuery}`);
     ctx.ws = socket;
@@ -171,7 +208,10 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
         if (msg.type === "SERVER_HEARTBEAT" || msg.type === "PONG") {
           return;
         }
-        if (msg.type === "ROOM_CLOSED" && typeof msg.roomId === "string") {
+        if (
+          (msg.type === "ROOM_CLOSED" || msg.type === "ROOM_REMOVED") &&
+          typeof msg.roomId === "string"
+        ) {
           evictDeletedActiveRoom(ctx, msg.roomId);
           return;
         }

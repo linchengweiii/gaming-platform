@@ -58,6 +58,19 @@ export function totalResourceCount(res: Partial<ResourceMap>): number {
   return RESOURCES.reduce<number>((sum, r) => sum + (res[r] ?? 0), 0);
 }
 
+export function assertNonNegativeIntGoodMapPure(
+  map: Partial<Record<string, number>> | undefined,
+  label: string
+): void {
+  if (!map) return;
+  for (const [key, val] of Object.entries(map)) {
+    if (val === undefined) continue;
+    if (typeof val !== "number" || !Number.isInteger(val) || val < 0) {
+      throw new Error(`${label} quantity for ${key} must be a non-negative integer`);
+    }
+  }
+}
+
 export function getPlayerResourceCount(
   player: Pick<CatanPlayerState, "resources" | "hiddenResourceCount"> & {
     commodities?: Partial<CommodityMap>;

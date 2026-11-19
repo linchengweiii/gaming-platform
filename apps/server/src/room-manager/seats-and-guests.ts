@@ -57,11 +57,6 @@ export function joinRoomPure(
           room.players.find((p) => p.id === preferredPlayerId) ?? existingHuman,
       };
     }
-
-    const existingAny = room.players.find((p) => p.id === preferredPlayerId);
-    if (existingAny) {
-      return { state: managerState, player: existingAny };
-    }
   }
 
   if (room.status === "in_progress") {
@@ -99,9 +94,16 @@ export function joinRoomPure(
     isBot: false,
   };
 
+  const nextHumans = [...room.humanPlayers, humanDescriptor];
+  const nextBotCount = Math.min(
+    room.botCount,
+    Math.max(0, bounds.maxPlayers - nextHumans.length)
+  );
   const rebuilt = rebuildRoomPlayersPure(managerState.registry, {
     ...room,
-    humanPlayers: [...room.humanPlayers, humanDescriptor],
+    allBots: false,
+    humanPlayers: nextHumans,
+    botCount: nextBotCount,
   });
   const seated =
     rebuilt.players.find((p) => p.id === assignedId) ?? humanDescriptor;
@@ -124,6 +126,12 @@ export function leaveRoomPure(
   const nextHumans = room.humanPlayers.filter(
     (p) => p.id !== playerId && p.controllerId !== playerId
   );
+  if (room.allBots && room.ownerId === playerId && nextHumans.length === 0) {
+    return {
+      state: removeRoomRecordFromState(managerState, roomId),
+      closed: true,
+    };
+  }
   if (nextHumans.length === room.humanPlayers.length) {
     return { state: managerState, closed: false };
   }
@@ -218,7 +226,10 @@ export function signOutPlayerFromRoomPure(
     (p) => p.id !== playerId && p.controllerId !== playerId
   );
 
-  if (remainingHumans.length === 0 && !room.allBots) {
+  if (
+    remainingHumans.length === 0 &&
+    (!room.allBots || room.ownerId === playerId)
+  ) {
     return {
       state: removeRoomRecordFromState(managerState, roomId),
       closed: true,

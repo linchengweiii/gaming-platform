@@ -137,8 +137,17 @@ export function upsertRoomFromSummaryPure(
     return { model, room: existing };
   }
 
+  const incomingGameId = (summary.gameId as SupportedGameId) ?? "catan";
+  const incomingStatus = summary.status ?? "lobby";
+  const gameOrMatchReset = Boolean(
+    existing &&
+      (existing.gameId !== incomingGameId ||
+        (existing.status !== "lobby" && incomingStatus === "lobby"))
+  );
+
   const preserveActiveGameFields = Boolean(
-    options?.isLobbySummaryOnly &&
+    !gameOrMatchReset &&
+      options?.isLobbySummaryOnly &&
       remoteState === undefined &&
       existing &&
       existing.remoteState !== null
@@ -209,13 +218,19 @@ export function upsertRoomFromSummaryPure(
     })(),
     seed: existing?.seed ?? summary.roomId,
     matchCounter: existing?.matchCounter ?? 0,
-    session: existing?.session ?? null,
+    session: gameOrMatchReset ? null : (existing?.session ?? null),
     remoteState:
-      remoteState !== undefined ? remoteState : (existing?.remoteState ?? null),
+      remoteState !== undefined
+        ? remoteState
+        : gameOrMatchReset
+          ? null
+          : (existing?.remoteState ?? null),
     remoteActingPlayerId:
       remoteActingPlayerId !== undefined
         ? remoteActingPlayerId
-        : (existing?.remoteActingPlayerId ?? null),
+        : gameOrMatchReset
+          ? null
+          : (existing?.remoteActingPlayerId ?? null),
     canUndo: preserveActiveGameFields
       ? existing!.canUndo
       : summary.canUndo !== undefined

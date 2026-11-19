@@ -8,9 +8,14 @@
 }
 
 @media (max-width: 680px) {
+  .sub-modal {
+    overflow-x: auto;
+  }
+
   .ga-res-matrix {
-    grid-template-columns: 68px repeat(5, minmax(0, 1fr));
+    grid-template-columns: 54px repeat(5, minmax(48px, 1fr));
     gap: 4px;
+    min-width: 310px;
   }
 }
 

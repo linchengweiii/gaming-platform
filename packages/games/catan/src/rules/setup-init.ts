@@ -218,6 +218,7 @@ export function initCatanGame(
     pendingGoldPicks: {},
     stealCandidates: [],
     freeRoadsRemaining: 0,
+    pendingCkInteraction: null,
     activeTradeOffer: null,
     longestRoadOwnerId: null,
     longestRoadLength: 0,

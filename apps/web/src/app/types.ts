@@ -26,6 +26,7 @@ export interface GuestSession {
   readonly id: string;
   readonly name: string;
   readonly mode: "guest";
+  readonly token?: string;
 }
 
 export type BuildMode =

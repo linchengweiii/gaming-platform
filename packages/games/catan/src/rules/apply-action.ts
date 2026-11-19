@@ -1,4 +1,5 @@
 import type { GameEvent } from "@gaming-platform/core";
+import { applyCkInteractionActionPure } from "../cities-and-knights/interactions.ts";
 import type { CatanAction } from "../types/actions.ts";
 import type { CatanState } from "../types/state.ts";
 import {
@@ -196,6 +197,16 @@ export function applyCatanAction(
         playerId,
         action
       );
+    case "RESOLVE_DISPLACED_KNIGHT":
+    case "SELECT_DESERTER_KNIGHT":
+    case "PLACE_DESERTED_KNIGHT":
+    case "SELECT_SPY_CARD":
+    case "SELECT_MASTER_MERCHANT_CARDS":
+    case "GIVE_WEDDING_CARDS":
+    case "OFFER_COMMERCIAL_HARBOR":
+    case "END_COMMERCIAL_HARBOR":
+    case "RESPOND_COMMERCIAL_HARBOR":
+      return applyCkInteractionActionPure(currentState, playerId, action);
     case "BUY_DEV_CARD":
       return applyBuyDevCardPure(currentState, player, playerId);
     case "PLAY_KNIGHT":

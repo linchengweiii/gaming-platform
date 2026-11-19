@@ -1,11 +1,11 @@
-import { emptyCommodities } from "../cities-and-knights/helpers.ts";
 import { TERRAIN_TO_COMMODITY } from "../config/cities-knights-config.ts";
 import {
   NUMBER_TOKEN_PIPS,
   TERRAIN_TO_RESOURCE,
 } from "../config/costs-and-limits.ts";
 import { computePlayerVictoryPoints } from "../rules/awards-and-vp.ts";
-import { emptyResources, getPlayerResourceCount } from "../rules/helpers.ts";
+import { getPlayerResourceCount } from "../rules/helpers.ts";
+import { getCatanPlayerViewPure } from "../rules/redaction.ts";
 import {
   IMPROVEMENT_DISCIPLINES,
   RESOURCES,
@@ -174,46 +174,7 @@ export function redactStateForBotPlayerPure(
   state: CatanState,
   viewerPlayerId: string
 ): CatanState {
-  if (state.phase === "GAME_OVER") return state;
-  return {
-    ...state,
-    rngState: 0,
-    devCardDeck: state.devCardDeck.map(() => "knight"),
-    progressDecks: {
-      trade: state.progressDecks.trade.map(() => "merchant"),
-      politics: state.progressDecks.politics.map(() => "spy"),
-      science: state.progressDecks.science.map(() => "mining"),
-    },
-    fogPool: state.fogPool.map(() => ({
-      terrain: "fog",
-      numberToken: null,
-    })),
-    players: state.players.map((p) => {
-      if (p.id === viewerPlayerId) return p;
-      return {
-        ...p,
-        hiddenResourceCount: getPlayerResourceCount(p),
-        hiddenProgressCardCount:
-          typeof p.hiddenProgressCardCount === "number"
-            ? p.hiddenProgressCardCount
-            : p.progressCards.length,
-        handRedacted: true,
-        resources: emptyResources(),
-        commodities: emptyCommodities(),
-        progressCards: [],
-        devCards: p.devCards.map((c) =>
-          c.played ? c : { ...c, type: "knight" }
-        ),
-      };
-    }),
-    eventLog: state.eventLog.map((evt) => {
-      if (evt.type === "CARDS_DISCARDED" && evt.playerId !== viewerPlayerId) {
-        const { payload: _hidden, ...rest } = evt;
-        return rest;
-      }
-      return evt;
-    }),
-  };
+  return getCatanPlayerViewPure(state, viewerPlayerId);
 }
 
 export function getOpponentProgressCardCountFair(

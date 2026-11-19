@@ -158,15 +158,23 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
     const shipsOnBoard = Object.values(state.edges).filter(
       (e) => e.ownerId === p.id && e.type === "ship"
     ).length;
-    const basicKnightsOnBoard = Object.values(state.knights).filter(
-      (k) => k.ownerId === p.id && k.level === 1
-    ).length;
-    const strongKnightsOnBoard = Object.values(state.knights).filter(
-      (k) => k.ownerId === p.id && k.level === 2
-    ).length;
-    const mightyKnightsOnBoard = Object.values(state.knights).filter(
-      (k) => k.ownerId === p.id && k.level === 3
-    ).length;
+    const inFlightKnight =
+      state.pendingCkInteraction?.kind === "displace_knight" &&
+      state.pendingCkInteraction.knight.ownerId === p.id
+        ? state.pendingCkInteraction.knight
+        : null;
+    const basicKnightsOnBoard =
+      Object.values(state.knights).filter(
+        (k) => k.ownerId === p.id && k.level === 1
+      ).length + (inFlightKnight?.level === 1 ? 1 : 0);
+    const strongKnightsOnBoard =
+      Object.values(state.knights).filter(
+        (k) => k.ownerId === p.id && k.level === 2
+      ).length + (inFlightKnight?.level === 2 ? 1 : 0);
+    const mightyKnightsOnBoard =
+      Object.values(state.knights).filter(
+        (k) => k.ownerId === p.id && k.level === 3
+      ).length + (inFlightKnight?.level === 3 ? 1 : 0);
 
     return [
       ...(regularSettlementsOnBoard + p.settlementsRemaining !==
@@ -216,9 +224,17 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
     ];
   });
 
-  // 4. Cities & Knights Metropolis & Progress Deck conservation
+  // 4. Cities & Knights Metropolis, Progress Deck & Interaction conservation
+  const ckInteractionViolations: string[] =
+    (state.phase === "CK_INTERACTION") !== Boolean(state.pendingCkInteraction)
+      ? [
+          `CK_INTERACTION phase/pending mismatch: phase=${state.phase}, pending=${state.pendingCkInteraction?.kind ?? "null"}`,
+        ]
+      : [];
+
   const ckViolations: string[] = state.config.enableCitiesAndKnights
     ? [
+        ...ckInteractionViolations,
         ...IMPROVEMENT_DISCIPLINES.flatMap((d) => {
           const m = state.metropolises[d];
           if (!m.ownerId || !m.vertexId) return [];

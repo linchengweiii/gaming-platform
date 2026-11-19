@@ -12,7 +12,7 @@ import {
   syncOnlineLobbyRoomsPure,
   upsertRoomFromSummaryPure,
 } from "../../apps/web/src/app.ts";
-import { createFakeDomRoot } from "./helpers.ts";
+import { authHeadersForTestGuest, createFakeDomRoot } from "./helpers.ts";
 
 describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-Bot Guards", () => {
   test("hides debug bot controls in normal play, and in debugMode blocks Step bot on human turns while preserving Undo", async () => {
@@ -50,15 +50,17 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
     expect(localRoom.session!.getStep()).toBe(0);
 
     // Verify live HTTP /bot-step also blocks stepping humans while preserving requesterId view & canUndo
-    const { server } = createPlatformServer();
+    const srv = createPlatformServer();
+    const { server } = srv;
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const addr = server.address() as { port: number };
     const baseUrl = `http://127.0.0.1:${addr.port}`;
 
     try {
+      const humanHeaders = authHeadersForTestGuest(srv, "human-1");
       const createRes = await fetch(`${baseUrl}/api/rooms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: humanHeaders,
         body: JSON.stringify({
           gameId: "catan",
           ownerId: "human-1",
@@ -79,7 +81,7 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
       )[0]!;
       const actRes = await fetch(`${baseUrl}/api/rooms/${roomId}/action`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: humanHeaders,
         body: JSON.stringify({
           playerId: "human-1",
           requesterId: "human-1",
@@ -96,7 +98,7 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
         `${baseUrl}/api/rooms/${roomId}/bot-step`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: humanHeaders,
           body: JSON.stringify({ requesterId: "human-1", onlyBots: true }),
         }
       );
@@ -117,15 +119,17 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
   });
 
   test("preserves autoStepBots across /undo & /redo and resumes automatic bot turns after manual /bot-step", async () => {
-    const { server } = createPlatformServer();
+    const srv = createPlatformServer();
+    const { server } = srv;
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const addr = server.address() as { port: number };
     const baseUrl = `http://127.0.0.1:${addr.port}`;
 
     try {
+      const humanHeaders = authHeadersForTestGuest(srv, "human-1");
       const createRes = await fetch(`${baseUrl}/api/rooms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: humanHeaders,
         body: JSON.stringify({
           gameId: "catan",
           ownerId: "human-1",
@@ -147,7 +151,7 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
       )[0]!;
       await fetch(`${baseUrl}/api/rooms/${roomId}/action`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: humanHeaders,
         body: JSON.stringify({
           playerId: "human-1",
           requesterId: "human-1",
@@ -157,7 +161,7 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
 
       const undoRes = await fetch(`${baseUrl}/api/rooms/${roomId}/undo`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: humanHeaders,
         body: JSON.stringify({ requesterId: "human-1" }),
       });
       const undone = await undoRes.json();
@@ -167,12 +171,12 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
       // Redo settlement, place road -> Bot 1's turn starts; trigger manual /bot-step mid-bot-turn
       await fetch(`${baseUrl}/api/rooms/${roomId}/redo`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: humanHeaders,
         body: JSON.stringify({ requesterId: "human-1" }),
       });
-      const roomSnapRes = await fetch(
-        `${baseUrl}/api/rooms/${roomId}?playerId=human-1`
-      );
+      const roomSnapRes = await fetch(`${baseUrl}/api/rooms/${roomId}`, {
+        headers: humanHeaders,
+      });
       const roomSnap = await roomSnapRes.json();
       const firstRoad = CatanEngine.getLegalActions(
         roomSnap.state,
@@ -180,7 +184,7 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
       )[0]!;
       const roadRes = await fetch(`${baseUrl}/api/rooms/${roomId}/action`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: humanHeaders,
         body: JSON.stringify({
           playerId: "human-1",
           requesterId: "human-1",
@@ -193,7 +197,7 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
       // Immediately call /bot-step: it steps 1 micro-action AND re-schedules remaining bot snake-draft steps back to Alice!
       const stepRes = await fetch(`${baseUrl}/api/rooms/${roomId}/bot-step`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: humanHeaders,
         body: JSON.stringify({ requesterId: "human-1", onlyBots: true }),
       });
       const stepped = await stepRes.json();
@@ -203,9 +207,9 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
       let returnedToAlice = false;
       const deadline = Date.now() + 2500;
       while (Date.now() < deadline) {
-        const checkRes = await fetch(
-          `${baseUrl}/api/rooms/${roomId}?playerId=human-1`
-        );
+        const checkRes = await fetch(`${baseUrl}/api/rooms/${roomId}`, {
+          headers: humanHeaders,
+        });
         const checkData = await checkRes.json();
         if (
           checkData.actingPlayerId === "human-1" &&
@@ -391,10 +395,12 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
       );
 
       // 1) Feed SUBSCRIBE_ROOM split across two TCP chunks and verify ROOM_STATE arrives only after chunk 2
+      const p1Token = srv.guestSessions.issueTokenForPlayer("p1");
       const subFrame = encodeWsTextFramePure({
         type: "SUBSCRIBE_ROOM",
         roomId: `#${room.roomId.toUpperCase()}`,
         playerId: "p1",
+        token: p1Token,
       });
       const beforeCount = writtenFrames.length;
       for (const fn of listeners.data ?? []) fn(subFrame.subarray(0, 6));

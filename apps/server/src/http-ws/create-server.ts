@@ -8,6 +8,10 @@ import {
   type PlatformRoomManager,
   createPlatformRoomManager,
 } from "../room-manager.ts";
+import {
+  type GuestSessionStore,
+  createGuestSessionStore,
+} from "./guest-sessions.ts";
 import { handleApiRequest } from "./http-routes.ts";
 import { createRealtimeHub } from "./realtime-hub.ts";
 import { sendJson, tryServeStaticFile } from "./viewer-and-static.ts";
@@ -15,11 +19,13 @@ import { sendJson, tryServeStaticFile } from "./viewer-and-static.ts";
 export function createPlatformServer(): {
   server: http.Server;
   roomManager: PlatformRoomManager;
+  guestSessions: GuestSessionStore;
   sweepAbandonedRooms: (nowMs?: number, maxIdleMs?: number) => string[];
   checkWsHeartbeats: (nowMs?: number, timeoutMs?: number) => string[];
 } {
   const roomManager = createPlatformRoomManager();
-  const hub = createRealtimeHub(roomManager);
+  const guestSessions = createGuestSessionStore();
+  const hub = createRealtimeHub(roomManager, guestSessions);
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -33,7 +39,14 @@ export function createPlatformServer(): {
         `http://${req.headers.host ?? DEFAULT_SERVER_HOST}`
       );
 
-      const handled = await handleApiRequest(req, res, url, roomManager, hub);
+      const handled = await handleApiRequest(
+        req,
+        res,
+        url,
+        roomManager,
+        hub,
+        guestSessions
+      );
       if (handled) {
         return;
       }
@@ -45,7 +58,11 @@ export function createPlatformServer(): {
 
       sendJson(res, 404, { error: `Not found: ${url.pathname}` });
     } catch (err: any) {
-      sendJson(res, 400, { error: err?.message ?? String(err) });
+      const status =
+        typeof err?.statusCode === "number" && err.statusCode >= 400
+          ? err.statusCode
+          : 400;
+      sendJson(res, status, { error: err?.message ?? String(err) });
     }
   });
 
@@ -67,6 +84,7 @@ export function createPlatformServer(): {
   return {
     server,
     roomManager,
+    guestSessions,
     sweepAbandonedRooms: hub.sweepAbandonedRooms,
     checkWsHeartbeats: hub.checkHeartbeats,
   };

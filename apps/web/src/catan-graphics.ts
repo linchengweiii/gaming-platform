@@ -13,6 +13,7 @@ export {
 export {
   type CatanBoardSvgOptions,
   getCatanBoardViewBox,
+  getBoardSpotSvgCoords,
   getBoardSpotPercentPosition,
 } from "./catan-graphics/geometry.ts";
 export {

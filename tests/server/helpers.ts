@@ -80,6 +80,19 @@ export function readCombinedWebStyles(): string {
   return chunks.join("\n");
 }
 
+export function authHeadersForTestGuest(
+  srv: PlatformServerHandle,
+  playerId: string,
+  extra?: Record<string, string>
+): Record<string, string> {
+  const token = srv.guestSessions.issueTokenForPlayer(playerId);
+  return {
+    "Content-Type": "application/json",
+    "X-Guest-Token": token,
+    ...extra,
+  };
+}
+
 export function openSubscribedTestWs(
   srv: PlatformServerHandle,
   roomId: string,
@@ -88,6 +101,7 @@ export function openSubscribedTestWs(
   receivedMessages: any[];
   disconnect: () => void;
 } {
+  const token = srv.guestSessions.issueTokenForPlayer(playerId);
   const listeners: Record<string, Array<(arg?: any) => void>> = {};
   const receivedMessages: any[] = [];
   const fakeSocket: any = {
@@ -118,7 +132,10 @@ export function openSubscribedTestWs(
 
   srv.server.emit(
     "upgrade",
-    { headers: { "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==" } },
+    {
+      url: `/?playerId=${encodeURIComponent(playerId)}&token=${encodeURIComponent(token)}`,
+      headers: { "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==" },
+    },
     fakeSocket
   );
   for (const fn of listeners.data ?? []) {
@@ -127,6 +144,7 @@ export function openSubscribedTestWs(
         type: "SUBSCRIBE_ROOM",
         roomId,
         playerId,
+        token,
       })
     );
   }

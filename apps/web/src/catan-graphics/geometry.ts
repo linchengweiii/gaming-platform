@@ -151,34 +151,30 @@ export function getCatanBoardViewBox(state: CatanState): {
   };
 }
 
+export function getBoardSpotSvgCoords(
+  state: CatanState,
+  spot: { kind: "edge" | "vertex" | "hex"; id: string }
+): { x: number; y: number } {
+  const vb = getCatanBoardViewBox(state);
+  if (spot.kind === "edge") {
+    const e = state.topology.edges[spot.id];
+    if (e) return { x: e.midX, y: e.midY };
+  } else if (spot.kind === "vertex") {
+    const v = state.topology.vertices[spot.id];
+    if (v) return { x: v.x, y: v.y };
+  } else {
+    const h = state.topology.hexes[spot.id];
+    if (h) return { x: h.centerX, y: h.centerY };
+  }
+  return { x: vb.vbX + vb.vbW / 2, y: vb.vbY + vb.vbH / 2 };
+}
+
 export function getBoardSpotPercentPosition(
   state: CatanState,
   spot: { kind: "edge" | "vertex" | "hex"; id: string }
 ): { xPct: number; yPct: number } {
   const vb = getCatanBoardViewBox(state);
-  let x = vb.vbX + vb.vbW / 2;
-  let y = vb.vbY + vb.vbH / 2;
-
-  if (spot.kind === "edge") {
-    const e = state.topology.edges[spot.id];
-    if (e) {
-      x = e.midX;
-      y = e.midY;
-    }
-  } else if (spot.kind === "vertex") {
-    const v = state.topology.vertices[spot.id];
-    if (v) {
-      x = v.x;
-      y = v.y;
-    }
-  } else {
-    const h = state.topology.hexes[spot.id];
-    if (h) {
-      x = h.centerX;
-      y = h.centerY;
-    }
-  }
-
+  const { x, y } = getBoardSpotSvgCoords(state, spot);
   const rawX = ((x - vb.vbX) / Math.max(1, vb.vbW)) * 100;
   const rawY = ((y - vb.vbY) / Math.max(1, vb.vbH)) * 100;
   return {

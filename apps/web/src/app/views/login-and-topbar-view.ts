@@ -206,7 +206,7 @@ export function renderTopbarUserSelectorPure(model: Readonly<AppModel>): string 
   ).list;
 
   return `
-      <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+      <div class="ga-topbar-user-group" style="display: inline-flex; align-items: center; gap: 8px;">
         ${
           model.staticHostOnly
             ? `<span class="ga-chip ga-chip--ok">Solo and local play</span>`

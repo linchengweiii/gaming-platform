@@ -8,7 +8,11 @@ import {
   formatRoomHashLabelPure,
   renderLoginViewPure,
 } from "../../apps/web/src/app.ts";
-import { createFakeDomRoot, openSubscribedTestWs } from "./helpers.ts";
+import {
+  authHeadersForTestGuest,
+  createFakeDomRoot,
+  openSubscribedTestWs,
+} from "./helpers.ts";
 
 describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share Links", () => {
   test("lets guests rename their display name across Lobby, Room Setup, and active matches while preserving Undo history", async () => {
@@ -74,9 +78,10 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
       const port = (srv.server.address() as { port: number }).port;
       const base = `http://127.0.0.1:${port}`;
 
+      const hostHeaders = authHeadersForTestGuest(srv, "g-host");
       const createdRes = await fetch(`${base}/api/rooms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: hostHeaders,
         body: JSON.stringify({
           name: "Online Rename Room",
           gameId: "splendor",
@@ -93,7 +98,7 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
 
       const renameRes = await fetch(`${base}/api/guests/rename`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: hostHeaders,
         body: JSON.stringify({ playerId: "g-host", newName: "Admiral Yi" }),
       });
       const renameData = await renameRes.json();
@@ -197,7 +202,7 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
 
       const createRes = await fetch(`${base}/api/rooms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeadersForTestGuest(srv, "g-host-1"),
         body: JSON.stringify({
           gameId: "seven_wonders",
           ownerId: "g-host-1",
@@ -212,7 +217,7 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
       // Friend opens link #room=<hash> and joins directly
       const joinRes = await fetch(`${base}/api/rooms/${srvRoom.roomId}/join`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeadersForTestGuest(srv, "g-friend-2"),
         body: JSON.stringify({
           playerId: "g-friend-2",
           playerName: "FriendDan",
@@ -256,9 +261,13 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
       const port = (srv.server.address() as { port: number }).port;
       const base = `http://127.0.0.1:${port}`;
 
+      const hostHeaders = authHeadersForTestGuest(srv, "host-1");
+      const strangerHeaders = authHeadersForTestGuest(srv, "stranger-9");
+      const friendHeaders = authHeadersForTestGuest(srv, "friend-2");
+
       const createRes = await fetch(`${base}/api/rooms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: hostHeaders,
         body: JSON.stringify({
           gameId: "catan",
           ownerId: "host-1",
@@ -270,7 +279,7 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
 
       // Public by default: stranger sees it in Open rooms
       const pubList = await (
-        await fetch(`${base}/api/rooms?playerId=stranger-9`)
+        await fetch(`${base}/api/rooms`, { headers: strangerHeaders })
       ).json();
       expect(pubList.rooms.some((r: any) => r.roomId === created.roomId)).toBe(
         true
@@ -279,7 +288,7 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
       // Host switches room to Private in Room Setup
       const privRes = await fetch(`${base}/api/rooms/${created.roomId}/setup`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: hostHeaders,
         body: JSON.stringify({
           requesterId: "host-1",
           isPrivate: true,
@@ -294,7 +303,7 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
         false
       );
       const strangerList = await (
-        await fetch(`${base}/api/rooms?playerId=stranger-9`)
+        await fetch(`${base}/api/rooms`, { headers: strangerHeaders })
       ).json();
       expect(
         strangerList.rooms.some((r: any) => r.roomId === created.roomId)
@@ -302,7 +311,7 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
 
       // Host still sees their own private room
       const hostList = await (
-        await fetch(`${base}/api/rooms?playerId=host-1`)
+        await fetch(`${base}/api/rooms`, { headers: hostHeaders })
       ).json();
       expect(hostList.rooms.some((r: any) => r.roomId === created.roomId)).toBe(
         true
@@ -313,7 +322,7 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
         `${base}/api/rooms/${created.roomId}/join`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: friendHeaders,
           body: JSON.stringify({
             playerId: "friend-2",
             playerName: "Bob",
@@ -322,7 +331,7 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
       );
       expect(directJoinRes.ok).toBe(true);
       const friendList = await (
-        await fetch(`${base}/api/rooms?playerId=friend-2`)
+        await fetch(`${base}/api/rooms`, { headers: friendHeaders })
       ).json();
       expect(
         friendList.rooms.some((r: any) => r.roomId === created.roomId)
@@ -331,14 +340,14 @@ describe("@gaming-platform/server - Live Guest Rename & 6-Char Room Hash Share L
       // Host switches room back to Public -> visible to everyone in Open rooms again!
       await fetch(`${base}/api/rooms/${created.roomId}/setup`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: hostHeaders,
         body: JSON.stringify({
           requesterId: "host-1",
           isPrivate: false,
         }),
       });
       const reopenedList = await (
-        await fetch(`${base}/api/rooms?playerId=stranger-9`)
+        await fetch(`${base}/api/rooms`, { headers: strangerHeaders })
       ).json();
       expect(
         reopenedList.rooms.some((r: any) => r.roomId === created.roomId)

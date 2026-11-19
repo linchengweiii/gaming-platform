@@ -1,11 +1,11 @@
-import type { GameEvent, VertexId } from "@gaming-platform/core";
+import type { GameEvent } from "@gaming-platform/core";
 import {
   canPromoteKnightAtVertex,
-  displaceKnightAtVertexPure,
   getLegalActivateKnightVertices,
   getLegalBuildKnightVertices,
   getLegalChaseRobberActions,
   getLegalMoveKnightActions,
+  prepareDisplaceKnightPure,
   returnKnightToSupplyPure,
   takeKnightFromSupplyPure,
 } from "../cities-and-knights/knights.ts";
@@ -13,7 +13,10 @@ import { BUILDING_COSTS } from "../config/costs-and-limits.ts";
 import type { CatanAction } from "../types/actions.ts";
 import type { KnightLevel } from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
-import { checkAndAssignWinnerPure } from "./awards-and-vp.ts";
+import {
+  checkAndAssignWinnerPure,
+  recalculateAwardsPure,
+} from "./awards-and-vp.ts";
 import {
   addResourcesPure,
   appendCatanEvent,
@@ -218,43 +221,71 @@ export function applyMoveKnightPure(
   }
 
   const movingKnight = currentState.knights[action.fromVertexId]!;
-  const stateWithoutMover: CatanState = {
-    ...currentState,
-    knights: omitRecordKey(currentState.knights, action.fromVertexId),
-  };
-
-  const hasDisplacedTarget = Boolean(
-    stateWithoutMover.knights[action.toVertexId]
-  );
-  const displacement = hasDisplacedTarget
-    ? displaceKnightAtVertexPure(stateWithoutMover, action.toVertexId)
-    : {
-        knights: stateWithoutMover.knights,
-        players: stateWithoutMover.players,
-        relocatedTo: null as VertexId | null,
-      };
-
-  const movedState: CatanState = {
-    ...currentState,
-    knights: {
-      ...displacement.knights,
-      [action.toVertexId]: {
-        ...movingKnight,
-        active: false,
-        actedThisTurn: true,
-      },
+  const displacedKnight = currentState.knights[action.toVertexId];
+  const hasDisplacedTarget = Boolean(displacedKnight);
+  const knightsWithMoverPlaced: CatanState["knights"] = {
+    ...omitRecordKey(currentState.knights, action.fromVertexId),
+    [action.toVertexId]: {
+      ...movingKnight,
+      active: false,
+      actedThisTurn: true,
     },
-    players: displacement.players,
+  };
+  const stateWithMoverPlaced: CatanState = {
+    ...currentState,
+    knights: knightsWithMoverPlaced,
   };
 
-  const displaceNote = hasDisplacedTarget
-    ? " and displaced an opposing Knight!"
-    : ".";
+  if (displacedKnight) {
+    const prep = prepareDisplaceKnightPure(
+      stateWithMoverPlaced,
+      displacedKnight,
+      action.toVertexId
+    );
+    const movedState: CatanState =
+      prep.candidateVertexIds.length > 0
+        ? {
+            ...stateWithMoverPlaced,
+            phase: "CK_INTERACTION",
+            pendingCkInteraction: {
+              kind: "displace_knight",
+              actorId: displacedKnight.ownerId,
+              knight: displacedKnight,
+              fromVertexId: action.toVertexId,
+              candidateVertexIds: prep.candidateVertexIds,
+            },
+          }
+        : {
+            ...stateWithMoverPlaced,
+            players: prep.playersIfRemoved,
+          };
+
+    const logged = appendCatanEvent(
+      movedState,
+      [],
+      "KNIGHT_MOVED",
+      prep.candidateVertexIds.length > 0
+        ? `${player.name} marched a Knight and displaced an opposing Knight (awaiting retreat choice)!`
+        : `${player.name} marched a Knight and removed an opposing Knight with nowhere to retreat!`,
+      playerId,
+      {
+        fromVertexId: action.fromVertexId,
+        toVertexId: action.toVertexId,
+        displaced: true,
+      }
+    );
+    if (logged.state.phase === "CK_INTERACTION") {
+      return { state: recalculateAwardsPure(logged.state), events: logged.emitted };
+    }
+    const checked = checkAndAssignWinnerPure(logged.state, playerId);
+    return { state: checked.state, events: logged.emitted };
+  }
+
   const logged = appendCatanEvent(
-    movedState,
+    stateWithMoverPlaced,
     [],
     "KNIGHT_MOVED",
-    `${player.name} marched a Knight${displaceNote}`,
+    `${player.name} marched a Knight.`,
     playerId,
     {
       fromVertexId: action.fromVertexId,

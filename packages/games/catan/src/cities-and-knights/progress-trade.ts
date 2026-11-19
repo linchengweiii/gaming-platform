@@ -1,22 +1,24 @@
-import { type RngState, pickPure } from "@gaming-platform/core";
 import { TERRAIN_TO_RESOURCE } from "../config/costs-and-limits.ts";
 import type { ProgressCardPlayParams } from "../types/actions.ts";
 import {
-  COMMODITIES,
   type ProgressCardInstance,
   RESOURCES,
   TRADE_GOODS,
 } from "../types/domain.ts";
-import type { CatanPlayerState, CatanState } from "../types/state.ts";
+import type {
+  CatanPlayerState,
+  CatanState,
+  PendingCkInteraction,
+} from "../types/state.ts";
 import {
   type StateEventsPair,
-  drawOneRandomHandGoodPure,
   isCommodityType,
   isResourceType,
   pushCkEvent,
   totalCommodityCount,
   transferGoodBetweenPlayersPure,
 } from "./helpers.ts";
+import { getCommercialHarborEligibleTargetsPure } from "./interactions.ts";
 
 export function applyTradeProgressCardPure(
   stateAfterConsume: CatanState,
@@ -179,109 +181,78 @@ export function applyTradeProgressCardPure(
       ) {
         throw new Error("Invalid Master Merchant target");
       }
-      const [g1, r1] = drawOneRandomHandGoodPure(
-        stateAfterConsume.rngState,
-        victim
-      );
-      const players1 = g1
-        ? transferGoodBetweenPlayersPure(
-            stateAfterConsume.players,
-            victim.id,
-            playerId,
-            g1,
-            1
-          )
-        : stateAfterConsume.players;
-      const victimAfter1 = players1.find((p) => p.id === victim.id)!;
-      const [g2, r2] = drawOneRandomHandGoodPure(r1, victimAfter1);
-      const players2 = g2
-        ? transferGoodBetweenPlayersPure(players1, victim.id, playerId, g2, 1)
-        : players1;
-      const count = (g1 ? 1 : 0) + (g2 ? 1 : 0);
-
+      const targetHandTotal =
+        RESOURCES.reduce<number>((s, r) => s + victim.resources[r], 0) +
+        totalCommodityCount(victim.commodities);
+      if (targetHandTotal <= 0) {
+        return pushCkEvent(
+          stateAfterConsume,
+          [],
+          "PROGRESS_CARD_PLAYED",
+          `${actor.name} played Master Merchant on ${victim.name} (hand was empty).`,
+          playerId,
+          { cardType: card.type, targetPlayerId: victim.id, count: 0 }
+        );
+      }
+      const pending: PendingCkInteraction = {
+        kind: "master_merchant_choose_cards",
+        actorId: playerId,
+        targetPlayerId: victim.id,
+        maxCards: Math.min(2, targetHandTotal),
+      };
       const nextState: CatanState = {
         ...stateAfterConsume,
-        rngState: r2,
-        players: players2,
+        phase: "CK_INTERACTION",
+        pendingCkInteraction: pending,
       };
       return pushCkEvent(
         nextState,
         [],
         "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Master Merchant and took ${count} card(s) from ${victim.name}.`,
+        `${actor.name} played Master Merchant to inspect ${victim.name}'s hand and take up to ${pending.maxCards} card(s).`,
         playerId,
-        { cardType: card.type, targetPlayerId: victim.id, count }
+        { cardType: card.type, targetPlayerId: victim.id }
       );
     }
 
     case "commercial_harbor": {
-      const res = params?.resource;
-      if (!res || !isResourceType(res) || actor.resources[res] <= 0) {
-        throw new Error("Invalid Commercial Harbor resource");
+      const actorHasResource = RESOURCES.some((r) => actor.resources[r] > 0);
+      if (!actorHasResource) {
+        throw new Error("Commercial Harbor requires at least 1 resource card");
       }
-      const opponents = stateAfterConsume.players.filter(
-        (opp) => opp.id !== playerId && totalCommodityCount(opp.commodities) > 0
+      const eligibleTargetIds = getCommercialHarborEligibleTargetsPure(
+        stateAfterConsume,
+        playerId,
+        []
       );
-
-      const traded = opponents.reduce<{
-        rngState: RngState;
-        players: CatanPlayerState[];
-        swaps: number;
-      }>(
-        (acc, opp) => {
-          const curActor = acc.players.find((p) => p.id === playerId)!;
-          const giveRes =
-            curActor.resources[res] > 0
-              ? res
-              : RESOURCES.find((r) => curActor.resources[r] > 0);
-          if (!giveRes) return acc;
-
-          const curOpp = acc.players.find((p) => p.id === opp.id)!;
-          const commPool = COMMODITIES.flatMap((c) =>
-            Array.from({ length: curOpp.commodities[c] }, () => c)
-          );
-          if (commPool.length === 0) return acc;
-
-          const [chosenComm, nextRng] = pickPure(acc.rngState, commPool);
-          const pAfterGive = transferGoodBetweenPlayersPure(
-            acc.players,
-            playerId,
-            opp.id,
-            giveRes,
-            1
-          );
-          const pAfterRecv = transferGoodBetweenPlayersPure(
-            pAfterGive,
-            opp.id,
-            playerId,
-            chosenComm,
-            1
-          );
-          return {
-            rngState: nextRng,
-            players: pAfterRecv,
-            swaps: acc.swaps + 1,
-          };
-        },
-        {
-          rngState: stateAfterConsume.rngState,
-          players: stateAfterConsume.players,
-          swaps: 0,
-        }
-      );
-
+      if (eligibleTargetIds.length === 0) {
+        return pushCkEvent(
+          stateAfterConsume,
+          [],
+          "PROGRESS_CARD_PLAYED",
+          `${actor.name} played Commercial Harbor (no opponents held commodities to trade).`,
+          playerId,
+          { cardType: card.type, swaps: 0 }
+        );
+      }
+      const pending: PendingCkInteraction = {
+        kind: "commercial_harbor_offer",
+        actorId: playerId,
+        offeredPlayerIds: [],
+        eligibleTargetIds,
+      };
       const nextState: CatanState = {
         ...stateAfterConsume,
-        rngState: traded.rngState,
-        players: traded.players,
+        phase: "CK_INTERACTION",
+        pendingCkInteraction: pending,
       };
       return pushCkEvent(
         nextState,
         [],
         "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Commercial Harbor and completed ${traded.swaps} commodity exchange(s).`,
+        `${actor.name} played Commercial Harbor! Choose opponents to offer 1 resource for 1 commodity.`,
         playerId,
-        { cardType: card.type, swaps: traded.swaps }
+        { cardType: card.type }
       );
     }
 

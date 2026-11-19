@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createPlatformServer } from "../../apps/server/src/index.ts";
 import { MultiGamePlatformApp } from "../../apps/web/src/app.ts";
-import { createFakeDomRoot, openSubscribedTestWs } from "./helpers.ts";
+import {
+  authHeadersForTestGuest,
+  createFakeDomRoot,
+  openSubscribedTestWs,
+} from "./helpers.ts";
 
 describe("@gaming-platform/server - Guest Switch, Sign-Out Cleanup & WS Reconnects", () => {
   test("distinguishes switching guests from signing out, cleans up rooms/bots on sign-out, and preserves seats across WS reconnects", async () => {
@@ -95,9 +99,12 @@ describe("@gaming-platform/server - Guest Switch, Sign-Out Cleanup & WS Reconnec
       const port = (srv.server.address() as { port: number }).port;
       const base = `http://127.0.0.1:${port}`;
 
+      const aliceHeaders = authHeadersForTestGuest(srv, "g-alice");
+      const bobHeaders = authHeadersForTestGuest(srv, "g-bob");
+
       const createRes = await fetch(`${base}/api/rooms`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: aliceHeaders,
         body: JSON.stringify({
           name: "Online Reconnect Table",
           gameId: "seven_wonders",
@@ -112,12 +119,12 @@ describe("@gaming-platform/server - Guest Switch, Sign-Out Cleanup & WS Reconnec
 
       await fetch(`${base}/api/rooms/${roomId}/join`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: bobHeaders,
         body: JSON.stringify({ playerId: "g-bob", playerName: "Bob" }),
       });
       await fetch(`${base}/api/rooms/${roomId}/start`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: aliceHeaders,
         body: JSON.stringify({ requesterId: "g-alice" }),
       });
 
@@ -131,9 +138,9 @@ describe("@gaming-platform/server - Guest Switch, Sign-Out Cleanup & WS Reconnec
       wsBob.disconnect();
 
       // Bob's seat is preserved (NOT a bot), and RoomSummary marks Bob in offlinePlayerIds!
-      const duringDropRes = await fetch(
-        `${base}/api/rooms/${roomId}?playerId=g-alice`
-      );
+      const duringDropRes = await fetch(`${base}/api/rooms/${roomId}`, {
+        headers: aliceHeaders,
+      });
       const duringDropData = await duringDropRes.json();
       expect(duringDropData.room.offlinePlayerIds).toEqual(["g-bob"]);
       expect(
@@ -142,9 +149,9 @@ describe("@gaming-platform/server - Guest Switch, Sign-Out Cleanup & WS Reconnec
 
       // Bob's internet returns -> reconnects & reclaims his full 7-card unredacted hand!
       const wsBobReconnected = openSubscribedTestWs(srv, roomId, "g-bob");
-      const afterRejoinRes = await fetch(
-        `${base}/api/rooms/${roomId}?playerId=g-bob`
-      );
+      const afterRejoinRes = await fetch(`${base}/api/rooms/${roomId}`, {
+        headers: bobHeaders,
+      });
       const afterRejoinData = await afterRejoinRes.json();
       expect(afterRejoinData.room.offlinePlayerIds ?? []).toEqual([]);
       const bobState = afterRejoinData.state.players.find(
@@ -156,7 +163,7 @@ describe("@gaming-platform/server - Guest Switch, Sign-Out Cleanup & WS Reconnec
       // Explicit sign-out by Bob converts Bob to a Bot while keeping Alice's match alive
       const signOutBobRes = await fetch(`${base}/api/guests/signout`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: bobHeaders,
         body: JSON.stringify({ playerId: "g-bob" }),
       });
       const signOutBobData = await signOutBobRes.json();

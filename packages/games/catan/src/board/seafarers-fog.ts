@@ -51,14 +51,15 @@ export function generateSeafarersFogIslandsBoardPure(
     hexId(2, -1),
     hexId(2, 0),
   ]);
+  // Central fog belt along q = 0 (7 hexes), strictly separated from west (q <= -2) and east (q >= 2) by sea channels
   const fogBelt: ReadonlySet<HexId> = new Set<HexId>([
+    hexId(0, -3),
     hexId(0, -2),
     hexId(0, -1),
     hexId(0, 0),
     hexId(0, 1),
     hexId(0, 2),
-    hexId(-1, 0),
-    hexId(1, 0),
+    hexId(0, 3),
   ]);
 
   const [startTerrains, rng1] = shufflePure<TerrainType>(rng0, [

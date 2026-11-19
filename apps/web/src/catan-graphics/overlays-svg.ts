@@ -197,6 +197,20 @@ export function computeClickableBoardTargets(
       getPlayerVulnerableCities(state, actingPlayerId).forEach((v) =>
         clickableVertices.add(v)
       );
+    } else if (
+      state.config.enableCitiesAndKnights &&
+      state.phase === "CK_INTERACTION" &&
+      state.pendingCkInteraction &&
+      state.pendingCkInteraction.actorId === actingPlayerId
+    ) {
+      const pending = state.pendingCkInteraction;
+      if (
+        pending.kind === "displace_knight" ||
+        pending.kind === "deserter_choose_knight" ||
+        pending.kind === "deserter_place_knight"
+      ) {
+        pending.candidateVertexIds.forEach((v) => clickableVertices.add(v));
+      }
     }
 
     if (state.config.enableCitiesAndKnights) {
@@ -240,7 +254,18 @@ export function buildEdgesAndVerticesParts(
       const hitLen = Math.max(24, Number((edgeLen * 0.76).toFixed(2)));
       const isSetupShip = targets.setupShipSuggestedEdges.has(eId);
       const highlightColor = isSetupShip ? "#38bdf8" : "#fde047";
-      parts.push(`
+      const isOccupiedEdge = Boolean(state.edges[eId]);
+      parts.push(
+        isOccupiedEdge
+          ? `
+        <g class="clickable-target pulse-highlight" data-edge-id="${eId}" data-spot-edge="${eId}" data-setup-ship="${isSetupShip ? "1" : "0"}">
+          <g transform="translate(${eNode.midX}, ${eNode.midY}) rotate(${eNode.angleDeg})">
+            <rect x="${(-hitLen / 2).toFixed(2)}" y="-9" width="${hitLen}" height="18" rx="8"
+                  fill="rgba(253, 224, 71, 0.14)" stroke="${highlightColor}" stroke-width="2.6" />
+          </g>
+        </g>
+      `
+          : `
         <g class="clickable-target pulse-highlight" data-edge-id="${eId}" data-spot-edge="${eId}" data-setup-ship="${isSetupShip ? "1" : "0"}">
           <g transform="translate(${eNode.midX}, ${eNode.midY}) rotate(${eNode.angleDeg})">
             <rect x="${(-hitLen / 2).toFixed(2)}" y="-6" width="${hitLen}" height="12" rx="5"
@@ -253,7 +278,8 @@ export function buildEdgesAndVerticesParts(
               : ""
           }
         </g>
-      `);
+      `
+      );
     } else if (
       actingPlayerId &&
       (state.phase === "MAIN_PHASE" || state.phase === "SPECIAL_BUILDING")
@@ -295,6 +321,7 @@ export function buildEdgesAndVerticesParts(
       options.selectedSpot.id === vId;
 
     if (isClickable) {
+      const isOccupiedVertex = Boolean(state.buildings[vId] || state.knights[vId]);
       const isSetupSettlement =
         state.phase === "SETUP_SETTLEMENT_1" ||
         state.phase === "SETUP_SETTLEMENT_2";
@@ -304,7 +331,15 @@ export function buildEdgesAndVerticesParts(
             return sum + (tok ? NUMBER_TOKEN_PIPS[tok] ?? 0 : 0);
           }, 0)
         : 0;
-      parts.push(`
+      parts.push(
+        isOccupiedVertex
+          ? `
+        <g class="clickable-target pulse-highlight" data-vertex-id="${vId}" data-spot-vertex="${vId}">
+          <circle cx="${vNode.x}" cy="${vNode.y}" r="16.2" fill="rgba(253, 224, 71, 0.12)" stroke="#18191b" stroke-width="5" />
+          <circle cx="${vNode.x}" cy="${vNode.y}" r="16.2" fill="transparent" stroke="#fde047" stroke-width="2.8" />
+        </g>
+      `
+          : `
         <g class="clickable-target pulse-highlight" data-vertex-id="${vId}" data-spot-vertex="${vId}">
           <circle cx="${vNode.x}" cy="${vNode.y}" r="11.2" fill="rgba(253, 224, 71, 0.9)" stroke="#18191b" stroke-width="2.2" />
           <circle cx="${vNode.x}" cy="${vNode.y}" r="4.2" fill="#18191b" opacity="0.7" />
@@ -317,7 +352,8 @@ export function buildEdgesAndVerticesParts(
               : ""
           }
         </g>
-      `);
+      `
+      );
     } else if (
       actingPlayerId &&
       (state.phase === "MAIN_PHASE" || state.phase === "SPECIAL_BUILDING")

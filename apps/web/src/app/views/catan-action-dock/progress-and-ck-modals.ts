@@ -23,12 +23,21 @@ import {
 } from "../../../catan-graphics.ts";
 import { escapeAttr } from "../../helpers/html-and-dropdown.ts";
 import type { AppModel } from "../../types.ts";
+import { renderCkInteractionDockPure } from "./ck-interaction-modal.ts";
 
 export function renderCkPhaseDockPure(
   model: Readonly<AppModel>,
   state: CatanState,
   actingPlayer: CatanState["players"][number]
 ): string | null {
+  const interactionHtml = renderCkInteractionDockPure(
+    model,
+    state,
+    actingPlayer
+  );
+  if (interactionHtml !== null) {
+    return interactionHtml;
+  }
   const pColor = actingPlayer.color;
 
   if (state.phase === "BARBARIAN_PILLAGE_SELECTION") {

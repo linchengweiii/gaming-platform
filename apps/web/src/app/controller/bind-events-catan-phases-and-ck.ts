@@ -12,6 +12,7 @@ import {
   isCommodityType,
 } from "@gaming-platform/catan";
 import type { BuildMode } from "../types.ts";
+import { bindCkInteractionEvents } from "./bind-events-ck-interactions.ts";
 import type { AppRuntimeContext } from "./context.ts";
 
 export function bindCatanPhasesAndCkEvents(
@@ -20,6 +21,7 @@ export function bindCatanPhasesAndCkEvents(
   actingPlayerId: string
 ): void {
   const { root } = ctx;
+  bindCkInteractionEvents(ctx, state, actingPlayerId);
 
   root
     .querySelector("#btn-toggle-setup-edge")

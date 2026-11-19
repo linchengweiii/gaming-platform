@@ -14,12 +14,15 @@ import { syncOnlineLobbyRoomsPure } from "../../apps/web/src/app/reducers/room-s
 import { createInitialAppModelPure } from "../../apps/web/src/app/reducers/session-init-and-signin.ts";
 import { computeWsReconnectDelayPure } from "../../apps/web/src/config/app-config.ts";
 import { MultiGamePlatformApp } from "../../apps/web/src/app.ts";
-import { createFakeDomRoot } from "./helpers.ts";
+import { authHeadersForTestGuest, createFakeDomRoot } from "./helpers.ts";
 
 function attachFakeWsClient(
   srv: ReturnType<typeof createPlatformServer>,
   playerId?: string
 ) {
+  const token = playerId
+    ? srv.guestSessions.issueTokenForPlayer(playerId)
+    : null;
   const listeners: Record<string, Array<(arg?: any) => void>> = {};
   const frames: Array<{ opcode: number; text?: string; payload?: Buffer }> = [];
   const socket: any = {
@@ -44,7 +47,10 @@ function attachFakeWsClient(
   srv.server.emit(
     "upgrade",
     {
-      url: playerId ? `/?playerId=${encodeURIComponent(playerId)}` : "/",
+      url:
+        playerId && token
+          ? `/?playerId=${encodeURIComponent(playerId)}&token=${encodeURIComponent(token)}`
+          : "/",
       headers: { "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==" },
     },
     socket
@@ -207,7 +213,7 @@ describe("@gaming-platform/server - Connection, Heartbeat & Reconnection Guards"
       // C4: Sign-out clears wsClient.playerId, then IDENTIFY_PLAYER re-binds Charlie on the SAME open WS so Charlie sees his Private room
       await fetch(`${baseUrl}/api/guests/signout`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeadersForTestGuest(srv, "g-alice"),
         body: JSON.stringify({ playerId: "g-alice" }),
       });
       expect(
@@ -216,9 +222,11 @@ describe("@gaming-platform/server - Connection, Heartbeat & Reconnection Guards"
           .some((m) => m.type === "GUEST_SIGNED_OUT" && m.playerId === "g-alice")
       ).toBe(true);
 
+      const charlieToken = srv.guestSessions.issueTokenForPlayer("g-charlie");
       aliceWs.sendJsonMsg({
         type: "IDENTIFY_PLAYER",
         playerId: "g-charlie",
+        token: charlieToken,
       });
       const privRoom = srv.roomManager.createRoom({
         gameId: "azul",
@@ -230,6 +238,7 @@ describe("@gaming-platform/server - Connection, Heartbeat & Reconnection Guards"
       aliceWs.sendJsonMsg({
         type: "IDENTIFY_PLAYER",
         playerId: "g-charlie",
+        token: charlieToken,
       });
       const lobbyMsgs = aliceWs
         .getJsonMessages()
@@ -305,37 +314,38 @@ describe("@gaming-platform/server - Connection, Heartbeat & Reconnection Guards"
       srv.roomManager.dispatchAction(room.roomId, "g-alice", legal0[0]);
 
       // C5: Stranger cannot hijack /bot-step (onlyBots: false), /auto-bots, or /finish-setup
+      const intruderHeaders = authHeadersForTestGuest(srv, "g-intruder");
       const hijackStep = await fetch(
         `${baseUrl}/api/rooms/${room.roomId}/bot-step`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: intruderHeaders,
           body: JSON.stringify({ requesterId: "g-intruder", onlyBots: false }),
         }
       );
-      expect(hijackStep.status).toBe(400);
+      expect(hijackStep.status).toBe(403);
 
       const hijackAuto = await fetch(
         `${baseUrl}/api/rooms/${room.roomId}/auto-bots`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: intruderHeaders,
           body: JSON.stringify({ requesterId: "g-intruder", enabled: false }),
         }
       );
-      expect(hijackAuto.status).toBe(400);
+      expect(hijackAuto.status).toBe(403);
 
       // Bob signs out mid-turn -> converted to Bot across all snapshots
       await fetch(`${baseUrl}/api/guests/signout`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeadersForTestGuest(srv, "g-bob"),
         body: JSON.stringify({ playerId: "g-bob" }),
       });
 
       // Alice clicks Undo (reverting to snapshot 0) -> Bob MUST still be isBot: true in snapshot 0!
       const undoRes = await fetch(`${baseUrl}/api/rooms/${room.roomId}/undo`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeadersForTestGuest(srv, "g-alice"),
         body: JSON.stringify({ requesterId: "g-alice" }),
       });
       expect(undoRes.status).toBe(200);

@@ -1,7 +1,11 @@
-import type { EdgeId, HexId, RngState } from "@gaming-platform/core";
+import type { EdgeId, GameEvent, HexId, RngState } from "@gaming-platform/core";
 import type { ProgressCardPlayParams } from "../types/actions.ts";
-import type { KnightLevel, ProgressCardInstance } from "../types/domain.ts";
-import type { CatanPlayerState, CatanState } from "../types/state.ts";
+import type { ProgressCardInstance } from "../types/domain.ts";
+import type {
+  CatanPlayerState,
+  CatanState,
+  PendingCkInteraction,
+} from "../types/state.ts";
 import {
   type StateEventsPair,
   drawOneRandomHandGoodPure,
@@ -9,10 +13,8 @@ import {
   transferGoodBetweenPlayersPure,
 } from "./helpers.ts";
 import {
-  displaceKnightAtVertexPure,
   getDiplomatRemovableRoadEdges,
-  returnKnightToSupplyPure,
-  takeKnightFromSupplyPure,
+  prepareDisplaceKnightPure,
 } from "./knights.ts";
 
 export function applyPoliticsBoardProgressCardPure(
@@ -21,7 +23,13 @@ export function applyPoliticsBoardProgressCardPure(
   card: ProgressCardInstance,
   params: ProgressCardPlayParams | undefined,
   getLegalRoadEdgesFn: (s: CatanState, pid: string) => EdgeId[],
-  getLegalRobberHexesFn: (s: CatanState, pid: string) => HexId[]
+  getLegalRobberHexesFn: (s: CatanState, pid: string) => HexId[],
+  revealAdjacentFogFn: (
+    s: CatanState,
+    pid: string,
+    edgeId: EdgeId,
+    emitted: readonly GameEvent[]
+  ) => { readonly state: CatanState; readonly emitted: GameEvent[] }
 ): StateEventsPair {
   const actor = stateAfterConsume.players.find((p) => p.id === playerId)!;
 
@@ -125,22 +133,44 @@ export function applyPoliticsBoardProgressCardPure(
         !targetKnight ||
         targetKnight.ownerId === playerId ||
         !vNode?.incidentEdgeIds.some(
-          (eId) => stateAfterConsume.edges[eId]?.ownerId === playerId
+          (eId) =>
+            stateAfterConsume.edges[eId]?.ownerId === playerId &&
+            stateAfterConsume.edges[eId]?.type === "road"
         )
       ) {
         throw new Error("Invalid Intrigue target knight");
       }
-      const displaced = displaceKnightAtVertexPure(stateAfterConsume, vId);
-      const nextState: CatanState = {
+      const withoutTarget: CatanState = {
         ...stateAfterConsume,
-        knights: displaced.knights,
-        players: displaced.players,
+        knights: Object.fromEntries(
+          Object.entries(stateAfterConsume.knights).filter(([k]) => k !== vId)
+        ),
       };
+      const prep = prepareDisplaceKnightPure(withoutTarget, targetKnight, vId);
+      const nextState: CatanState =
+        prep.candidateVertexIds.length > 0
+          ? {
+              ...withoutTarget,
+              phase: "CK_INTERACTION",
+              pendingCkInteraction: {
+                kind: "displace_knight",
+                actorId: targetKnight.ownerId,
+                knight: targetKnight,
+                fromVertexId: vId,
+                candidateVertexIds: prep.candidateVertexIds,
+              },
+            }
+          : {
+              ...withoutTarget,
+              players: prep.playersIfRemoved,
+            };
       return pushCkEvent(
         nextState,
         [],
         "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Intrigue and displaced an opposing Knight.`,
+        prep.candidateVertexIds.length > 0
+          ? `${actor.name} played Intrigue and displaced an opposing Knight (awaiting retreat choice).`
+          : `${actor.name} played Intrigue and removed an opposing Knight with nowhere to retreat.`,
         playerId,
         { cardType: card.type, vertexId: vId }
       );
@@ -151,94 +181,22 @@ export function applyPoliticsBoardProgressCardPure(
       if (!targetPid || targetPid === playerId) {
         throw new Error("Invalid Deserter target player");
       }
-      const oppKnights = Object.entries(stateAfterConsume.knights).filter(
-        ([, k]) => k.ownerId === targetPid
-      );
-      if (oppKnights.length === 0) {
+      const oppKnightVertices = Object.entries(stateAfterConsume.knights)
+        .filter(([, k]) => k.ownerId === targetPid)
+        .map(([vId]) => vId);
+      if (oppKnightVertices.length === 0) {
         throw new Error("Target opponent has no knights on the board");
       }
-      // Opponent loses their lowest-level (preferring inactive) knight
-      const [desertVertexId, desertKnight] = [...oppKnights].sort(
-        ([, a], [, b]) =>
-          a.level !== b.level
-            ? a.level - b.level
-            : Number(a.active) - Number(b.active)
-      )[0]!;
-
-      const withoutDeserted = Object.fromEntries(
-        Object.entries(stateAfterConsume.knights).filter(
-          ([vId]) => vId !== desertVertexId
-        )
-      );
-      const withReturnedSupply = stateAfterConsume.players.map((p) =>
-        p.id === targetPid
-          ? returnKnightToSupplyPure(p, desertKnight.level)
-          : p
-      );
-
-      const actorUpdated = withReturnedSupply.find((p) => p.id === playerId)!;
-      const chosenLevel: KnightLevel | null = (() => {
-        const candidates: KnightLevel[] =
-          desertKnight.level === 3
-            ? [3, 2, 1]
-            : desertKnight.level === 2
-              ? [2, 1]
-              : [1];
-        for (const lvl of candidates) {
-          if (
-            lvl === 3 &&
-            actorUpdated.mightyKnightsRemaining > 0 &&
-            actorUpdated.cityImprovements.politics >= 3
-          ) {
-            return 3;
-          }
-          if (lvl === 2 && actorUpdated.strongKnightsRemaining > 0) {
-            return 2;
-          }
-          if (lvl === 1 && actorUpdated.basicKnightsRemaining > 0) {
-            return 1;
-          }
-        }
-        return null;
-      })();
-
-      const placeVId = params?.placeVertexId;
-      const canPlaceAtSpot = Boolean(
-        chosenLevel &&
-          placeVId &&
-          !stateAfterConsume.buildings[placeVId] &&
-          !withoutDeserted[placeVId] &&
-          stateAfterConsume.topology.vertices[placeVId]?.incidentEdgeIds.some(
-            (eId) => stateAfterConsume.edges[eId]?.ownerId === playerId
-          )
-      );
-
-      const nextKnights =
-        canPlaceAtSpot && placeVId && chosenLevel
-          ? {
-              ...withoutDeserted,
-              [placeVId]: {
-                ownerId: playerId,
-                level: chosenLevel,
-                active: desertKnight.active,
-                activatedThisTurn: desertKnight.active,
-                actedThisTurn: false,
-                promotedThisTurn: false,
-              },
-            }
-          : withoutDeserted;
-
-      const finalPlayers =
-        canPlaceAtSpot && chosenLevel
-          ? withReturnedSupply.map((p) =>
-              p.id === playerId ? takeKnightFromSupplyPure(p, chosenLevel) : p
-            )
-          : withReturnedSupply;
-
+      const pending: PendingCkInteraction = {
+        kind: "deserter_choose_knight",
+        actorId: targetPid,
+        initiatorId: playerId,
+        candidateVertexIds: oppKnightVertices,
+      };
       const nextState: CatanState = {
         ...stateAfterConsume,
-        knights: nextKnights,
-        players: finalPlayers,
+        phase: "CK_INTERACTION",
+        pendingCkInteraction: pending,
       };
       const targetName =
         stateAfterConsume.players.find((p) => p.id === targetPid)?.name ??
@@ -247,7 +205,7 @@ export function applyPoliticsBoardProgressCardPure(
         nextState,
         [],
         "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Deserter against ${targetName}!`,
+        `${actor.name} played Deserter against ${targetName} (${targetName} must choose a Knight to desert).`,
         playerId,
         { cardType: card.type, targetPlayerId: targetPid }
       );
@@ -277,9 +235,10 @@ export function applyPoliticsBoardProgressCardPure(
       const canRebuild =
         removedRoute.ownerId === playerId &&
         rebuildId &&
+        rebuildId !== edgeId &&
         getLegalRoadEdgesFn(afterRemove, playerId).includes(rebuildId);
 
-      const finalState: CatanState =
+      const rebuiltState: CatanState =
         canRebuild && rebuildId
           ? {
               ...afterRemove,
@@ -299,14 +258,18 @@ export function applyPoliticsBoardProgressCardPure(
             }
           : afterRemove;
 
-      return pushCkEvent(
-        finalState,
+      const logged = pushCkEvent(
+        rebuiltState,
         [],
         "PROGRESS_CARD_PLAYED",
         `${actor.name} played Diplomat.`,
         playerId,
-        { cardType: card.type, edgeId, rebuildEdgeId: rebuildId }
+        { cardType: card.type, edgeId, rebuildEdgeId: canRebuild ? rebuildId : undefined }
       );
+      if (canRebuild && rebuildId) {
+        return revealAdjacentFogFn(logged.state, playerId, rebuildId, logged.emitted);
+      }
+      return logged;
     }
 
     default:

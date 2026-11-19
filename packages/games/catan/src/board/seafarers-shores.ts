@@ -2,7 +2,6 @@ import {
   type HexId,
   type RngState,
   buildHexBoardTopology,
-  generateHexRadiusCoords,
   hexId,
   shufflePure,
 } from "@gaming-platform/core";
@@ -23,38 +22,39 @@ export function generateSeafarersNewShoresBoardPure(
   config: CatanConfig,
   rng0: RngState
 ): readonly [GeneratedBoard, RngState] {
-  const coords = generateHexRadiusCoords(3);
+  const coords = buildElongatedMarineCoords(4);
   const topology = buildHexBoardTopology(coords);
 
+  // Main island (14 hexes) strictly separated by >= 1 sea hex from every offshore island
   const mainIslandSet: ReadonlySet<HexId> = new Set<HexId>([
-    hexId(-1, 0),
-    hexId(0, 0),
-    hexId(-1, 1),
-    hexId(0, 1),
-    hexId(0, -1),
-    hexId(1, -1),
+    hexId(-3, 0),
+    hexId(-3, 1),
+    hexId(-3, 2),
     hexId(-2, 0),
     hexId(-2, 1),
     hexId(-2, 2),
-    hexId(-1, 2),
     hexId(-1, -1),
-    hexId(1, 0),
-    hexId(-3, 1),
-    hexId(-3, 2),
+    hexId(-1, 0),
+    hexId(-1, 1),
+    hexId(0, -2),
+    hexId(0, -1),
+    hexId(0, 0),
+    hexId(0, 1),
+    hexId(1, -1),
   ]);
   const island2Set: ReadonlySet<HexId> = new Set<HexId>([
-    hexId(2, -3),
     hexId(3, -3),
-    hexId(3, -2),
+    hexId(4, -3),
+    hexId(4, -2),
   ]);
   const island3Set: ReadonlySet<HexId> = new Set<HexId>([
     hexId(3, 0),
-    hexId(2, 1),
-    hexId(1, 2),
+    hexId(4, 0),
+    hexId(3, 1),
   ]);
   const island4Set: ReadonlySet<HexId> = new Set<HexId>([
-    hexId(-1, 3),
     hexId(0, 3),
+    hexId(1, 3),
   ]);
 
   const [mainTerrains, rng1] = shufflePure<TerrainType>(rng0, [

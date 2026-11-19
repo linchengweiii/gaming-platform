@@ -26,35 +26,34 @@ export function generateSeafarersFourIslandsBoardPure(
   const coords = generateHexRadiusCoords(3);
   const topology = buildHexBoardTopology(coords);
 
+  // Four symmetric 5-hex islands strictly separated by >= 1 sea hex (|dq|>=2 or |dr|>=2)
   const island1Coords = [
-    hexId(-2, -1),
-    hexId(-1, -1),
-    hexId(-2, 0),
+    hexId(0, -3),
     hexId(-1, -2),
-    hexId(-3, 0),
+    hexId(0, -2),
+    hexId(-1, -1),
+    hexId(-2, -1),
   ] as const;
   const island2Coords = [
-    hexId(1, -2),
-    hexId(2, -2),
-    hexId(1, -3),
     hexId(2, -3),
     hexId(3, -3),
-    hexId(2, -1),
+    hexId(2, -2),
+    hexId(3, -2),
+    hexId(3, -1),
   ] as const;
   const island3Coords = [
+    hexId(-3, 1),
     hexId(-3, 2),
-    hexId(-2, 2),
     hexId(-3, 3),
+    hexId(-2, 2),
     hexId(-2, 3),
-    hexId(-1, 2),
-    hexId(-2, 1),
   ] as const;
   const island4Coords = [
+    hexId(0, 2),
+    hexId(0, 3),
     hexId(1, 1),
-    hexId(2, 1),
     hexId(1, 2),
-    hexId(2, 0),
-    hexId(3, 0),
+    hexId(2, 1),
   ] as const;
 
   const islandMap: ReadonlyMap<HexId, number> = new Map<HexId, number>([
@@ -69,8 +68,6 @@ export function generateSeafarersFourIslandsBoardPure(
     "forest",
     "forest",
     "forest",
-    "forest",
-    "pasture",
     "pasture",
     "pasture",
     "pasture",
@@ -89,7 +86,7 @@ export function generateSeafarersFourIslandsBoardPure(
     "mountains",
   ]);
   const landNumbers = [
-    2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12, 4, 5, 9, 10,
+    2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12, 5, 9,
   ] as const;
 
   const laidOut = coords.reduce<{

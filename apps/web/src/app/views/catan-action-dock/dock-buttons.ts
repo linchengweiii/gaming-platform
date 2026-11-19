@@ -32,6 +32,7 @@ export function renderCatanMapBuildAndEndTurnHudPure(
   if (
     !actingPlayer ||
     model.autoPlayBots ||
+    Boolean(state.activeTradeOffer) ||
     (state.phase !== "MAIN_PHASE" && state.phase !== "SPECIAL_BUILDING")
   ) {
     return "";

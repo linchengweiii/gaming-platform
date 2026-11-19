@@ -135,18 +135,22 @@ export function updateRoomSetupPure(
       ? updates.name.trim()
       : room.name;
 
-  const nextGameId =
-    updates.gameId && updates.gameId !== room.gameId
-      ? (() => {
-          getRegisteredEnginePure(managerState.registry, updates.gameId!);
-          return updates.gameId!;
-        })()
-      : room.gameId;
+  const gameChanged = Boolean(updates.gameId && updates.gameId !== room.gameId);
+  const nextGameId = gameChanged
+    ? (() => {
+        getRegisteredEnginePure(managerState.registry, updates.gameId!);
+        return updates.gameId!;
+      })()
+    : room.gameId;
+
+  const baseConfigSource: Record<string, unknown> = gameChanged
+    ? {}
+    : room.config;
 
   const mergedConfig = updates.config
     ? (() => {
         const base: Record<string, unknown> = {
-          ...room.config,
+          ...baseConfigSource,
           ...updates.config,
         };
         if (nextGameId === "catan") {
@@ -210,10 +214,11 @@ export function updateRoomSetupPure(
       })()
     : room.config;
 
+  const mergedConfigFinal = updates.config ? mergedConfig : baseConfigSource;
   const nextBotDifficulty = updates.botDifficulty ?? room.botDifficulty;
   const nextConfig = updates.botDifficulty
-    ? { ...mergedConfig, botDifficulty: updates.botDifficulty }
-    : mergedConfig;
+    ? { ...mergedConfigFinal, botDifficulty: updates.botDifficulty }
+    : mergedConfigFinal;
 
   const nextStartingPlayerMode =
     updates.startingPlayerMode !== undefined
@@ -285,6 +290,7 @@ export function updateRoomSetupPure(
     allBots: nextAllBots,
     humanPlayers: nextHumanPlayers,
     botCount: nextBotCount,
+    ...(gameChanged ? { status: "lobby" as const, sessionState: null } : {}),
   });
 
   return setRoomRecordInState(managerState, updatedRoom);

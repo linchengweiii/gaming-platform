@@ -117,7 +117,7 @@ describe("@gaming-platform/server - Zero-Scroll Canvas, Shared Trade Request & L
     expect(cssText).toContain(".ga-game-canvas .ck-hand-tray .playing-card:not(.dev-playing-card)");
     expect(cssText).toContain("width: max-content;");
     expect(cssText).toContain("grid-template-columns: repeat(2, max-content);");
-    expect(cssText).toContain("top: 100%;");
+    expect(cssText).toContain("bottom: -184px;");
     expect(cssText).not.toContain("bottom: calc(100% + 8px);");
 
     const uiRoot = createFakeDomRoot();

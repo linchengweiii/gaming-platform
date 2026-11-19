@@ -377,6 +377,15 @@ describe("@gaming-platform/catan - Cities & Knights Core Mechanics", () => {
     expect(state.knights[vMid]?.ownerId).toBe("p1");
     expect(state.knights[vMid]?.active).toBe(false); // Deactivates after displacing/moving!
     expect(state.longestRoadOwnerId).toBe("p1");
+    // If p2 has legal retreat spots, p2 chooses where their displaced knight retreats!
+    if (state.phase === "CK_INTERACTION") {
+      const retreatAct = CatanEngine.getLegalActions(state, "p2").find(
+        (a) => a.type === "RESOLVE_DISPLACED_KNIGHT"
+      )!;
+      expect(retreatAct).toBeDefined();
+      state = CatanEngine.applyAction(state, "p2", retreatAct).state;
+      expect(state.phase).toBe("MAIN_PHASE");
+    }
 
     // Re-activate on next turn and test CHASE_ROBBER_WITH_KNIGHT once barbarianAttacksCount >= 1
     state.barbarianAttacksCount = 1;

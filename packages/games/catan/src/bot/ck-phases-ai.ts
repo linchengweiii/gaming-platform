@@ -5,7 +5,11 @@ import {
 } from "../config/costs-and-limits.ts";
 import { getPlayerResourceCount } from "../rules/helpers.ts";
 import type { CatanAction } from "../types/actions.ts";
-import type { ImprovementDiscipline } from "../types/domain.ts";
+import {
+  COMMODITIES,
+  type ImprovementDiscipline,
+  RESOURCES,
+} from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 
 export function chooseCkPillagedCityAction(
@@ -186,4 +190,149 @@ export function chooseCkAlchemistPreRollAction(
     }
   }
   return bestAct;
+}
+
+export function chooseCkInteractionAction(
+  state: CatanState,
+  player: CatanPlayerState,
+  legalActions: CatanAction[]
+): CatanAction {
+  const pending = state.pendingCkInteraction;
+  if (!pending || legalActions.length === 0) return legalActions[0]!;
+
+  const vertexPipScore = (vId: string): number =>
+    (state.topology.vertices[vId]?.adjacentHexIds ?? []).reduce<number>(
+      (sum, hId) => {
+        const tok = state.hexes[hId]?.numberToken;
+        return sum + (tok ? NUMBER_TOKEN_PIPS[tok] ?? 0 : 0);
+      },
+      0
+    );
+
+  const bundleValue = (
+    res?: Partial<Record<(typeof RESOURCES)[number], number>>,
+    comm?: Partial<Record<(typeof COMMODITIES)[number], number>>
+  ): number => {
+    const rVal = RESOURCES.reduce<number>(
+      (s, r) => s + (res?.[r] ?? 0) * (r === "ore" || r === "grain" ? 1.4 : 1.0),
+      0
+    );
+    const cVal = COMMODITIES.reduce<number>(
+      (s, c) => s + (comm?.[c] ?? 0) * (c === "paper" ? 2.6 : 2.2),
+      0
+    );
+    return rVal + cVal;
+  };
+
+  switch (pending.kind) {
+    case "displace_knight":
+    case "deserter_place_knight": {
+      return [...legalActions].sort((a, b) => {
+        const va = "vertexId" in a ? vertexPipScore(a.vertexId) : 0;
+        const vb = "vertexId" in b ? vertexPipScore(b.vertexId) : 0;
+        return vb - va;
+      })[0]!;
+    }
+
+    case "deserter_choose_knight": {
+      // Sacrifice lowest-level, preferring inactive knight
+      return [...legalActions].sort((a, b) => {
+        const ka = "vertexId" in a ? state.knights[a.vertexId] : undefined;
+        const kb = "vertexId" in b ? state.knights[b.vertexId] : undefined;
+        const la = ka?.level ?? 9;
+        const lb = kb?.level ?? 9;
+        if (la !== lb) return la - lb;
+        return Number(Boolean(ka?.active)) - Number(Boolean(kb?.active));
+      })[0]!;
+    }
+
+    case "spy_choose_card": {
+      const target = state.players.find((p) => p.id === pending.targetPlayerId);
+      const cardRank = (cardId: string): number => {
+        const c = target?.progressCards.find((x) => x.id === cardId);
+        if (!c) return 0;
+        if (
+          c.type === "merchant" ||
+          c.type === "road_building" ||
+          c.type === "alchemist" ||
+          c.type === "mining" ||
+          c.type === "irrigation"
+        ) {
+          return 10;
+        }
+        return 6;
+      };
+      return [...legalActions].sort((a, b) => {
+        const ra = a.type === "SELECT_SPY_CARD" ? cardRank(a.stolenCardId) : 0;
+        const rb = b.type === "SELECT_SPY_CARD" ? cardRank(b.stolenCardId) : 0;
+        return rb - ra;
+      })[0]!;
+    }
+
+    case "master_merchant_choose_cards": {
+      // Take the highest-value cards (commodities > ore/grain > other resources)
+      return [...legalActions].sort((a, b) => {
+        const va =
+          a.type === "SELECT_MASTER_MERCHANT_CARDS"
+            ? bundleValue(a.resources, a.commodities)
+            : 0;
+        const vb =
+          b.type === "SELECT_MASTER_MERCHANT_CARDS"
+            ? bundleValue(b.resources, b.commodities)
+            : 0;
+        return vb - va;
+      })[0]!;
+    }
+
+    case "wedding_give_cards": {
+      // Give the lowest-value cards
+      return [...legalActions].sort((a, b) => {
+        const va =
+          a.type === "GIVE_WEDDING_CARDS"
+            ? bundleValue(a.resources, a.commodities)
+            : Infinity;
+        const vb =
+          b.type === "GIVE_WEDDING_CARDS"
+            ? bundleValue(b.resources, b.commodities)
+            : Infinity;
+        return va - vb;
+      })[0]!;
+    }
+
+    case "commercial_harbor_offer": {
+      const offers = legalActions.filter(
+        (a): a is Extract<CatanAction, { type: "OFFER_COMMERCIAL_HARBOR" }> =>
+          a.type === "OFFER_COMMERCIAL_HARBOR"
+      );
+      if (offers.length === 0) {
+        return { type: "END_COMMERCIAL_HARBOR" };
+      }
+      // Prefer offering surplus non-ore/grain resources for opponent commodities
+      const sorted = [...offers].sort((a, b) => {
+        const ca =
+          (a.resource === "ore" || a.resource === "grain" ? 2 : 0) -
+          player.resources[a.resource];
+        const cb =
+          (b.resource === "ore" || b.resource === "grain" ? 2 : 0) -
+          player.resources[b.resource];
+        return ca - cb;
+      });
+      return sorted[0]!;
+    }
+
+    case "commercial_harbor_respond": {
+      // Give the commodity we need least (prefer surplus or non-paper)
+      return [...legalActions].sort((a, b) => {
+        if (
+          a.type !== "RESPOND_COMMERCIAL_HARBOR" ||
+          b.type !== "RESPOND_COMMERCIAL_HARBOR"
+        ) {
+          return 0;
+        }
+        const sa = (a.commodity === "paper" ? 1 : 0) - player.commodities[a.commodity];
+        const sb = (b.commodity === "paper" ? 1 : 0) - player.commodities[b.commodity];
+        return sa - sb;
+      })[0]!;
+    }
+  }
 }
