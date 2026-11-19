@@ -16,6 +16,7 @@ import {
   buildEdgesAndVerticesParts,
   computeClickableBoardTargets,
 } from "./overlays-svg.ts";
+import { formatCatanMapViewBoxPure } from "./viewport.ts";
 
 function buildOceanAndShelfParts(
   state: CatanState,
@@ -148,11 +149,22 @@ export function renderCatanBoardSvg(
   const vbY = Math.floor(minY - pad);
   const vbW = Math.ceil(maxX - minX + pad * 2);
   const vbH = Math.ceil(maxY - minY + pad * 2);
+  const cameraViewBoxStr = formatCatanMapViewBoxPure(
+    { vbX, vbY, vbW, vbH },
+    options.viewport
+  );
 
   const targets = computeClickableBoardTargets(state, actingPlayerId, options);
 
   const parts: string[] = [
-    renderBoardDefsAndChartHeaderPart(state, vbX, vbY, vbW, vbH),
+    renderBoardDefsAndChartHeaderPart(
+      state,
+      vbX,
+      vbY,
+      vbW,
+      vbH,
+      cameraViewBoxStr
+    ),
     ...buildOceanAndShelfParts(state, outerOceanHexes),
     ...buildHexAndHarborParts(state, targets.clickableHexes, options),
     ...buildEdgesAndVerticesParts(state, actingPlayerId, targets, options),

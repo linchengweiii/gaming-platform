@@ -33,6 +33,7 @@ import { renderCatanActionDockPure } from "../catan-action-dock/index.ts";
 import {
   renderCatanBarbarianHudPure,
   renderCatanMapDiceHudPure,
+  renderCatanMapZoomControlsPure,
 } from "../catan-hud-view.ts";
 import { renderCatanSpotPopoverPure } from "../catan-spot-popover-view.ts";
 import { renderActiveTradeOfferCardPure } from "../catan-trade-and-popup-view.ts";
@@ -205,6 +206,10 @@ export function renderInGameBoardStagePure(
                           )}`
                         : ""
                     }
+                    ${renderCatanMapZoomControlsPure(
+                      state as CatanState,
+                      model.catanMapViewport
+                    )}
                     ${renderCatanBoardSvg(
                       state as CatanState,
                       boardActingPlayerId,
@@ -216,6 +221,7 @@ export function renderInGameBoardStagePure(
                           ? model.selectedMoveFromEdgeId
                           : null,
                         selectedSpot: model.selectedBoardSpot,
+                        viewport: model.catanMapViewport,
                         ...ckBoardOptions,
                       }
                     )}

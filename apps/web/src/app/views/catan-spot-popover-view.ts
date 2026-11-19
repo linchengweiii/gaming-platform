@@ -39,7 +39,11 @@ export function renderCatanSpotPopoverPure(
   }
 
   const spot = model.selectedBoardSpot;
-  const { xPct, yPct } = getBoardSpotPercentPosition(state, spot);
+  const { xPct, yPct } = getBoardSpotPercentPosition(
+    state,
+    spot,
+    model.catanMapViewport
+  );
   const { x: svgX, y: svgY } = getBoardSpotSvgCoords(state, spot);
   const belowClass = yPct < 36 ? "map-spot-popover--below" : "";
   const pColor = actingPlayer.color;

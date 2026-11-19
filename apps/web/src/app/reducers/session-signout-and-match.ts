@@ -8,6 +8,7 @@ import {
   isExpanded56Scenario,
 } from "@gaming-platform/catan";
 import { TUTORIAL_SEEDS } from "../../tutorials.ts";
+import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import { TUTORIAL_GAME_SHORT_TITLE_BY_ID } from "../../config/app-config.ts";
 import {
   getEngineForGamePure,
@@ -108,6 +109,7 @@ export function startOfflineRoomMatchPure(
           ...model,
           activeRoomId: roomId,
           viewMode: "in_game",
+          catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
         },
         startedRoom
       )

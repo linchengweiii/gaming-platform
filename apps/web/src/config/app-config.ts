@@ -31,6 +31,18 @@ export const HTTP_FETCH_TIMEOUT_MS = 8_000;
 export const ONLINE_BOT_WATCHDOG_MS = 1200;
 export const COPY_LINK_RESET_DELAY_MS = 2000;
 
+export const CATAN_MAP_VIEWPORT_CONFIG = {
+  minZoom: 1,
+  maxZoom: 3,
+  zoomStep: 0.25,
+  panOverflowRatio: 0.2,
+  maxPanCenterRatio: 0.5,
+  dragThresholdPx: 5,
+  wheelZoomSensitivity: 0.0022,
+  pinchWheelSensitivity: 0.01,
+  maxWheelDelta: 240,
+} as const;
+
 export function computeWsReconnectDelayPure(
   attempt: number,
   randomUnit = 0.5

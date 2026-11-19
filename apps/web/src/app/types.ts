@@ -11,6 +11,7 @@ import type {
 } from "@gaming-platform/catan";
 import type { GemColor } from "@gaming-platform/splendor";
 import type { AzulDraftSource, AzulTileColor } from "@gaming-platform/azul";
+import type { CatanMapViewport } from "../catan-graphics/viewport.ts";
 
 export type SupportedGameId = "catan" | "splendor" | "azul" | "seven_wonders";
 export type AppViewMode = "login" | "lobby" | "room_setup" | "in_game";
@@ -150,6 +151,7 @@ export interface AppModel {
   readonly activeRoomId: string;
   readonly buildMode: BuildMode;
   readonly selectedBoardSpot: BoardSpotSelection | null;
+  readonly catanMapViewport: CatanMapViewport;
   readonly setupEdgeKind: "road" | "ship";
   readonly robberOrPirateMode: "robber" | "pirate";
   readonly selectedMoveFromEdgeId: string | null;
@@ -259,6 +261,7 @@ export interface MultiGamePlatformApp {
   activeRoomId: string;
   buildMode: BuildMode;
   selectedBoardSpot: BoardSpotSelection | null;
+  catanMapViewport: CatanMapViewport;
   setupEdgeKind: "road" | "ship";
   robberOrPirateMode: "robber" | "pirate";
   selectedMoveFromEdgeId: string | null;

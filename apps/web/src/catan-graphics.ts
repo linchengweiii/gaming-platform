@@ -17,6 +17,23 @@ export {
   getBoardSpotPercentPosition,
 } from "./catan-graphics/geometry.ts";
 export {
+  type CatanBoardViewBox,
+  type CatanMapViewport,
+  type ViewportRectLike,
+  DEFAULT_CATAN_MAP_VIEWPORT,
+  isDefaultCatanMapViewportPure,
+  resetCatanMapViewportPure,
+  clampCatanMapViewportPure,
+  computeCatanCameraViewBoxPure,
+  formatCatanMapViewBoxPure,
+  computeSvgPixelScalePure,
+  screenToSvgPointPure,
+  stepCatanMapZoomPure,
+  zoomCatanMapAtPointPure,
+  panCatanMapByPixelsPure,
+  formatCatanZoomPercentPure,
+} from "./catan-graphics/viewport.ts";
+export {
   renderResourceGlyphSvg,
   renderCommodityGlyphSvg,
   renderTradeGoodGlyphSvg,

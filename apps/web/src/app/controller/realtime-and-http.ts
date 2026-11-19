@@ -9,6 +9,7 @@ import {
   syncOnlineLobbyRoomsPure,
   upsertRoomFromSummaryPure,
 } from "../reducers/room-sync-reducers.ts";
+import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
 import type { ClientRoom } from "../types.ts";
 import {
@@ -62,6 +63,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
       activeRoomId: "",
       inspectingSetupDuringMatch: false,
       viewMode: "lobby",
+      catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
     });
   };
 

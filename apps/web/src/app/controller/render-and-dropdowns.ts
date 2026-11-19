@@ -147,7 +147,7 @@ export function bindDropdownEventsOnRoot(root: HTMLElement): void {
   });
 }
 
-function alignCatanSpotPopoverToSvg(root: HTMLElement): void {
+export function alignCatanSpotPopoverToSvg(root: HTMLElement): void {
   const wrap = root.querySelector(".board-svg-wrap") as HTMLElement | null;
   if (!wrap || typeof wrap.querySelector !== "function") return;
   const svg = wrap.querySelector(".board-svg") as SVGSVGElement | null;
@@ -211,6 +211,8 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
   };
 
   const render = (): void => {
+    ctx.cleanupViewportDrag?.();
+    ctx.cleanupViewportDrag = null;
     const activeRoom = getActiveRoomPure(ctx.model);
     const inActiveGame =
       ctx.model.isAuthenticated &&

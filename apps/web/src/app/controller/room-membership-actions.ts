@@ -9,6 +9,7 @@ import {
   enterOfflineRoomPure,
   leaveOfflineRoomPure,
 } from "../reducers/session-init-and-signin.ts";
+import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
 import type { ClientRoom } from "../types.ts";
 import {
@@ -106,6 +107,10 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
               inspectingSetupDuringMatch: false,
               viewMode:
                 latestRoom.status === "in_progress" ? "in_game" : "room_setup",
+              catanMapViewport:
+                latestRoom.roomId !== ctx.model.activeRoomId
+                  ? DEFAULT_CATAN_MAP_VIEWPORT
+                  : ctx.model.catanMapViewport,
             });
             ctx.render();
           } catch {

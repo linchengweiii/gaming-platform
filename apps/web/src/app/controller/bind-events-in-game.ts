@@ -14,6 +14,7 @@ import {
   bindCatanEvents,
   bindReadOnlyCatanSpotInspect,
 } from "./bind-events-catan.ts";
+import { bindCatanMapViewportEvents } from "./bind-events-catan-viewport.ts";
 import {
   bindAzulEvents,
   bindSevenWondersEvents,
@@ -200,6 +201,10 @@ export function bindInGameEvents(
     root
       .querySelector("#btn-sw-unselect-pick-dock")
       ?.addEventListener("click", handleUnselectSwPick);
+  }
+
+  if (room.gameId === "catan") {
+    bindCatanMapViewportEvents(ctx, state as CatanState);
   }
 
   if (!actingPlayerId) return;

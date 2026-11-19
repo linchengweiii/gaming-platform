@@ -1,5 +1,9 @@
 import { axialNeighbors, hexId, hexToPixel } from "@gaming-platform/core";
 import type { CatanState } from "@gaming-platform/catan";
+import {
+  type CatanMapViewport,
+  computeCatanCameraViewBoxPure,
+} from "./viewport.ts";
 
 export interface CatanBoardSvgOptions {
   buildMode: string | null;
@@ -12,6 +16,7 @@ export interface CatanBoardSvgOptions {
   progressTargetVertexIds?: readonly string[];
   progressTargetEdgeIds?: readonly string[];
   selectedSpot?: { kind: "edge" | "vertex" | "hex"; id: string } | null;
+  viewport?: CatanMapViewport | null;
 }
 
 export interface OuterOceanHexNode {
@@ -171,9 +176,13 @@ export function getBoardSpotSvgCoords(
 
 export function getBoardSpotPercentPosition(
   state: CatanState,
-  spot: { kind: "edge" | "vertex" | "hex"; id: string }
+  spot: { kind: "edge" | "vertex" | "hex"; id: string },
+  viewport?: CatanMapViewport | null
 ): { xPct: number; yPct: number } {
-  const vb = getCatanBoardViewBox(state);
+  const vb = computeCatanCameraViewBoxPure(
+    getCatanBoardViewBox(state),
+    viewport
+  );
   const { x, y } = getBoardSpotSvgCoords(state, spot);
   const rawX = ((x - vb.vbX) / Math.max(1, vb.vbW)) * 100;
   const rawY = ((y - vb.vbY) / Math.max(1, vb.vbH)) * 100;

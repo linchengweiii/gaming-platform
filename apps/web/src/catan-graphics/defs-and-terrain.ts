@@ -285,7 +285,8 @@ export function renderBoardDefsAndChartHeaderPart(
   vbX: number,
   vbY: number,
   vbW: number,
-  vbH: number
+  vbH: number,
+  cameraViewBoxStr?: string
 ): string {
   const topo = state.topology;
   const hexSize = topo.hexSize;
@@ -304,9 +305,11 @@ export function renderBoardDefsAndChartHeaderPart(
     );
   });
 
+  const activeViewBox = cameraViewBoxStr ?? `${vbX} ${vbY} ${vbW} ${vbH}`;
+
   // IMPORTANT: filterUnits="userSpaceOnUse" prevents SVG objectBoundingBox clipping on vertical (x1===x2) or horizontal edges!
   return `
-    <svg class="board-svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" xmlns="http://www.w3.org/2000/svg">
+    <svg class="board-svg" viewBox="${activeViewBox}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <filter id="piece-shadow" filterUnits="userSpaceOnUse" x="-2500" y="-2500" width="5000" height="5000">
           <feDropShadow dx="0" dy="2.4" stdDeviation="2.1" flood-color="#000000" flood-opacity="0.6" />

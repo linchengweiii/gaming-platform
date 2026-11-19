@@ -1,5 +1,6 @@
 import type { PlayerDescriptor } from "@gaming-platform/core";
 import { PLAYER_COLORS, emptyCommodities, emptyResources } from "@gaming-platform/catan";
+import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import { DEFAULT_AUTOPLAY_SPEED_MS } from "../../config/app-config.ts";
 import {
   extractDebugModeFromLocationPure,
@@ -142,6 +143,7 @@ export function createInitialAppModelPure(
     activeRoomId: "room-1",
     buildMode: null,
     selectedBoardSpot: null,
+    catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
     setupEdgeKind: "road",
     robberOrPirateMode: "robber",
     selectedMoveFromEdgeId: null,
@@ -370,6 +372,7 @@ export function enterOfflineRoomPure(
           ...model,
           activeRoomId: roomId,
           viewMode: "room_setup",
+          catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
         },
         updatedRoom
       )
@@ -380,6 +383,10 @@ export function enterOfflineRoomPure(
     ...model,
     activeRoomId: roomId,
     viewMode: "in_game",
+    catanMapViewport:
+      roomId !== model.activeRoomId
+        ? DEFAULT_CATAN_MAP_VIEWPORT
+        : model.catanMapViewport,
   });
 }
 
@@ -402,6 +409,7 @@ export function leaveOfflineRoomPure(
         ...removed,
         activeRoomId: nextActive,
         viewMode: "lobby",
+        catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
       });
     }
     const nextOwnerId =
@@ -423,6 +431,7 @@ export function leaveOfflineRoomPure(
         {
           ...model,
           viewMode: "lobby",
+          catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
         },
         rebuilt
       )
@@ -432,5 +441,6 @@ export function leaveOfflineRoomPure(
   return resetSubModesPure({
     ...model,
     viewMode: "lobby",
+    catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
   });
 }
