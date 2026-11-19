@@ -208,7 +208,14 @@ export function evaluateMasterCardUtility(
 
     if (ef.kind === "science" || ef.kind === "wildcard_science") {
       return (
-        acc + evaluateMasterScienceBonus(fairView, pIdx, beforeScore, afterScore)
+        acc +
+        evaluateMasterScienceBonus(
+          fairView,
+          pIdx,
+          beforeScore,
+          afterScore,
+          card
+        )
       );
     }
 

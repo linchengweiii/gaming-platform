@@ -93,7 +93,6 @@ export function chooseBabylonSeventhCardLookahead(
     if (act1.type !== "SELECT_DRAFT_ACTION") continue;
     const unlocksSeventh =
       alreadyHasSeventh || (act1.kind === "wonder" && nextStageGrantsSeventh);
-    if (!unlocksSeventh) continue;
 
     const card1 = me.hand.find((c) => c.id === act1.cardId)!;
     const card2 = me.hand.find((c) => c.id !== act1.cardId)!;
@@ -119,77 +118,80 @@ export function chooseBabylonSeventhCardLookahead(
           ? pay1.leftCoins + pay1.rightCoins
           : 0;
 
-    const n = state.players.length;
-    const lIdx = getLeftNeighborIndex(pIdx, n);
-    const rIdx = getRightNeighborIndex(pIdx, n);
-    const simPlayersStep2 = state.players.map((p, idx) => {
-      if (idx === pIdx) {
-        return {
-          ...p,
-          coins: p.coins - spent1 + step1Eval.immediateCoinsGained,
-          tableau: act1.kind === "build" ? [...p.tableau, card1] : p.tableau,
-          builtWonderStages:
-            act1.kind === "wonder"
-              ? p.builtWonderStages + 1
-              : p.builtWonderStages,
-          usedFreeBuildInAge: act1.useFreeBuild
-            ? { ...p.usedFreeBuildInAge, [state.age]: true }
-            : p.usedFreeBuildInAge,
-          hand: [card2],
-        };
-      }
-      if (idx === lIdx && pay1.leftCoins > 0) {
-        return { ...p, coins: p.coins + pay1.leftCoins };
-      }
-      if (idx === rIdx && pay1.rightCoins > 0) {
-        return { ...p, coins: p.coins + pay1.rightCoins };
-      }
-      return p;
-    });
+    let bestStep2Score = 0;
+    if (unlocksSeventh) {
+      const n = state.players.length;
+      const lIdx = getLeftNeighborIndex(pIdx, n);
+      const rIdx = getRightNeighborIndex(pIdx, n);
+      const simPlayersStep2 = state.players.map((p, idx) => {
+        if (idx === pIdx) {
+          return {
+            ...p,
+            coins: p.coins - spent1 + step1Eval.immediateCoinsGained,
+            tableau: act1.kind === "build" ? [...p.tableau, card1] : p.tableau,
+            builtWonderStages:
+              act1.kind === "wonder"
+                ? p.builtWonderStages + 1
+                : p.builtWonderStages,
+            usedFreeBuildInAge: act1.useFreeBuild
+              ? { ...p.usedFreeBuildInAge, [state.age]: true }
+              : p.usedFreeBuildInAge,
+            hand: [card2],
+          };
+        }
+        if (idx === lIdx && pay1.leftCoins > 0) {
+          return { ...p, coins: p.coins + pay1.leftCoins };
+        }
+        if (idx === rIdx && pay1.rightCoins > 0) {
+          return { ...p, coins: p.coins + pay1.rightCoins };
+        }
+        return p;
+      });
 
-    const simState2: SevenWondersState = {
-      ...state,
-      phase: "SEVENTH_CARD_PLAY",
-      seventhCardQueue: [playerId],
-      players: simPlayersStep2,
-    };
-    const legal2 = getSevenWondersLegalActions(simState2, playerId);
-    let bestStep2Score = -1e9;
-    for (const act2 of legal2) {
-      if (act2.type !== "SELECT_DRAFT_ACTION") continue;
-      const pay2 = act2.payment ?? { leftCoins: 0, rightCoins: 0 };
-      const step2Eval =
-        act2.kind === "build"
-          ? evaluateMasterCardUtility(simState2, pIdx, card2, wheel)
-          : act2.kind === "wonder"
-            ? evaluateMasterWonderStage(simState2, pIdx, wheel)
-            : {
-                nonCoinUtility: 0,
-                immediateCoinsGained: SEVEN_WONDERS_DISCARD_COINS,
-              };
-      const viaChain2 =
-        act2.kind === "build" &&
-        canPlayerBuildViaChain(simPlayersStep2[pIdx]!, card2);
-      const spent2 =
-        act2.kind === "build"
-          ? viaChain2 || act2.useFreeBuild
-            ? 0
-            : card2.coinCost + pay2.leftCoins + pay2.rightCoins
-          : act2.kind === "wonder"
-            ? pay2.leftCoins + pay2.rightCoins
-            : 0;
+      const simState2: SevenWondersState = {
+        ...state,
+        phase: "SEVENTH_CARD_PLAY",
+        seventhCardQueue: [playerId],
+        players: simPlayersStep2,
+      };
+      const legal2 = getSevenWondersLegalActions(simState2, playerId);
+      bestStep2Score = -1e9;
+      for (const act2 of legal2) {
+        if (act2.type !== "SELECT_DRAFT_ACTION") continue;
+        const pay2 = act2.payment ?? { leftCoins: 0, rightCoins: 0 };
+        const step2Eval =
+          act2.kind === "build"
+            ? evaluateMasterCardUtility(simState2, pIdx, card2, wheel)
+            : act2.kind === "wonder"
+              ? evaluateMasterWonderStage(simState2, pIdx, wheel)
+              : {
+                  nonCoinUtility: 0,
+                  immediateCoinsGained: SEVEN_WONDERS_DISCARD_COINS,
+                };
+        const viaChain2 =
+          act2.kind === "build" &&
+          canPlayerBuildViaChain(simPlayersStep2[pIdx]!, card2);
+        const spent2 =
+          act2.kind === "build"
+            ? viaChain2 || act2.useFreeBuild
+              ? 0
+              : card2.coinCost + pay2.leftCoins + pay2.rightCoins
+            : act2.kind === "wonder"
+              ? pay2.leftCoins + pay2.rightCoins
+              : 0;
 
-      const coinUtil2 = evaluateCoinFlowUtility(
-        simState2,
-        pIdx,
-        spent2,
-        step2Eval.immediateCoinsGained,
-        pay2
-      );
-      bestStep2Score = Math.max(
-        bestStep2Score,
-        step2Eval.nonCoinUtility + coinUtil2
-      );
+        const coinUtil2 = evaluateCoinFlowUtility(
+          simState2,
+          pIdx,
+          spent2,
+          step2Eval.immediateCoinsGained,
+          pay2
+        );
+        bestStep2Score = Math.max(
+          bestStep2Score,
+          step2Eval.nonCoinUtility + coinUtil2
+        );
+      }
     }
 
     const coinUtil1 = evaluateCoinFlowUtility(
@@ -220,8 +222,5 @@ export function chooseBabylonSeventhCardLookahead(
     }
   }
 
-  if (bestComboAct && alreadyHasSeventh) {
-    return bestComboAct;
-  }
-  return null;
+  return bestComboAct;
 }

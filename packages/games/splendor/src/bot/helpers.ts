@@ -174,8 +174,8 @@ export function findCardInPublicState(
   if (!cardId) return undefined;
   return (
     player.reservedCards.find((c) => c.id === cardId && !c.redacted) ??
-    state.market[3].find((c) => c.id === cardId) ??
-    state.market[2].find((c) => c.id === cardId) ??
-    state.market[1].find((c) => c.id === cardId)
+    state.market[3].find((c) => c.id === cardId && !c.redacted) ??
+    state.market[2].find((c) => c.id === cardId && !c.redacted) ??
+    state.market[1].find((c) => c.id === cardId && !c.redacted)
   );
 }

@@ -41,9 +41,19 @@ export async function handleApiRequest(
 
   if (pathname === "/api/guests/session" && req.method === "POST") {
     const body = await readJsonBody(req);
+    const isIdReserved = (candidateId: string): boolean => {
+      const rooms = Object.values(roomManager.getStateSnapshot().rooms);
+      return rooms.some(
+        (r) =>
+          r.ownerId === candidateId ||
+          r.humanPlayers.some((p) => p.id === candidateId) ||
+          r.players.some((p) => p.id === candidateId)
+      );
+    };
     const session = guestSessions.issueSession(
       typeof body.playerId === "string" ? body.playerId : null,
-      guestSessions.extractTokenFromReq(req)
+      guestSessions.extractTokenFromReq(req),
+      isIdReserved
     );
     sendJson(res, 200, {
       playerId: session.playerId,
@@ -180,7 +190,14 @@ export async function handleApiRequest(
     const authPlayerId = guestSessions.requireAuthPlayerId(req);
     const body = await readJsonBody(req);
     assertMatchesAuthPlayer(body.requesterId, authPlayerId, "requesterId");
+    const prevHumanIds = targetRoom.humanPlayers.map((p) => p.id);
     const updated = roomManager.updateRoomSetup(roomId, authPlayerId, body);
+    const nextHumanIdSet = new Set(updated.humanPlayers.map((p) => p.id));
+    for (const prevId of prevHumanIds) {
+      if (!nextHumanIdSet.has(prevId)) {
+        hub.evictPlayerFromRoom(roomId, prevId);
+      }
+    }
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
     sendJson(res, 200, {
@@ -216,13 +233,19 @@ export async function handleApiRequest(
     const authPlayerId = guestSessions.requireAuthPlayerId(req);
     const body = await readJsonBody(req);
     assertMatchesAuthPlayer(body.requesterId, authPlayerId, "requesterId");
+    const trimmedTargetId =
+      typeof body.targetPlayerId === "string" ? body.targetPlayerId.trim() : "";
+    const wasSeated = targetRoom.humanPlayers.some(
+      (p) => p.id === trimmedTargetId
+    );
     const room = roomManager.removeLocalPlayer(
       roomId,
       authPlayerId,
-      body.targetPlayerId
+      trimmedTargetId
     );
-    if (typeof body.targetPlayerId === "string" && body.targetPlayerId.trim()) {
-      hub.evictPlayerFromRoom(roomId, body.targetPlayerId.trim());
+    const stillSeated = room.humanPlayers.some((p) => p.id === trimmedTargetId);
+    if (trimmedTargetId && wasSeated && !stillSeated) {
+      hub.evictPlayerFromRoom(roomId, trimmedTargetId);
     }
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();

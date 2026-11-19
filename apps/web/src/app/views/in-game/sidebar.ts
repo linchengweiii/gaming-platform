@@ -154,11 +154,11 @@ export function renderInGameSidebarPure(
                       <span>Longest route (+2 VP)</span>
                       <strong class="ga-num">${
                         state.longestRoadOwnerId
-                          ? `${
+                          ? `${escapeAttr(
                               state.players.find(
                                 (p: any) => p.id === state.longestRoadOwnerId
-                              )?.name
-                            } (${state.longestRoadLength})`
+                              )?.name ?? ""
+                            )} (${state.longestRoadLength})`
                           : "Unclaimed (5+)"
                       }</strong>
                     </div>
@@ -169,10 +169,10 @@ export function renderInGameSidebarPure(
                         <span>${dMeta.label} Metro (+2 VP)</span>
                         <strong class="ga-num">${
                           m.ownerId
-                            ? `${
+                            ? `${escapeAttr(
                                 state.players.find((p: any) => p.id === m.ownerId)
-                                  ?.name
-                              } (Lv ${m.level})`
+                                  ?.name ?? ""
+                              )} (Lv ${m.level})`
                             : "Unclaimed (Lv 4)"
                         }</strong>
                       </div>`;
@@ -181,11 +181,11 @@ export function renderInGameSidebarPure(
                       <span>Merchant (+1 VP)</span>
                       <strong class="ga-num">${
                         state.merchantOwnerId
-                          ? `${
+                          ? `${escapeAttr(
                               state.players.find(
                                 (p: any) => p.id === state.merchantOwnerId
-                              )?.name
-                            }`
+                              )?.name ?? ""
+                            )}`
                           : "Unclaimed"
                       }</strong>
                     </div>
@@ -195,11 +195,11 @@ export function renderInGameSidebarPure(
                             <span>Harbormaster (+2 VP)</span>
                             <strong class="ga-num">${
                               state.harbormasterOwnerId
-                                ? `${
+                                ? `${escapeAttr(
                                     state.players.find(
                                       (p: any) => p.id === state.harbormasterOwnerId
-                                    )?.name
-                                  } (${state.harbormasterPoints})`
+                                    )?.name ?? ""
+                                  )} (${state.harbormasterPoints})`
                                 : "Unclaimed (3+)"
                             }</strong>
                           </div>`
@@ -225,11 +225,11 @@ export function renderInGameSidebarPure(
                       <span>Longest route (+2 VP)</span>
                       <strong class="ga-num">${
                         state.longestRoadOwnerId
-                          ? `${
+                          ? `${escapeAttr(
                               state.players.find(
                                 (p: any) => p.id === state.longestRoadOwnerId
-                              )?.name
-                            } (${state.longestRoadLength})`
+                              )?.name ?? ""
+                            )} (${state.longestRoadLength})`
                           : "Unclaimed (5+)"
                       }</strong>
                     </div>
@@ -237,11 +237,11 @@ export function renderInGameSidebarPure(
                       <span>Largest army (+2 VP)</span>
                       <strong class="ga-num">${
                         state.largestArmyOwnerId
-                          ? `${
+                          ? `${escapeAttr(
                               state.players.find(
                                 (p: any) => p.id === state.largestArmyOwnerId
-                              )?.name
-                            } (${state.largestArmySize})`
+                              )?.name ?? ""
+                            )} (${state.largestArmySize})`
                           : "Unclaimed (3+)"
                       }</strong>
                     </div>
@@ -251,11 +251,11 @@ export function renderInGameSidebarPure(
                             <span>Harbormaster (+2 VP)</span>
                             <strong class="ga-num">${
                               state.harbormasterOwnerId
-                                ? `${
+                                ? `${escapeAttr(
                                     state.players.find(
                                       (p: any) => p.id === state.harbormasterOwnerId
-                                    )?.name
-                                  } (${state.harbormasterPoints})`
+                                    )?.name ?? ""
+                                  )} (${state.harbormasterPoints})`
                                 : "Unclaimed (3+)"
                             }</strong>
                           </div>`

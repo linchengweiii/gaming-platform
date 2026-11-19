@@ -205,7 +205,10 @@ export function getCatanLegalActions(
         state,
         playerId
       ).map((hexId) => ({ type: "MOVE_ROBBER", hexId }));
-      const pirateActions: CatanAction[] = getLegalPirateHexes(state).map(
+      const pirateActions: CatanAction[] = getLegalPirateHexes(
+        state,
+        playerId
+      ).map(
         (hexId) => ({
           type: "MOVE_PIRATE",
           hexId,
@@ -267,7 +270,7 @@ export function getCatanLegalActions(
         state,
         playerId,
         getLegalRobberHexes(state, playerId),
-        getLegalPirateHexes(state)
+        getLegalPirateHexes(state, playerId)
       );
       const progressCardActions = getLegalProgressCardActions(
         state,
@@ -300,6 +303,15 @@ export function getCatanLegalActions(
       )
         ? (() => {
             const avail = RESOURCES.filter((r) => state.bank[r] > 0);
+            if (avail.length === 1 && state.bank[avail[0]!] === 1) {
+              return [
+                {
+                  type: "PLAY_YEAR_OF_PLENTY" as const,
+                  resource1: avail[0]!,
+                  resource2: avail[0]!,
+                },
+              ];
+            }
             return avail.flatMap((r1, i) =>
               avail
                 .slice(i)

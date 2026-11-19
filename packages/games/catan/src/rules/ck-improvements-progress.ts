@@ -9,7 +9,10 @@ import {
 } from "../cities-and-knights/helpers.ts";
 import { canPlayerUpgradeDiscipline } from "../cities-and-knights/improvements.ts";
 import type { CatanAction } from "../types/actions.ts";
-import type { CommodityMap } from "../types/domain.ts";
+import {
+  type CommodityMap,
+  IMPROVEMENT_DISCIPLINES,
+} from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import {
   checkAndAssignWinnerPure,
@@ -36,6 +39,11 @@ export function applyUpgradeCityImprovementPure(
   action: Extract<CatanAction, { type: "UPGRADE_CITY_IMPROVEMENT" }>
 ): { state: CatanState; events: GameEvent[] } {
   assertCanBuildInCurrentPhase(currentState, playerId);
+  if (
+    !(IMPROVEMENT_DISCIPLINES as readonly string[]).includes(action.discipline)
+  ) {
+    throw new Error(`Invalid city improvement discipline: ${String(action.discipline)}`);
+  }
   const check = canPlayerUpgradeDiscipline(
     currentState,
     player,
@@ -50,11 +58,16 @@ export function applyUpgradeCityImprovementPure(
   const currentMetro = currentState.metropolises[action.discipline];
   const metroTransition = (() => {
     if (check.claimsMetropolis) {
+      if (
+        action.metropolisVertexId !== undefined &&
+        !check.eligibleMetropolisVertices.includes(action.metropolisVertexId)
+      ) {
+        throw new Error(
+          `Vertex ${action.metropolisVertexId} is not an eligible non-metropolis city`
+        );
+      }
       const targetVId =
-        action.metropolisVertexId &&
-        check.eligibleMetropolisVertices.includes(action.metropolisVertexId)
-          ? action.metropolisVertexId
-          : check.eligibleMetropolisVertices[0];
+        action.metropolisVertexId ?? check.eligibleMetropolisVertices[0];
       if (!targetVId) {
         throw new Error(
           "Must select an eligible non-metropolis city for the new Metropolis"

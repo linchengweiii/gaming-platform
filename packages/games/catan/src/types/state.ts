@@ -100,6 +100,7 @@ export type PendingCkInteraction =
       actorId: string;
       initiatorId: string;
       offeredResource: ResourceType;
+      offeredResourceRedacted?: boolean;
       offeredPlayerIds: string[];
     };
 

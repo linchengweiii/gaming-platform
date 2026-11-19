@@ -1,7 +1,8 @@
-import type {
-  CatanState,
-  ResourceType,
-  TradeGoodType,
+import {
+  type CatanState,
+  RESOURCES,
+  type ResourceType,
+  type TradeGoodType,
 } from "@gaming-platform/catan";
 import {
   canControlPlayerOnDevicePure,
@@ -217,21 +218,47 @@ export function bindCatanEvents(
     ctx.dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
   });
 
+  const pickValidYopPair = (
+    preferred1: ResourceType,
+    preferred2: ResourceType
+  ): { yopRes1: ResourceType; yopRes2: ResourceType } => {
+    const avail = RESOURCES.filter((r) => state.bank[r] > 0);
+    if (avail.length === 0) {
+      return { yopRes1: preferred1, yopRes2: preferred2 };
+    }
+    const r1 = state.bank[preferred1] > 0 ? preferred1 : avail[0]!;
+    const totalBank = avail.reduce((sum, r) => sum + state.bank[r], 0);
+    if (totalBank === 1) {
+      return { yopRes1: r1, yopRes2: r1 };
+    }
+    const r2Ok = state.bank[preferred2] >= (r1 === preferred2 ? 2 : 1);
+    const r2 = r2Ok
+      ? preferred2
+      : avail.find((r) => state.bank[r] >= (r1 === r ? 2 : 1)) ?? r1;
+    return { yopRes1: r1, yopRes2: r2 };
+  };
+
   root.querySelector("#btn-mode-yop")?.addEventListener("click", () => {
+    const nextOpen = ctx.model.buildMode !== "year_of_plenty";
+    const pair = nextOpen
+      ? pickValidYopPair(ctx.model.yopRes1, ctx.model.yopRes2)
+      : { yopRes1: ctx.model.yopRes1, yopRes2: ctx.model.yopRes2 };
     ctx.model = {
       ...ctx.model,
+      ...pair,
       selectedBoardSpot: null,
-      buildMode:
-        ctx.model.buildMode === "year_of_plenty" ? null : "year_of_plenty",
+      buildMode: nextOpen ? "year_of_plenty" : null,
     };
     ctx.render();
   });
 
   root.querySelectorAll("[data-yop-pick1]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      const picked1 = btn.getAttribute("data-yop-pick1") as ResourceType;
+      const pair = pickValidYopPair(picked1, ctx.model.yopRes2);
       ctx.model = {
         ...ctx.model,
-        yopRes1: btn.getAttribute("data-yop-pick1") as ResourceType,
+        ...pair,
       };
       ctx.render();
     });
@@ -248,10 +275,18 @@ export function bindCatanEvents(
   });
 
   root.querySelector("#btn-exec-yop")?.addEventListener("click", () => {
+    const totalBank = RESOURCES.reduce((sum, r) => sum + state.bank[r], 0);
+    const r1 = ctx.model.yopRes1;
+    const r2 = ctx.model.yopRes2;
+    const valid =
+      totalBank === 1
+        ? state.bank[r1] === 1 && r2 === r1
+        : state.bank[r1] >= 1 && state.bank[r2] >= (r1 === r2 ? 2 : 1);
+    if (!valid) return;
     ctx.dispatchUiAction(actingPlayerId, {
       type: "PLAY_YEAR_OF_PLENTY",
-      resource1: ctx.model.yopRes1,
-      resource2: ctx.model.yopRes2,
+      resource1: r1,
+      resource2: r2,
     });
   });
 

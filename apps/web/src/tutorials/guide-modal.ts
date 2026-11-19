@@ -110,7 +110,7 @@ export function renderReferenceGuideModalPure(
   const guide = GAME_REFERENCE_GUIDES[activeGameId];
 
   return `
-    <div class="ga-guide-backdrop" id="ga-guide-backdrop" role="dialog" aria-modal="true" aria-label="${escapeHtml(guide.title)} how to play">
+    <div class="ga-guide-backdrop" id="ga-guide-backdrop" tabindex="-1" role="dialog" aria-modal="true" aria-label="${escapeHtml(guide.title)} how to play">
       <div class="ga-guide-dialog">
         <div class="ga-guide-dialog__head">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">

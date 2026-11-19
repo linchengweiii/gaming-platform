@@ -21,6 +21,7 @@ import {
   hasCommodities,
   hasResources,
 } from "@gaming-platform/catan";
+import { escapeAttr } from "../helpers/html-and-dropdown.ts";
 import {
   COMMODITY_META,
   DISCIPLINE_META,
@@ -180,7 +181,7 @@ export function renderCatanBarbarianHudPure(
     return `<span class="ck-metro-pill" style="--metro-accent: ${dMeta.accent};" title="${
       dMeta.label
     } Metropolis (+2 VP): ${
-      owner ? `${owner.name} (Lv ${m.level})` : "Unclaimed (reach Lv 4)"
+      owner ? `${escapeAttr(owner.name)} (Lv ${m.level})` : "Unclaimed (reach Lv 4)"
     }">
       ${
         owner

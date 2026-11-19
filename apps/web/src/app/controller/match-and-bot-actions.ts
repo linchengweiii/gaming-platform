@@ -221,23 +221,11 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
         room.session.getState()
       );
       const result = room.session.dispatch(playerId, action);
-      const nextActorId = getActingPlayerIdPure(room.gameId, result.state);
       if (result.state.phase === "GAME_OVER") {
         ctx.model = updateRoomInModelPure(ctx.model, room.roomId, (r) => ({
           ...r,
           status: "finished",
         }));
-      } else if (
-        room.gameId === "catan" &&
-        prevActorId !== nextActorId &&
-        result.state.players.filter((p: any) => !p.isBot).length >= 2
-      ) {
-        const nextActor = result.state.players.find(
-          (p: any) => p.id === nextActorId
-        );
-        if (nextActor && !nextActor.isBot && ctx.model.hidePassAndPlayHand) {
-          ctx.model = { ...ctx.model, hidePassAndPlayHand: true };
-        }
       }
       ctx.model = resetSubModesPure(ctx.model);
       ctx.render();
@@ -285,7 +273,13 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
   };
 
   const startInteractiveTutorial = (gameId: SupportedGameId): ClientRoom => {
+    ctx.navEpoch += 1;
     ctx.stopAutoPlay();
+    ctx.cancelPendingSetupSync();
+    const prevRoom = findActiveRoomPure(ctx.model);
+    if (prevRoom && roomUsesServerPure(ctx.model, prevRoom)) {
+      ctx.sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+    }
     const res = startInteractiveTutorialPure(ctx.model, gameId, Date.now());
     ctx.model = res.model;
     ctx.render();

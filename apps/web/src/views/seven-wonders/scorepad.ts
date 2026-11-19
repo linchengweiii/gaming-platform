@@ -19,6 +19,13 @@ export function renderScorepadHtml(state: SevenWondersState): string {
       b.coins - a.coins
   );
 
+  const copiedGuildNotes = ranked
+    .filter((p) => Boolean(p.scoreBreakdown.copiedGuildName))
+    .map(
+      (p) =>
+        `${escapeHtml(p.name)} copied ${escapeHtml(p.scoreBreakdown.copiedGuildName!)} via Olympia B3`
+    );
+
   return `
     <div class="sw-scorepad-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -45,6 +52,11 @@ export function renderScorepadHtml(state: SevenWondersState): string {
               .map((p, idx) => {
                 const sb = p.scoreBreakdown;
                 const board = getWonderBoardDefinition(p.wonderId, p.wonderSide);
+                const copiedName = sb.copiedGuildName;
+                const copiedIsScience = copiedName === "Scientists Guild";
+                const copiedTitle = copiedName
+                  ? ` title="Includes copied ${escapeHtml(copiedName)} (Olympia B3)"`
+                  : "";
                 return `
                   <tr class="${idx === 0 ? "is-winner" : ""}">
                     <td style="text-align:left;">
@@ -58,9 +70,9 @@ export function renderScorepadHtml(state: SevenWondersState): string {
                     <td>${sb.treasuryVp} <span class="muted">(${p.coins}c)</span></td>
                     <td>${sb.wonderVp}</td>
                     <td>${sb.civilianVp}</td>
-                    <td>${sb.scientificVp}</td>
+                    <td${copiedIsScience ? copiedTitle : ""}>${sb.scientificVp}${copiedIsScience ? " *" : ""}</td>
                     <td>${sb.commercialVp}</td>
-                    <td>${sb.guildVp}${sb.copiedGuildName ? ` *` : ""}</td>
+                    <td${copiedName && !copiedIsScience ? copiedTitle : ""}>${sb.guildVp}${copiedName && !copiedIsScience ? " *" : ""}</td>
                     <td><strong>${sb.totalVp}</strong></td>
                   </tr>
                 `;
@@ -69,6 +81,11 @@ export function renderScorepadHtml(state: SevenWondersState): string {
           </tbody>
         </table>
       </div>
+      ${
+        copiedGuildNotes.length > 0
+          ? `<div class="t-label muted" style="margin-top:8px;">* ${copiedGuildNotes.join(" · ")}</div>`
+          : ""
+      }
     </div>
   `;
 }

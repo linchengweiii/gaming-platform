@@ -126,6 +126,9 @@
   }
 
   .ga-game-canvas .board-container--neutral .board-svg-wrap {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     overflow-y: auto;
   }
 
@@ -217,6 +220,13 @@
     backdrop-filter: blur(12px);
     border-top: 1.5px solid color-mix(in oklab, var(--action) 48%, var(--line-strong));
     box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.55);
+  }
+
+  /* Neutral boards (Splendor, Azul, 7 Wonders) have no 184px bottom hand tray, so anchor sub-modals upward above the action dock */
+  .ga-game-canvas .board-container--neutral .action-dock > .sub-modal {
+    bottom: 100%;
+    top: auto;
+    min-height: auto;
   }
 
   .ga-game-canvas .action-dock > .sub-modal .ga-trade-head {

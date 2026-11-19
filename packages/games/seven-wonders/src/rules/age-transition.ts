@@ -247,12 +247,13 @@ export function advancePostTurnQueuesOrNextRound(
   const n = state.players.length;
   const handsSnapshot = state.players.map((p) => p.hand);
   const rotatedPlayers = state.players.map((p, idx) => {
-    // Clockwise means player i passes hand to (i + 1) % n -> so player idx receives from (idx - 1 + n) % n!
-    // Counter-clockwise means player i passes hand to (i - 1 + n) % n -> so player idx receives from (idx + 1) % n!
+    // Facing inward with West on your left ((idx - 1 + n) % n) and East on your right ((idx + 1) % n):
+    // Clockwise passes East -> You -> West (receive from right/East, pass to left/West).
+    // Counter-clockwise passes West -> You -> East (receive from left/West, pass to right/East).
     const senderIdx =
       state.passDirection === "clockwise"
-        ? getLeftNeighborIndex(idx, n)
-        : getRightNeighborIndex(idx, n);
+        ? getRightNeighborIndex(idx, n)
+        : getLeftNeighborIndex(idx, n);
     const nextHand = handsSnapshot[senderIdx]!;
     return {
       ...p,

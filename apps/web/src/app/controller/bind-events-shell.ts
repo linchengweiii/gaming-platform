@@ -8,8 +8,12 @@ import {
   getActiveRoomPure,
   getRoomStatePure,
 } from "../helpers/room-queries.ts";
+import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
 import type { SupportedGameId } from "../types.ts";
-import type { AppRuntimeContext } from "./context.ts";
+import {
+  type AppRuntimeContext,
+  clearActiveRoomIdFromStorage,
+} from "./context.ts";
 import { bindDropdownEventsOnRoot } from "./render-and-dropdowns.ts";
 
 export function bindTutorialAndGuideEvents(ctx: AppRuntimeContext): void {
@@ -100,7 +104,12 @@ export function bindTutorialAndGuideEvents(ctx: AppRuntimeContext): void {
   });
 
   root.querySelector("#btn-tutorial-exit")?.addEventListener("click", () => {
+    ctx.navEpoch += 1;
+    ctx.stopAutoPlay();
     const tutRoomId = ctx.model.activeTutorial?.roomId ?? null;
+    if (tutRoomId) {
+      ctx.roomLensCache.delete(tutRoomId);
+    }
     const nextRooms = tutRoomId
       ? Object.fromEntries(
           Object.entries(ctx.model.rooms).filter(([id]) => id !== tutRoomId)
@@ -110,7 +119,7 @@ export function bindTutorialAndGuideEvents(ctx: AppRuntimeContext): void {
       ? ctx.model.roomOrder.filter((id) => id !== tutRoomId)
       : ctx.model.roomOrder;
     const fallbackId = nextOrder[0] ?? "";
-    ctx.model = {
+    ctx.model = resetSubModesPure({
       ...ctx.model,
       rooms: nextRooms,
       roomOrder: nextOrder,
@@ -120,7 +129,12 @@ export function bindTutorialAndGuideEvents(ctx: AppRuntimeContext): void {
           : ctx.model.activeRoomId,
       activeTutorial: null,
       viewMode: "lobby",
-    };
+    });
+    clearActiveRoomIdFromStorage();
+    ctx.syncUrlRoomHash(null);
+    if (ctx.model.useServerBackend) {
+      void ctx.fetchLobbyRooms();
+    }
     ctx.render();
   });
 

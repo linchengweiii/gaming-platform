@@ -35,13 +35,23 @@ export function registerGlobalDropdownDismiss(root: HTMLElement): void {
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      root.querySelectorAll(".ga-dropdown.is-open").forEach((dd) => {
-        const trigger = dd.querySelector(
-          ".ga-dropdown__trigger"
-        ) as HTMLButtonElement | null;
-        closeDropdownElement(dd as HTMLElement);
-        trigger?.focus();
-      });
+      const openDropdowns = root.querySelectorAll(".ga-dropdown.is-open");
+      if (openDropdowns.length > 0) {
+        openDropdowns.forEach((dd) => {
+          const trigger = dd.querySelector(
+            ".ga-dropdown__trigger"
+          ) as HTMLButtonElement | null;
+          closeDropdownElement(dd as HTMLElement);
+          trigger?.focus();
+        });
+        return;
+      }
+      const closeGuideBtn = root.querySelector(
+        "#btn-close-guide"
+      ) as HTMLButtonElement | null;
+      if (closeGuideBtn) {
+        closeGuideBtn.click();
+      }
     }
   });
 }

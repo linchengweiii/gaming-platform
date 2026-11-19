@@ -71,8 +71,8 @@ export function chooseMasterSevenWondersAction(
     state.draftRound < SEVEN_WONDERS_TURNS_PER_AGE &&
     state.phase === "AGE_DRAFT"
       ? state.passDirection === "clockwise"
-        ? rightIdx
-        : leftIdx
+        ? leftIdx
+        : rightIdx
       : -1;
 
   const opponentHasActiveHalikarnassus = doesAnyOpponentHaveActiveHalikarnassus(

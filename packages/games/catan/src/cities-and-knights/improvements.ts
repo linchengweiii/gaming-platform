@@ -212,7 +212,15 @@ export function getPlayerGoodTradeRatios(
     ? { ...withTradingHouse, [merchantRes]: 2 }
     : withTradingHouse;
 
-  // Merchant Fleet Progress Card: 2:1 on chosen good for the rest of this turn
-  const fleetGood = player?.activeTurnDiscounts.merchantFleetGood ?? null;
-  return fleetGood ? { ...withMerchant, [fleetGood]: 2 } : withMerchant;
+  // Merchant Fleet Progress Card(s): 2:1 on chosen good(s) for the rest of this turn
+  const fleetGoods = [
+    ...(player?.activeTurnDiscounts.merchantFleetGoods ?? []),
+    ...(player?.activeTurnDiscounts.merchantFleetGood
+      ? [player.activeTurnDiscounts.merchantFleetGood]
+      : []),
+  ];
+  return fleetGoods.reduce<Record<TradeGoodType, number>>(
+    (acc, good) => ({ ...acc, [good]: 2 }),
+    withMerchant
+  );
 }

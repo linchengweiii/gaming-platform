@@ -292,7 +292,11 @@ export function createRealtimeHub(
     scheduleRoomBotTurn,
   };
 
-  function handleUpgrade(req: http.IncomingMessage, socket: Duplex): void {
+  function handleUpgrade(
+    req: http.IncomingMessage,
+    socket: Duplex,
+    head?: Buffer
+  ): void {
     const clientId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     socket.on("close", () => removeWsClient(clientId));
     socket.on("error", () => {
@@ -308,15 +312,20 @@ export function createRealtimeHub(
     }
 
     const accept = computeWsAcceptKeyPure(key);
-    socket.write(
-      [
-        "HTTP/1.1 101 Switching Protocols",
-        "Upgrade: websocket",
-        "Connection: Upgrade",
-        `Sec-WebSocket-Accept: ${accept}`,
-        "\r\n",
-      ].join("\r\n")
-    );
+    try {
+      socket.write(
+        [
+          "HTTP/1.1 101 Switching Protocols",
+          "Upgrade: websocket",
+          "Connection: Upgrade",
+          `Sec-WebSocket-Accept: ${accept}`,
+          "\r\n",
+        ].join("\r\n")
+      );
+    } catch {
+      socket.destroy();
+      return;
+    }
 
     const initialPlayerId = (() => {
       try {
@@ -340,12 +349,20 @@ export function createRealtimeHub(
       lastSeenMs: Date.now(),
     };
     upsertWsClient(initialClient);
+    if (initialPlayerId) {
+      presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
+        if (seen.has(initialPlayerId)) {
+          refreshRoomDisconnectClock(rid);
+          broadcastRoomState(rid);
+        }
+      });
+    }
     sendLobbySnapshotToClient(initialClient);
 
     let readBuffer: Buffer = Buffer.alloc(0);
     let pendingFragments: readonly Buffer[] = [];
 
-    socket.on("data", (chunk: Buffer) => {
+    const processChunk = (chunk: Buffer): void => {
       const liveClient = wsClients[clientId];
       if (liveClient) {
         upsertWsClient({ ...liveClient, lastSeenMs: Date.now() });
@@ -398,7 +415,12 @@ export function createRealtimeHub(
         removeWsClient(clientId);
         socket.destroy();
       }
-    });
+    };
+
+    socket.on("data", processChunk);
+    if (head && head.length > 0) {
+      processChunk(head);
+    }
   }
 
   function shutdown(): void {
@@ -423,6 +445,7 @@ export function createRealtimeHub(
     broadcastRoomState,
     clearRoomBotTimer,
     scheduleRoomBotTurn,
+    getConnectedPlayerIds: () => presence.getConnectedPlayerIds(wsClients),
     handleUpgrade,
     shutdown,
   };

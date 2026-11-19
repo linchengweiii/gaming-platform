@@ -130,9 +130,12 @@ export function drawProgressCardForPlayerPure(
   };
 
   const nextPlayerCards = [...player.progressCards, cardInstance];
-  const exceedsHandLimit = nextPlayerCards.length > 4;
+  const activePlayerId = state.players[state.activePlayerIndex]?.id;
+  // Official C&K: non-active players exceeding 4 cards discard immediately; the active player may hold >4 until end of turn.
+  const mustDiscardImmediately =
+    nextPlayerCards.length > 4 && playerId !== activePlayerId;
   const nextPendingDiscards =
-    exceedsHandLimit && !state.pendingProgressDiscards.includes(playerId)
+    mustDiscardImmediately && !state.pendingProgressDiscards.includes(playerId)
       ? [...state.pendingProgressDiscards, playerId]
       : state.pendingProgressDiscards;
 
@@ -204,13 +207,18 @@ export function resolveEventDieRollPure(
     );
   }
 
-  // Barbarian Attack!
+  // Barbarian Attack! Order players clockwise starting from activePlayerIndex for tie-break picks & pillage selections.
   const barbarianStrength = getBarbarianStrength(state);
-  const contributions = state.players.map((p) => ({
-    player: p,
-    strength: getPlayerActiveKnightStrength(state, p.id),
-    vulnerableCities: getPlayerVulnerableCities(state, p.id),
-  }));
+  const numPlayers = state.players.length;
+  const startIdx = state.activePlayerIndex;
+  const contributions = Array.from({ length: numPlayers }, (_, offset) => {
+    const p = state.players[(startIdx + offset) % numPlayers]!;
+    return {
+      player: p,
+      strength: getPlayerActiveKnightStrength(state, p.id),
+      vulnerableCities: getPlayerVulnerableCities(state, p.id),
+    };
+  });
   const defenderStrength = contributions.reduce<number>(
     (s, c) => s + c.strength,
     0

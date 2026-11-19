@@ -71,7 +71,9 @@ export function computeClickableBoardTargets(
         options.robberOrPirateMode === "pirate" &&
         state.config.enableSeafarers
       ) {
-        getLegalPirateHexes(state).forEach((h) => clickableHexes.add(h));
+        getLegalPirateHexes(state, actingPlayerId).forEach((h) =>
+          clickableHexes.add(h)
+        );
       } else {
         getLegalRobberHexes(state, actingPlayerId).forEach((h) =>
           clickableHexes.add(h)
@@ -174,7 +176,9 @@ export function computeClickableBoardTargets(
           state,
           actingPlayerId,
           getLegalRobberHexes(state, actingPlayerId),
-          state.config.enableSeafarers ? getLegalPirateHexes(state) : []
+          state.config.enableSeafarers
+            ? getLegalPirateHexes(state, actingPlayerId)
+            : []
         );
         const distinctVertices = Array.from(
           new Set(chases.map((c) => c.vertexId))

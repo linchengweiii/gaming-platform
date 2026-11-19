@@ -3,6 +3,7 @@ import type http from "node:http";
 import path from "node:path";
 import { MAX_HTTP_BODY_BYTES } from "../config.ts";
 import type { RoomInstance } from "../room-manager.ts";
+import { createHttpError } from "./guest-sessions.ts";
 
 export const MIME_TYPES: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
@@ -29,14 +30,26 @@ export function resolveEffectiveViewerIdPure(
   if (!viewerId) return null;
   if (actingId) {
     const actingPlayer = room.players.find((p) => p.id === actingId);
-    if (actingPlayer?.controllerId === viewerId) {
+    if (
+      actingPlayer &&
+      !actingPlayer.isBot &&
+      (actingPlayer.controllerId
+        ? actingPlayer.controllerId === viewerId
+        : actingPlayer.id === viewerId)
+    ) {
       return actingId;
     }
   }
   const offerProposerId = gameState?.activeTradeOffer?.fromPlayerId;
   if (typeof offerProposerId === "string" && offerProposerId) {
     const proposer = room.players.find((p) => p.id === offerProposerId);
-    if (proposer?.id === viewerId || proposer?.controllerId === viewerId) {
+    if (
+      proposer &&
+      !proposer.isBot &&
+      (proposer.controllerId
+        ? proposer.controllerId === viewerId
+        : proposer.id === viewerId)
+    ) {
       return offerProposerId;
     }
   }
@@ -56,7 +69,19 @@ export function resolveEffectiveViewerIdPure(
       return unlockedLocal.id;
     }
   }
-  return viewerId;
+  const seatedDirect = room.players.find(
+    (p) =>
+      !p.isBot &&
+      p.id === viewerId &&
+      (!p.controllerId || p.controllerId === viewerId)
+  );
+  if (seatedDirect) {
+    return viewerId;
+  }
+  const seatedLocal = room.players.find(
+    (p) => !p.isBot && p.controllerId === viewerId
+  );
+  return seatedLocal ? seatedLocal.id : null;
 }
 
 export function resolveSafeStaticPathPure(
@@ -115,12 +140,18 @@ export async function readJsonBody(
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     totalBytes += buf.length;
     if (totalBytes > maxBytes) {
-      throw new Error("Request body exceeds maximum size limit");
+      throw createHttpError(413, "Request body exceeds maximum size limit");
     }
     chunks.push(buf);
   }
   if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const text = Buffer.concat(chunks).toString("utf8").trim();
+  if (!text) return {};
+  const parsed: unknown = JSON.parse(text);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw createHttpError(400, "Request body must be a JSON object");
+  }
+  return parsed;
 }
 
 export function sendJson(

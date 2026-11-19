@@ -44,6 +44,20 @@ export function renderHandOrResolutionHtml(
       `;
   }
 
+  if (hideHandForPassAndPlay) {
+    const privacyText =
+      state.phase === "HALIKARNASSUS_PICK" &&
+      state.halikarnassusQueue[0] === player.id
+        ? `<strong>${escapeHtml(player.name)}'s</strong> Halikarnassus discard options are hidden while passing the screen.`
+        : `<strong>${escapeHtml(player.name)}'s</strong> draft hand is hidden while passing the screen.`;
+    return `
+        <div class="sw-hand-section" style="flex-direction:row;align-items:center;justify-content:space-between;padding:16px;flex-wrap:wrap;gap:10px;">
+          <span class="t-small muted">${privacyText}</span>
+          <button type="button" id="btn-reveal-hand" class="btn btn--secondary btn--sm">Show ${escapeHtml(player.name)}'s hand</button>
+        </div>
+      `;
+  }
+
   if (
     state.phase === "HALIKARNASSUS_PICK" &&
     state.halikarnassusQueue[0] === player.id
@@ -92,15 +106,6 @@ export function renderHandOrResolutionHtml(
       `;
   }
 
-  if (hideHandForPassAndPlay) {
-    return `
-        <div class="sw-hand-section" style="flex-direction:row;align-items:center;justify-content:space-between;padding:16px;flex-wrap:wrap;gap:10px;">
-          <span class="t-small muted"><strong>${escapeHtml(player.name)}'s</strong> draft hand is hidden while passing the screen.</span>
-          <button type="button" id="btn-reveal-hand" class="btn btn--secondary btn--sm">Show ${escapeHtml(player.name)}'s hand</button>
-        </div>
-      `;
-  }
-
   if (player.handRedacted) {
     const canUnselectInspected = canPlayerUnselectDraftPick(state, player.id);
     return `
@@ -135,7 +140,27 @@ export function renderHandOrResolutionHtml(
       `;
   }
 
+  if (
+    state.phase === "SEVENTH_CARD_PLAY" &&
+    state.seventhCardQueue[0] !== player.id
+  ) {
+    const babylonPlayer = state.players.find(
+      (p) => p.id === state.seventhCardQueue[0]
+    );
+    return `
+        <div class="sw-hand-section" style="flex-direction:row;align-items:center;justify-content:space-between;padding:14px 16px;flex-wrap:wrap;gap:10px;">
+          <span class="t-small muted">Waiting for <strong>${escapeHtml(babylonPlayer?.name ?? "Babylon")}</strong> to play its bonus 7th card.</span>
+        </div>
+      `;
+  }
+
   const canAct = legalActions.length > 0;
+  const waitingForHalikarnassus =
+    state.phase === "HALIKARNASSUS_PICK" &&
+    state.halikarnassusQueue[0] !== player.id;
+  const halikarnassusPlayer = waitingForHalikarnassus
+    ? state.players.find((p) => p.id === state.halikarnassusQueue[0])
+    : null;
 
   return `
       <div class="sw-hand-section">
@@ -143,16 +168,22 @@ export function renderHandOrResolutionHtml(
           <div style="display:inline-flex;align-items:center;gap:8px;">
             <strong style="font-size:13px;font-weight:500;">${escapeHtml(player.name)}'s Draft Hand (${player.hand.length} cards)</strong>
             <span class="t-label muted">${
-              state.phase === "SEVENTH_CARD_PLAY"
-                ? "Babylon bonus 7th card — build, tuck, or sell"
-                : state.draftRound === 6 && state.phase === "AGE_DRAFT"
-                  ? hasWonderStageEffect(player, "play_seventh_card")
-                    ? "Final draft pick — Babylon will also play your 7th card!"
-                    : "Final pick of this Age — unchosen 7th card will be discarded"
-                  : passLabel
+              waitingForHalikarnassus
+                ? `Waiting for ${escapeHtml(halikarnassusPlayer?.name ?? "Halikarnassus")} to resolve discard build`
+                : state.phase === "SEVENTH_CARD_PLAY"
+                  ? "Babylon bonus 7th card — build, tuck, or sell"
+                  : state.draftRound === 6 && state.phase === "AGE_DRAFT"
+                    ? hasWonderStageEffect(player, "play_seventh_card")
+                      ? "Final draft pick — Babylon will also play your 7th card!"
+                      : "Final pick of this Age — unchosen 7th card will be discarded"
+                    : passLabel
             }</span>
           </div>
-          <span class="t-label muted">Select Build, Wonder stage, or Sell +3c</span>
+          <span class="t-label muted">${
+            canAct
+              ? "Select Build, Wonder stage, or Sell +3c"
+              : "Waiting for active player"
+          }</span>
         </div>
 
         <div class="sw-cards-row">
@@ -202,17 +233,19 @@ export function renderHandOrResolutionHtml(
 
               const statusBadge = isDup
                 ? `<span class="ga-chip">Owned</span>`
-                : isChainFree
-                  ? `<span class="ga-chip ga-chip--ok">Chain free</span>`
-                  : freeOlympiaBuild && normalBuilds.length > 0
-                    ? `<span class="ga-chip ga-chip--ok ga-num">${totalCoinPrice}c / Zeus 0c</span>`
-                    : normalBuilds.length > 0
-                      ? totalCoinPrice === 0
-                        ? `<span class="ga-chip ga-chip--ok">Free</span>`
-                        : `<span class="ga-chip ga-chip--warn ga-num">${totalCoinPrice}c${hasMultipleBuildChoices ? " ▾" : ""}</span>`
-                      : freeOlympiaBuild
-                        ? `<span class="ga-chip ga-chip--ok">Zeus free</span>`
-                        : `<span class="ga-chip">Locked</span>`;
+                : !canAct
+                  ? ""
+                  : isChainFree
+                    ? `<span class="ga-chip ga-chip--ok">Chain free</span>`
+                    : freeOlympiaBuild && normalBuilds.length > 0
+                      ? `<span class="ga-chip ga-chip--ok ga-num">${totalCoinPrice}c / Zeus 0c</span>`
+                      : normalBuilds.length > 0
+                        ? totalCoinPrice === 0
+                          ? `<span class="ga-chip ga-chip--ok">Free</span>`
+                          : `<span class="ga-chip ga-chip--warn ga-num">${totalCoinPrice}c${hasMultipleBuildChoices ? " ▾" : ""}</span>`
+                        : freeOlympiaBuild
+                          ? `<span class="ga-chip ga-chip--ok">Zeus free</span>`
+                          : `<span class="ga-chip">Locked</span>`;
 
               const buildLabel = isChainFree
                 ? "Chain"
@@ -251,7 +284,7 @@ export function renderHandOrResolutionHtml(
                     <div class="sw-card__effects">
                       ${summarizeCardEffectsHtml(card)}
                     </div>
-                    ${computeImmediateCardPreviewHtml(state, focusIdx, card)}
+                    ${isDup ? "" : computeImmediateCardPreviewHtml(state, focusIdx, card)}
                     <div class="sw-card__cost">
                       <span class="t-label muted">Cost:</span>
                       ${renderCostStripHtml(card.resourceCost, card.coinCost)}

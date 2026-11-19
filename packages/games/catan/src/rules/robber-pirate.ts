@@ -60,12 +60,29 @@ export function getLegalRobberHexes(state: CatanState, playerId: string): HexId[
 /**
  * Returns valid sea hexes where `playerId` can move the Pirate Fleet (Seafarers).
  */
-export function getLegalPirateHexes(state: CatanState): HexId[] {
+export function getLegalPirateHexes(
+  state: CatanState,
+  playerId?: string
+): HexId[] {
   if (!state.config.enableSeafarers) return [];
-  return state.topology.hexOrder.filter((hId) => {
+  const allSeaHexes = state.topology.hexOrder.filter((hId) => {
     const t = state.hexes[hId]!;
     return hId !== state.pirateHexId && t.terrain === "sea";
   });
+  if (!state.config.enableFriendlyRobber || !playerId) {
+    return allSeaHexes;
+  }
+  const friendlyFiltered = allSeaHexes.filter((hId) => {
+    const hNode = state.topology.hexes[hId]!;
+    return hNode.sideEdgeIds.every((eId) => {
+      const route = state.edges[eId];
+      if (!route || route.type !== "ship" || route.ownerId === playerId) {
+        return true;
+      }
+      return computePlayerVictoryPoints(state, route.ownerId, true) > 2;
+    });
+  });
+  return friendlyFiltered.length > 0 ? friendlyFiltered : allSeaHexes;
 }
 
 export function stealOneRandomCardPure(
@@ -239,7 +256,7 @@ export function applyMovePiratePure(
   ) {
     throw new Error("Cannot move pirate right now");
   }
-  const legalPirate = getLegalPirateHexes(currentState);
+  const legalPirate = getLegalPirateHexes(currentState, playerId);
   if (!legalPirate.includes(action.hexId)) {
     throw new Error(`Illegal pirate destination ${action.hexId}`);
   }

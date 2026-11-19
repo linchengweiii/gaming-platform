@@ -133,9 +133,7 @@ export function applyPoliticsBoardProgressCardPure(
         !targetKnight ||
         targetKnight.ownerId === playerId ||
         !vNode?.incidentEdgeIds.some(
-          (eId) =>
-            stateAfterConsume.edges[eId]?.ownerId === playerId &&
-            stateAfterConsume.edges[eId]?.type === "road"
+          (eId) => stateAfterConsume.edges[eId]?.ownerId === playerId
         )
       ) {
         throw new Error("Invalid Intrigue target knight");
@@ -237,6 +235,9 @@ export function applyPoliticsBoardProgressCardPure(
         rebuildId &&
         rebuildId !== edgeId &&
         getLegalRoadEdgesFn(afterRemove, playerId).includes(rebuildId);
+      if (rebuildId !== undefined && !canRebuild) {
+        throw new Error("Invalid Diplomat rebuild road edge");
+      }
 
       const rebuiltState: CatanState =
         canRebuild && rebuildId

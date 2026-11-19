@@ -67,12 +67,21 @@ export function createPlatformServer(): {
   });
 
   // RFC 6455 WebSocket upgrade handler (zero external runtime dependency)
-  server.on("upgrade", (req, socket) => {
-    hub.handleUpgrade(req, socket);
+  server.on("upgrade", (req, socket, head) => {
+    hub.handleUpgrade(req, socket, head);
   });
 
   const sweepTimer = setInterval(() => {
     hub.sweepAbandonedRooms();
+    const activePlayerIds = new Set<string>(hub.getConnectedPlayerIds());
+    for (const r of Object.values(roomManager.getStateSnapshot().rooms)) {
+      if (r.ownerId) activePlayerIds.add(r.ownerId);
+      for (const p of r.humanPlayers) {
+        activePlayerIds.add(p.id);
+        if (p.controllerId) activePlayerIds.add(p.controllerId);
+      }
+    }
+    guestSessions.pruneIdleSessions(activePlayerIds);
   }, ABANDONED_ROOM_SWEEP_INTERVAL_MS);
   sweepTimer.unref?.();
 

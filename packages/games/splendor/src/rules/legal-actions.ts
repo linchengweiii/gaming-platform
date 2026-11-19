@@ -104,12 +104,20 @@ export function getSplendorLegalActions(
 
   const marketPurchases: SplendorAction[] = CARD_TIERS.flatMap((tier) =>
     state.market[tier]
-      .filter((card) => computeCardPurchasePayment(activePlayer, card).affordable)
+      .filter(
+        (card) =>
+          !card.redacted &&
+          computeCardPurchasePayment(activePlayer, card).affordable
+      )
       .map((card): SplendorAction => ({ type: "PURCHASE_CARD", cardId: card.id }))
   );
 
   const reservedPurchases: SplendorAction[] = activePlayer.reservedCards
-    .filter((card) => computeCardPurchasePayment(activePlayer, card).affordable)
+    .filter(
+      (card) =>
+        !card.redacted &&
+        computeCardPurchasePayment(activePlayer, card).affordable
+    )
     .map((card): SplendorAction => ({ type: "PURCHASE_CARD", cardId: card.id }));
 
   const doubleGemTakes: SplendorAction[] = GEM_COLORS.filter(

@@ -237,6 +237,9 @@ export function applyMoveShipPure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Can only move a ship during your main phase");
   }
+  if (currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
   const legalMoves = getLegalMoveShipActions(currentState, playerId);
   const isLegal = legalMoves.some(
     (m) => m.fromEdgeId === action.fromEdgeId && m.toEdgeId === action.toEdgeId

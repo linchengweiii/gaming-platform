@@ -249,7 +249,7 @@ export function jumpSessionToStepPure<TState, TAction extends { type: string }>(
   session: MatchSessionState<TState, TAction>,
   step: number
 ): MatchSessionState<TState, TAction> {
-  if (step < 0 || step >= session.snapshots.length) {
+  if (!Number.isInteger(step) || step < 0 || step >= session.snapshots.length) {
     throw new Error(`Invalid step ${step}`);
   }
   return { ...session, cursor: step };

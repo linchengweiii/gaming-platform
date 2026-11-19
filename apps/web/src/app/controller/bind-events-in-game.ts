@@ -204,7 +204,18 @@ export function bindInGameEvents(
 
   if (!actingPlayerId) return;
 
-  if (!canControlPlayerOnDevicePure(ctx.model, room, actingPlayerId)) {
+  const controllableHumansCount = room.players.filter(
+    (p) => !p.isBot && canControlPlayerOnDevicePure(ctx.model, room, p.id)
+  ).length;
+  const isPassAndPlayHandHidden =
+    (room.gameId === "catan" || room.gameId === "seven_wonders") &&
+    controllableHumansCount >= 2 &&
+    ctx.model.hidePassAndPlayHand;
+
+  if (
+    !canControlPlayerOnDevicePure(ctx.model, room, actingPlayerId) ||
+    isPassAndPlayHandHidden
+  ) {
     if (canCancelMyTrade && state.activeTradeOffer) {
       root.querySelectorAll("[data-confirm-trade]").forEach((confirmBtn) => {
         confirmBtn.addEventListener("click", () => {

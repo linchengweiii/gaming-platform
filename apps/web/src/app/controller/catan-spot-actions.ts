@@ -154,7 +154,7 @@ export function handleCatanHexSpotClick(
       ctx.model.robberOrPirateMode === "pirate" &&
       state.config.enableSeafarers
     ) {
-      if (getLegalPirateHexes(state).includes(hexId)) {
+      if (getLegalPirateHexes(state, actingPlayerId).includes(hexId)) {
         ctx.dispatch(actingPlayerId, { type: "MOVE_PIRATE", hexId });
         return;
       }
@@ -172,7 +172,9 @@ export function handleCatanHexSpotClick(
       state,
       actingPlayerId,
       getLegalRobberHexes(state, actingPlayerId),
-      state.config.enableSeafarers ? getLegalPirateHexes(state) : []
+      state.config.enableSeafarers
+        ? getLegalPirateHexes(state, actingPlayerId)
+        : []
     );
     const chosen = legalChases.find(
       (c) =>

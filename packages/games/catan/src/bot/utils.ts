@@ -127,9 +127,7 @@ export function estimatePublicPlayerThreatVp(
   }
 
   if (state.config.enableCitiesAndKnights) {
-    const progressCount = p.handRedacted
-      ? p.hiddenProgressCardCount ?? 0
-      : p.progressCards.length;
+    const progressCount = getOpponentProgressCardCountFair(p);
     const metroRaceBonus = IMPROVEMENT_DISCIPLINES.some(
       (d) => p.cityImprovements[d] === 3 && state.metropolises[d].ownerId === null
     )

@@ -1,5 +1,9 @@
-import { type GameEvent, normalizeRngState } from "@gaming-platform/core";
-import { AZUL_FLOOR_CAPACITY } from "../config.ts";
+import type { GameEvent } from "@gaming-platform/core";
+import {
+  AZUL_COLORS,
+  AZUL_FLOOR_CAPACITY,
+  AZUL_WALL_SIZE,
+} from "../config.ts";
 import type {
   AzulAction,
   AzulPlayerState,
@@ -24,10 +28,33 @@ export function applyAzulAction(
   if (player.id !== playerId || currentState.phase !== "FACTORY_OFFER") {
     throw new Error("Not your turn");
   }
+  if (!action || action.type !== "DRAFT_TILES") {
+    throw new Error("Invalid Azul action type");
+  }
+  if (!AZUL_COLORS.includes(action.color)) {
+    throw new Error(`Invalid tile color: ${String(action.color)}`);
+  }
+  if (
+    action.targetLine !== "floor" &&
+    (typeof action.targetLine !== "number" ||
+      !Number.isInteger(action.targetLine) ||
+      action.targetLine < 0 ||
+      action.targetLine >= AZUL_WALL_SIZE)
+  ) {
+    throw new Error(`Invalid target pattern line: ${String(action.targetLine)}`);
+  }
 
   const draftExtraction = (() => {
-    if (action.source.kind === "factory") {
+    if (action.source?.kind === "factory") {
       const fIdx = action.source.factoryIndex;
+      if (
+        typeof fIdx !== "number" ||
+        !Number.isInteger(fIdx) ||
+        fIdx < 0 ||
+        fIdx >= currentState.factories.length
+      ) {
+        throw new Error(`Invalid factory index: ${String(fIdx)}`);
+      }
       const factory = currentState.factories[fIdx];
       if (!factory || factory.length === 0) {
         throw new Error("Selected factory is empty");
@@ -48,6 +75,10 @@ export function applyAzulAction(
         nextRoundStartPlayerIndex: currentState.nextRoundStartPlayerIndex,
         initialFloorLine: [...player.floorLine],
       };
+    }
+
+    if (action.source?.kind !== "center") {
+      throw new Error("Invalid draft source");
     }
 
     const matching = currentState.centerPool.filter((c) => c === action.color);
@@ -127,7 +158,7 @@ export function applyAzulAction(
 
   const afterDraftState: AzulState = {
     ...currentState,
-    rngState: normalizeRngState(currentState.rngState),
+    rngState: currentState.rngState >>> 0,
     factories: draftExtraction.factories,
     centerPool: draftExtraction.centerPool,
     centerHasFirstPlayerMarker: draftExtraction.centerHasFirstPlayerMarker,

@@ -259,27 +259,25 @@ export function computeInGameViewStatePure(
           room.session?.canPlayerRedo(actingPlayerId)
       );
 
+  const isPassAndPlayHandHidden =
+    controllableHumansCount >= 2 && model.hidePassAndPlayHand;
+  const isActiveInputAllowed = isMyTurn && !isPassAndPlayHandHidden;
+
   const catanLegalActions =
-    room.gameId === "catan" &&
-    actingPlayerId &&
-    isMyTurn &&
-    !(controllableHumansCount >= 2 && model.hidePassAndPlayHand)
+    room.gameId === "catan" && actingPlayerId && isActiveInputAllowed
       ? CatanEngine.getLegalActions(state, actingPlayerId)
       : [];
-  const boardActingPlayerId = isMyTurn ? actingPlayerId : null;
+  const boardActingPlayerId = isActiveInputAllowed ? actingPlayerId : null;
   const ckBoardOptions = computeCkBoardOptionsPure(
     room,
     state,
     model,
-    isMyTurn,
+    isActiveInputAllowed,
     actingPlayer
   );
 
   const sevenWondersLegalActions =
-    room.gameId === "seven_wonders" &&
-    actingPlayerId &&
-    isMyTurn &&
-    !(controllableHumansCount >= 2 && model.hidePassAndPlayHand)
+    room.gameId === "seven_wonders" && actingPlayerId && isActiveInputAllowed
       ? SevenWondersEngine.getLegalActions(
           state as SevenWondersState,
           actingPlayerId
@@ -290,7 +288,7 @@ export function computeInGameViewStatePure(
     model,
     room,
     state,
-    isMyTurn,
+    isActiveInputAllowed,
     actingPlayerId,
     actingPlayer,
     catanLegalActions

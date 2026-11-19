@@ -160,6 +160,26 @@ export function applyEndTurnPure(
     return { state: checked.state, events: [] };
   }
 
+  // Official C&K: if the active player still holds >4 Progress Cards at end of turn, discard down to 4 first.
+  if (
+    checked.state.config.enableCitiesAndKnights &&
+    player.progressCards.length > 4
+  ) {
+    const nextPendingDiscards = checked.state.pendingProgressDiscards.includes(
+      playerId
+    )
+      ? checked.state.pendingProgressDiscards
+      : [...checked.state.pendingProgressDiscards, playerId];
+    return {
+      state: {
+        ...checked.state,
+        phase: "PROGRESS_CARD_SELECTION",
+        pendingProgressDiscards: nextPendingDiscards,
+      },
+      events: [],
+    };
+  }
+
   if (
     checked.state.config.enableSpecialBuildingPhase &&
     checked.state.players.length >= 3

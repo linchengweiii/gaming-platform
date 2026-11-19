@@ -86,6 +86,7 @@ export interface ActiveTurnDiscounts {
   crane: boolean;
   medicine: boolean;
   merchantFleetGood: TradeGoodType | null;
+  merchantFleetGoods?: readonly TradeGoodType[];
 }
 
 export type TerrainType =
