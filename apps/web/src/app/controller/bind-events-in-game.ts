@@ -36,12 +36,10 @@ export function bindInGameEvents(
   bindCommonIdentityEvents(ctx);
 
   root.querySelector("#btn-back-lobby")?.addEventListener("click", () => {
-    ctx.stopAutoPlay();
-    clearActiveRoomIdFromStorage();
-    ctx.syncUrlRoomHash(null);
-    ctx.model = { ...ctx.model, viewMode: "lobby" };
+    ctx.exitRoomToLobby();
     if (ctx.model.useServerBackend) {
-      void ctx.fetchLobbyRooms().then(() => ctx.render());
+      ctx.render();
+      void ctx.fetchLobbyRooms().then(() => ctx.renderPreservingFocus());
     } else {
       ctx.render();
     }
@@ -49,7 +47,11 @@ export function bindInGameEvents(
 
   root.querySelector("#tab-setup-page")?.addEventListener("click", () => {
     ctx.stopAutoPlay();
-    ctx.model = { ...ctx.model, viewMode: "room_setup" };
+    ctx.model = {
+      ...ctx.model,
+      inspectingSetupDuringMatch: room.status === "in_progress",
+      viewMode: "room_setup",
+    };
     ctx.render();
   });
 
@@ -67,7 +69,11 @@ export function bindInGameEvents(
     .querySelector("#btn-sidebar-edit-setup")
     ?.addEventListener("click", () => {
       ctx.stopAutoPlay();
-      ctx.model = { ...ctx.model, viewMode: "room_setup" };
+      ctx.model = {
+        ...ctx.model,
+        inspectingSetupDuringMatch: room.status === "in_progress",
+        viewMode: "room_setup",
+      };
       ctx.render();
     });
 
@@ -75,7 +81,11 @@ export function bindInGameEvents(
     .querySelector("#btn-goto-setup-finished")
     ?.addEventListener("click", () => {
       ctx.stopAutoPlay();
-      ctx.model = { ...ctx.model, viewMode: "room_setup" };
+      ctx.model = {
+        ...ctx.model,
+        inspectingSetupDuringMatch: false,
+        viewMode: "room_setup",
+      };
       ctx.render();
     });
 

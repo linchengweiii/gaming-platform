@@ -16,6 +16,7 @@ export function createPlatformServer(): {
   server: http.Server;
   roomManager: PlatformRoomManager;
   sweepAbandonedRooms: (nowMs?: number, maxIdleMs?: number) => string[];
+  checkWsHeartbeats: (nowMs?: number, timeoutMs?: number) => string[];
 } {
   const roomManager = createPlatformRoomManager();
   const hub = createRealtimeHub(roomManager);
@@ -67,5 +68,6 @@ export function createPlatformServer(): {
     server,
     roomManager,
     sweepAbandonedRooms: hub.sweepAbandonedRooms,
+    checkWsHeartbeats: hub.checkHeartbeats,
   };
 }

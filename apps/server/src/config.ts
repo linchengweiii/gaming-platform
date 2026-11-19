@@ -10,6 +10,11 @@ export const PUBLIC_DIR = path.resolve(__dirname, "../../web/public");
 
 export const BOT_STEP_DELAY_MS = 150;
 export const WS_HEARTBEAT_INTERVAL_MS = 25_000;
+export const WS_DEAD_PEER_TIMEOUT_MS = 2 * WS_HEARTBEAT_INTERVAL_MS;
+export const WS_TCP_KEEPALIVE_MS = 15_000;
+export const MAX_WS_PAYLOAD_BYTES = 256 * 1024;
+export const MAX_WS_WRITE_BACKPRESSURE_BYTES = 2 * 1024 * 1024;
+export const MAX_HTTP_BODY_BYTES = 256 * 1024;
 export const ABANDONED_ROOM_IDLE_MS = 15 * 60 * 1000;
 export const ABANDONED_ROOM_SWEEP_INTERVAL_MS = 60_000;
 

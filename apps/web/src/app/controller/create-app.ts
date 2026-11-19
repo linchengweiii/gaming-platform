@@ -11,8 +11,10 @@ import {
   createAppRuntimeContext,
   loadActiveRoomIdFromStorage,
   loadDeviceGuestsFromStorage,
+  loadLastActiveGuestIdFromStorage,
   loadSavedGuestSessionFromStorage,
   saveDeviceGuestsToStorage,
+  saveGuestSessionToStorage,
 } from "./context.ts";
 import { attachGuestAndLobbyActions } from "./guest-and-lobby-actions.ts";
 import { attachMatchAndBotActions } from "./match-and-bot-actions.ts";
@@ -38,12 +40,14 @@ export function createMultiGamePlatformApp(
     typeof fetch === "function" &&
     Boolean(window.location?.protocol?.startsWith("http"));
 
+  const savedGuest = loadSavedGuestSessionFromStorage();
   const initialModel = createInitialAppModelPure(options, {
     isStaticHost,
     isBrowserHttp,
     randomGuestSuffix: 100 + Math.floor(Math.random() * 900),
     deviceGuests: loadDeviceGuestsFromStorage(),
-    savedGuest: loadSavedGuestSessionFromStorage(),
+    savedGuest,
+    lastActiveGuestId: loadLastActiveGuestIdFromStorage(),
     nowMs: Date.now(),
     locationSearch:
       typeof window !== "undefined" ? window.location?.search ?? "" : "",
@@ -53,16 +57,32 @@ export function createMultiGamePlatformApp(
 
   if (initialModel.isAuthenticated) {
     saveDeviceGuestsToStorage(initialModel.deviceGuests);
+    if (!savedGuest && initialModel.currentUserId) {
+      saveGuestSessionToStorage({
+        id: initialModel.currentUserId,
+        name: initialModel.currentUserName,
+        mode: "guest",
+      });
+    }
   }
 
+  const storedActiveRoomId = loadActiveRoomIdFromStorage();
+  const isInitialReloadRoomRestore = Boolean(
+    savedGuest &&
+      storedActiveRoomId &&
+      initialModel.pendingInviteRoomId &&
+      storedActiveRoomId === initialModel.pendingInviteRoomId
+  );
+
   const initialPendingRestoreRoomId = initialModel.isAuthenticated
-    ? initialModel.pendingInviteRoomId ?? loadActiveRoomIdFromStorage()
+    ? initialModel.pendingInviteRoomId ?? storedActiveRoomId
     : null;
 
   const ctx = createAppRuntimeContext(
     root,
     initialModel,
-    initialPendingRestoreRoomId
+    initialPendingRestoreRoomId,
+    isInitialReloadRoomRestore
   );
 
   attachRealtimeAndHttpActions(ctx);

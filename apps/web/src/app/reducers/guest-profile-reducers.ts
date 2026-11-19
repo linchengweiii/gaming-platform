@@ -107,15 +107,11 @@ export function signOutGuestFromModelPure(
           : p
       );
 
-      const nextSession = room.session
-        ? (() => {
-            const curState = room.session.getState();
-            if (!curState || !Array.isArray(curState.players)) {
-              return room.session;
-            }
-            const updatedState = {
-              ...curState,
-              players: curState.players.map((sp: any) =>
+      const mapStateLeavingToBots = (snap: any): any =>
+        snap && Array.isArray(snap.players)
+          ? {
+              ...snap,
+              players: snap.players.map((sp: any) =>
                 leavingSeatIds.has(sp.id)
                   ? {
                       ...sp,
@@ -125,10 +121,17 @@ export function signOutGuestFromModelPure(
                     }
                   : sp
               ),
-            };
-            const engine = getEngineForGamePure(room.gameId);
-            return createMatchSession(engine, updatedState, true);
-          })()
+            }
+          : snap;
+
+      const nextSession = room.session
+        ? room.session.cloneWithMappedSnapshots
+          ? room.session.cloneWithMappedSnapshots(mapStateLeavingToBots)
+          : createMatchSession(
+              getEngineForGamePure(room.gameId),
+              mapStateLeavingToBots(room.session.getState()),
+              true
+            )
         : null;
 
       const nextRemoteState =
@@ -190,16 +193,21 @@ export function signOutGuestFromModelPure(
           (p) => p.id === nextGuest.id || p.controllerId === nextGuest.id
         )
     );
+    const nextView = activeStillHasNextGuest ? model.viewMode : "lobby";
     return {
       model: resetSubModesPure({
         ...swept.model,
         isAuthenticated: true,
         addingAdditionalGuest: false,
+        inspectingSetupDuringMatch: false,
         loginErrorMsg: "",
         currentUserId: nextGuest.id,
         currentUserName: nextGuest.name,
-        activeRoomId: fallbackActiveRoomId,
-        viewMode: activeStillHasNextGuest ? model.viewMode : "lobby",
+        activeRoomId:
+          activeStillHasNextGuest || !swept.model.useServerBackend
+            ? fallbackActiveRoomId
+            : "",
+        viewMode: nextView,
       }),
       removedRoomIds: swept.removedRoomIds,
       switchedToGuest: nextGuest,
@@ -211,9 +219,10 @@ export function signOutGuestFromModelPure(
       ...swept.model,
       isAuthenticated: false,
       addingAdditionalGuest: false,
+      inspectingSetupDuringMatch: false,
       loginErrorMsg: "",
       loginDraftName: `Guest ${fallbackDraftSuffix}`,
-      activeRoomId: fallbackActiveRoomId,
+      activeRoomId: swept.model.useServerBackend ? "" : fallbackActiveRoomId,
       viewMode: "login",
     }),
     removedRoomIds: swept.removedRoomIds,

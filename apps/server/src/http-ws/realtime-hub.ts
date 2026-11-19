@@ -3,7 +3,10 @@ import type { Duplex } from "node:stream";
 import {
   ABANDONED_ROOM_IDLE_MS,
   BOT_STEP_DELAY_MS,
+  MAX_WS_PAYLOAD_BYTES,
+  WS_DEAD_PEER_TIMEOUT_MS,
   WS_HEARTBEAT_INTERVAL_MS,
+  WS_TCP_KEEPALIVE_MS,
 } from "../config.ts";
 import {
   type PlatformRoomManager,
@@ -12,121 +15,38 @@ import {
   getRoomActingPlayerId,
 } from "../room-manager.ts";
 import { resolveEffectiveViewerIdPure } from "./viewer-and-static.ts";
+import { handleClientJsonMessage } from "./ws-client-messages.ts";
+import {
+  type RealtimeHub,
+  type WsClient,
+  createPresenceTracker,
+  sendWsFrameSafe,
+} from "./ws-hub-types-and-presence.ts";
 import {
   computeWsAcceptKeyPure,
   decodeWsFramesStreamPure,
   encodeWsControlFramePure,
-  encodeWsTextFramePure,
 } from "./ws-protocol.ts";
 
-interface WsClient {
-  readonly id: string;
-  readonly socket: Duplex;
-  readonly roomId: string | null;
-  readonly playerId: string | null;
-}
-
-export interface RealtimeHub {
-  enrichSummaryWithPresence(summary: RoomSummary): RoomSummary;
-  refreshRoomDisconnectClock(roomId: string, nowMs?: number): void;
-  removePlayerRoomPresence(roomId: string, playerId: string): void;
-  signOutGuestConnections(playerId: string): void;
-  cleanupDeletedRoomMeta(roomId: string): void;
-  sweepAbandonedRooms(nowMs?: number, maxIdleMs?: number): string[];
-  broadcastLobbyRooms(): void;
-  broadcastRoomState(roomId: string): void;
-  clearRoomBotTimer(roomId: string): void;
-  scheduleRoomBotTurn(roomId: string): void;
-  handleUpgrade(req: http.IncomingMessage, socket: Duplex): void;
-  shutdown(): void;
-}
+export type { RealtimeHub } from "./ws-hub-types-and-presence.ts";
 
 export function createRealtimeHub(
   roomManager: PlatformRoomManager
 ): RealtimeHub {
   let wsClients: Readonly<Record<string, WsClient>> = {};
   const roomBotTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const seenConnectedPlayersByRoom = new Map<string, Set<string>>();
-  const roomAllDisconnectedSince = new Map<string, number>();
+  const presence = createPresenceTracker(roomManager);
 
-  const resolveCanonicalRoomId = (rawRoomId: string): string => {
-    try {
-      return roomManager.getRoom(rawRoomId).roomId;
-    } catch {
-      return rawRoomId;
-    }
-  };
+  const enrichSummaryWithPresence = (summary: RoomSummary): RoomSummary =>
+    presence.enrichSummaryWithPresence(wsClients, summary);
 
-  const heartbeatTimer = setInterval(() => {
-    const pingFrame = encodeWsControlFramePure(0x09);
-    Object.values(wsClients).forEach((client) => {
-      if (!client.socket.destroyed && client.socket.writable) {
-        client.socket.write(pingFrame);
-      }
-    });
-  }, WS_HEARTBEAT_INTERVAL_MS);
-  heartbeatTimer.unref?.();
+  const refreshRoomDisconnectClock = (
+    roomId: string,
+    nowMs = Date.now()
+  ): void => presence.refreshRoomDisconnectClock(wsClients, roomId, nowMs);
 
-  function getConnectedPlayerIds(): Set<string> {
-    const set = new Set<string>();
-    Object.values(wsClients).forEach((c) => {
-      if (c.playerId) set.add(c.playerId);
-    });
-    return set;
-  }
-
-  function recordPlayerRoomPresence(
-    roomId: string | null,
-    playerId: string | null
-  ): void {
-    if (!roomId || !playerId) return;
-    let seen = seenConnectedPlayersByRoom.get(roomId);
-    if (!seen) {
-      seen = new Set<string>();
-      seenConnectedPlayersByRoom.set(roomId, seen);
-    }
-    seen.add(playerId);
-    roomAllDisconnectedSince.delete(roomId);
-  }
-
-  function refreshRoomDisconnectClock(roomId: string, nowMs = Date.now()): void {
-    let room: RoomInstance;
-    try {
-      room = roomManager.getRoom(roomId);
-    } catch {
-      seenConnectedPlayersByRoom.delete(roomId);
-      roomAllDisconnectedSince.delete(roomId);
-      return;
-    }
-    if (room.humanPlayers.length === 0) {
-      roomAllDisconnectedSince.delete(roomId);
-      return;
-    }
-    const connectedIds = getConnectedPlayerIds();
-    const anyHumanConnected = room.humanPlayers.some((p) =>
-      connectedIds.has(p.controllerId ?? p.id)
-    );
-    if (anyHumanConnected) {
-      roomAllDisconnectedSince.delete(roomId);
-    } else if (!roomAllDisconnectedSince.has(roomId)) {
-      roomAllDisconnectedSince.set(roomId, nowMs);
-    }
-  }
-
-  function enrichSummaryWithPresence(summary: RoomSummary): RoomSummary {
-    const seen = seenConnectedPlayersByRoom.get(summary.roomId);
-    if (!seen || seen.size === 0) return summary;
-    const connectedIds = getConnectedPlayerIds();
-    const offlineIds = summary.players
-      .filter((p) => {
-        if (p.isBot) return false;
-        const ownerKey = p.controllerId ?? p.id;
-        return seen.has(ownerKey) && !connectedIds.has(ownerKey);
-      })
-      .map((p) => p.id);
-    return offlineIds.length > 0
-      ? { ...summary, offlinePlayerIds: offlineIds }
-      : summary;
+  function upsertWsClient(client: WsClient): void {
+    wsClients = { ...wsClients, [client.id]: client };
   }
 
   function clearRoomBotTimer(roomId: string): void {
@@ -139,45 +59,41 @@ export function createRealtimeHub(
 
   function cleanupDeletedRoomMeta(roomId: string): void {
     clearRoomBotTimer(roomId);
-    seenConnectedPlayersByRoom.delete(roomId);
-    roomAllDisconnectedSince.delete(roomId);
+    presence.clearRoomPresenceMeta(roomId);
   }
 
-  function removePlayerRoomPresence(roomId: string, playerId: string): void {
-    seenConnectedPlayersByRoom.get(roomId)?.delete(playerId);
-  }
-
-  function upsertWsClient(client: WsClient): void {
-    wsClients = {
-      ...wsClients,
-      [client.id]: client,
-    };
+  function notifyRoomClosed(roomId: string): void {
+    Object.values(wsClients).forEach((client) => {
+      if (client.roomId === roomId) {
+        sendWsFrameSafe(client.socket, { type: "ROOM_CLOSED", roomId });
+        upsertWsClient({ ...client, roomId: null });
+      }
+    });
+    cleanupDeletedRoomMeta(roomId);
   }
 
   function signOutGuestConnections(playerId: string): void {
     Object.values(wsClients).forEach((client) => {
       if (client.playerId === playerId) {
+        sendWsFrameSafe(client.socket, {
+          type: "GUEST_SIGNED_OUT",
+          playerId,
+        });
         upsertWsClient({ ...client, roomId: null, playerId: null });
       }
     });
-    seenConnectedPlayersByRoom.forEach((seen) => seen.delete(playerId));
+    presence.removePlayerEverywhere(playerId);
   }
 
-  function sendWsFrame(socket: Duplex, payload: unknown): void {
-    if (socket.destroyed || !socket.writable) return;
-    socket.write(encodeWsTextFramePure(payload));
+  function sendLobbySnapshotToClient(client: WsClient): void {
+    const rooms = roomManager
+      .listRooms(undefined, client.playerId)
+      .map(enrichSummaryWithPresence);
+    sendWsFrameSafe(client.socket, { type: "LOBBY_ROOMS", rooms });
   }
 
   function broadcastLobbyRooms(): void {
-    Object.values(wsClients).forEach((client) => {
-      const rooms = roomManager
-        .listRooms(undefined, client.playerId)
-        .map(enrichSummaryWithPresence);
-      sendWsFrame(client.socket, {
-        type: "LOBBY_ROOMS",
-        rooms,
-      });
-    });
+    Object.values(wsClients).forEach(sendLobbySnapshotToClient);
   }
 
   function broadcastRoomState(rawRoomId: string): void {
@@ -211,7 +127,7 @@ export function createRealtimeHub(
           state && actingId
             ? engine.getLegalActions(state, effectiveViewerId ?? actingId)
             : [];
-        sendWsFrame(client.socket, {
+        sendWsFrameSafe(client.socket, {
           type: "ROOM_STATE",
           roomId,
           room: summary,
@@ -222,29 +138,75 @@ export function createRealtimeHub(
       });
   }
 
-  function removeWsClient(clientId: string): void {
+  function removeWsClient(clientId: string, nowMs = Date.now()): void {
     const prev = wsClients[clientId];
+    if (!prev) return;
     wsClients = Object.fromEntries(
       Object.entries(wsClients).filter(([id]) => id !== clientId)
     );
-    if (prev?.roomId) {
-      refreshRoomDisconnectClock(prev.roomId);
-      broadcastRoomState(prev.roomId);
+    const affectedRooms = new Set<string>();
+    if (prev.roomId) affectedRooms.add(prev.roomId);
+    if (prev.playerId) {
+      presence.seenConnectedPlayersByRoom.forEach((seen, roomId) => {
+        if (seen.has(prev.playerId!)) affectedRooms.add(roomId);
+      });
+    }
+    if (affectedRooms.size > 0) {
+      affectedRooms.forEach((rid) => {
+        refreshRoomDisconnectClock(rid, nowMs);
+        broadcastRoomState(rid);
+      });
       broadcastLobbyRooms();
     }
   }
+
+  function checkHeartbeats(
+    nowMs = Date.now(),
+    timeoutMs = WS_DEAD_PEER_TIMEOUT_MS
+  ): string[] {
+    const evictedIds: string[] = [];
+    const pingFrame = encodeWsControlFramePure(0x09);
+    Object.values(wsClients).forEach((client) => {
+      if (client.socket.destroyed || nowMs - client.lastSeenMs > timeoutMs) {
+        evictedIds.push(client.id);
+        removeWsClient(client.id, nowMs);
+        client.socket.destroy();
+        return;
+      }
+      if (client.socket.writable) {
+        try {
+          client.socket.write(pingFrame);
+        } catch {
+          client.socket.destroy();
+          return;
+        }
+        sendWsFrameSafe(client.socket, {
+          type: "SERVER_HEARTBEAT",
+          ts: nowMs,
+        });
+      }
+    });
+    return evictedIds;
+  }
+
+  const heartbeatTimer = setInterval(() => {
+    checkHeartbeats();
+  }, WS_HEARTBEAT_INTERVAL_MS);
+  heartbeatTimer.unref?.();
 
   function sweepAbandonedRooms(
     nowMs = Date.now(),
     maxIdleMs = ABANDONED_ROOM_IDLE_MS
   ): string[] {
     const swept: string[] = [];
-    for (const [roomId] of Array.from(roomAllDisconnectedSince.entries())) {
+    for (const [roomId] of Array.from(
+      presence.roomAllDisconnectedSince.entries()
+    )) {
       refreshRoomDisconnectClock(roomId, nowMs);
-      const refreshedSince = roomAllDisconnectedSince.get(roomId);
+      const refreshedSince = presence.roomAllDisconnectedSince.get(roomId);
       if (refreshedSince !== undefined && nowMs - refreshedSince >= maxIdleMs) {
         if (roomManager.closeRoom(roomId)) {
-          cleanupDeletedRoomMeta(roomId);
+          notifyRoomClosed(roomId);
           swept.push(roomId);
         }
       }
@@ -296,7 +258,29 @@ export function createRealtimeHub(
     roomBotTimers.set(roomId, timer);
   }
 
+  const messageDeps = {
+    roomManager,
+    presence,
+    getClient: (clientId: string) => wsClients[clientId],
+    upsertWsClient,
+    hasRoomBotTimer: (roomId: string) => roomBotTimers.has(roomId),
+    refreshRoomDisconnectClock: (roomId: string) =>
+      refreshRoomDisconnectClock(roomId),
+    sendLobbySnapshotToClient,
+    broadcastLobbyRooms,
+    broadcastRoomState,
+    scheduleRoomBotTurn,
+  };
+
   function handleUpgrade(req: http.IncomingMessage, socket: Duplex): void {
+    const clientId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    socket.on("close", () => removeWsClient(clientId));
+    socket.on("error", () => {
+      removeWsClient(clientId);
+      socket.destroy();
+    });
+    (socket as any).setKeepAlive?.(true, WS_TCP_KEEPALIVE_MS);
+
     const key = req.headers["sec-websocket-key"];
     if (!key || typeof key !== "string") {
       socket.destroy();
@@ -323,30 +307,38 @@ export function createRealtimeHub(
       }
     })();
 
-    const clientId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    upsertWsClient({
+    const initialClient: WsClient = {
       id: clientId,
       socket,
       roomId: null,
       playerId: initialPlayerId,
-    });
-
-    // Send initial lobby rooms snapshot immediately on WS connect
-    sendWsFrame(socket, {
-      type: "LOBBY_ROOMS",
-      rooms: roomManager
-        .listRooms(undefined, initialPlayerId)
-        .map(enrichSummaryWithPresence),
-    });
+      lastSeenMs: Date.now(),
+    };
+    upsertWsClient(initialClient);
+    sendLobbySnapshotToClient(initialClient);
 
     let readBuffer: Buffer = Buffer.alloc(0);
+    let pendingFragments: readonly Buffer[] = [];
 
     socket.on("data", (chunk: Buffer) => {
+      const liveClient = wsClients[clientId];
+      if (liveClient) {
+        upsertWsClient({ ...liveClient, lastSeenMs: Date.now() });
+      }
       try {
         readBuffer =
           readBuffer.length > 0 ? Buffer.concat([readBuffer, chunk]) : chunk;
-        const decoded = decodeWsFramesStreamPure(readBuffer);
+        if (readBuffer.length > MAX_WS_PAYLOAD_BYTES * 2) {
+          throw new Error("WebSocket receive buffer exceeded limit");
+        }
+        const decoded = decodeWsFramesStreamPure(
+          readBuffer,
+          MAX_WS_PAYLOAD_BYTES,
+          pendingFragments
+        );
         readBuffer = decoded.remainder;
+        pendingFragments = decoded.pendingFragments;
+
         for (const frame of decoded.frames) {
           if (frame.opcode === 0x08) {
             removeWsClient(clientId);
@@ -362,85 +354,26 @@ export function createRealtimeHub(
             }
             continue;
           }
+          if (frame.opcode === 0x0a) {
+            continue;
+          }
           if (frame.opcode === 0x01 && frame.text !== undefined) {
-            const msg = JSON.parse(frame.text);
-            const curClient = wsClients[clientId];
-            if (!curClient) return;
-
-            if (msg.type === "SUBSCRIBE_ROOM") {
-              const nextRoomId = msg.roomId
-                ? resolveCanonicalRoomId(String(msg.roomId))
-                : null;
-              const nextPlayerId = msg.playerId ?? curClient.playerId ?? null;
-              upsertWsClient({
-                ...curClient,
-                roomId: nextRoomId,
-                playerId: nextPlayerId,
+            try {
+              const msg = JSON.parse(frame.text);
+              handleClientJsonMessage(messageDeps, clientId, msg);
+            } catch (msgErr: any) {
+              sendWsFrameSafe(socket, {
+                type: "ERROR",
+                error: msgErr?.message ?? String(msgErr),
               });
-              recordPlayerRoomPresence(nextRoomId, nextPlayerId);
-              if (nextRoomId) {
-                broadcastRoomState(nextRoomId);
-                broadcastLobbyRooms();
-                if (!roomBotTimers.has(nextRoomId)) {
-                  scheduleRoomBotTurn(nextRoomId);
-                }
-              }
-            } else if (msg.type === "UNSUBSCRIBE_ROOM") {
-              const prevRoomId = curClient.roomId;
-              upsertWsClient({
-                ...curClient,
-                roomId: null,
-              });
-              if (prevRoomId) {
-                refreshRoomDisconnectClock(prevRoomId);
-              }
-            } else if (msg.type === "DISPATCH_ACTION" && curClient.roomId) {
-              clearRoomBotTimer(curClient.roomId);
-              const room = roomManager.getRoom(curClient.roomId);
-              if (
-                curClient.playerId &&
-                !roomManager.canViewerControlActor(
-                  room,
-                  curClient.playerId,
-                  msg.playerId
-                )
-              ) {
-                throw new Error("You cannot act on behalf of another player");
-              }
-              const prevStatus = room.status;
-              roomManager.dispatchAction(
-                curClient.roomId,
-                msg.playerId,
-                msg.action
-              );
-              broadcastRoomState(curClient.roomId);
-              if (room.status !== prevStatus) {
-                broadcastLobbyRooms();
-              }
-              scheduleRoomBotTurn(curClient.roomId);
-            } else if (msg.type === "STEP_BOT" && curClient.roomId) {
-              clearRoomBotTimer(curClient.roomId);
-              const room = roomManager.getRoom(curClient.roomId);
-              const prevStatus = room.status;
-              roomManager.stepBot(curClient.roomId, { onlyBots: true });
-              broadcastRoomState(curClient.roomId);
-              if (room.status !== prevStatus) {
-                broadcastLobbyRooms();
-              }
-              scheduleRoomBotTurn(curClient.roomId);
             }
           }
         }
-      } catch (err: any) {
-        sendWsFrame(socket, {
-          type: "ERROR",
-          error: err?.message ?? String(err),
-        });
+      } catch {
+        removeWsClient(clientId);
+        socket.destroy();
       }
     });
-
-    socket.on("close", () => removeWsClient(clientId));
-    socket.on("error", () => removeWsClient(clientId));
   }
 
   function shutdown(): void {
@@ -454,9 +387,11 @@ export function createRealtimeHub(
   return {
     enrichSummaryWithPresence,
     refreshRoomDisconnectClock,
-    removePlayerRoomPresence,
+    removePlayerRoomPresence: presence.removePlayerRoomPresence,
     signOutGuestConnections,
     cleanupDeletedRoomMeta,
+    notifyRoomClosed,
+    checkHeartbeats,
     sweepAbandonedRooms,
     broadcastLobbyRooms,
     broadcastRoomState,

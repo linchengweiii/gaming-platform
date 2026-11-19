@@ -1,10 +1,7 @@
+import { ONLINE_BOT_WATCHDOG_MS } from "../../config/app-config.ts";
 import {
-  ONLINE_BOT_WATCHDOG_MS,
-  WS_RECONNECT_DELAY_MS,
-} from "../../config/app-config.ts";
-import {
+  findActiveRoomPure,
   getActingPlayerIdPure,
-  getActiveRoomPure,
   getRoomStatePure,
   roomUsesServerPure,
 } from "../helpers/room-queries.ts";
@@ -18,12 +15,53 @@ import {
   type AppRuntimeContext,
   clearActiveRoomIdFromStorage,
 } from "./context.ts";
+import {
+  fetchWithTimeout,
+  isLikelyStaticHostResponsePure,
+} from "./http-fetch-helper.ts";
+import {
+  attachRealtimeWsActions,
+  evictDeletedActiveRoom,
+} from "./realtime-ws.ts";
 
 export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
-  const sendWsMessage = (msg: Record<string, unknown>): void => {
-    if (ctx.ws && ctx.ws.readyState === WebSocket.OPEN) {
-      ctx.ws.send(JSON.stringify(msg));
+  attachRealtimeWsActions(ctx);
+
+  const cancelPendingSetupSync = (): void => {
+    if (ctx.setupSyncTimer) {
+      clearTimeout(ctx.setupSyncTimer);
+      ctx.setupSyncTimer = null;
     }
+    ctx.setupSyncFlushFn = null;
+  };
+
+  const flushPendingSetupSync = async (): Promise<void> => {
+    if (ctx.setupSyncTimer && ctx.setupSyncFlushFn) {
+      clearTimeout(ctx.setupSyncTimer);
+      ctx.setupSyncTimer = null;
+      const fn = ctx.setupSyncFlushFn;
+      ctx.setupSyncFlushFn = null;
+      await fn();
+      return;
+    }
+    if (ctx.setupSyncPromise) {
+      await ctx.setupSyncPromise;
+    }
+  };
+
+  const exitRoomToLobby = (): void => {
+    ctx.navEpoch += 1;
+    ctx.stopAutoPlay();
+    cancelPendingSetupSync();
+    clearActiveRoomIdFromStorage();
+    ctx.syncUrlRoomHash(null);
+    ctx.sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+    ctx.model = resetSubModesPure({
+      ...ctx.model,
+      activeRoomId: "",
+      inspectingSetupDuringMatch: false,
+      viewMode: "lobby",
+    });
   };
 
   const syncActiveServerRoomState = async (): Promise<void> => {
@@ -36,14 +74,32 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
     ) {
       return;
     }
+    const requestedRoomId = active.roomId;
+    const requestedPlayerId = ctx.model.currentUserId;
+    const capturedEpoch = ctx.navEpoch;
     try {
-      const res = await fetch(
-        `/api/rooms/${encodeURIComponent(active.roomId)}?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
+      const res = await fetchWithTimeout(
+        `/api/rooms/${encodeURIComponent(requestedRoomId)}?playerId=${encodeURIComponent(requestedPlayerId)}`
       );
+      if (
+        ctx.navEpoch !== capturedEpoch ||
+        ctx.model.currentUserId !== requestedPlayerId
+      ) {
+        return;
+      }
+      if (res.status === 404) {
+        evictDeletedActiveRoom(ctx, requestedRoomId);
+        return;
+      }
       if (!res.ok) return;
       const data = await res.json();
-      if (!data.room) return;
-      const prevStatus = ctx.model.rooms[data.room.roomId]?.status;
+      if (
+        !data.room ||
+        ctx.navEpoch !== capturedEpoch ||
+        ctx.model.currentUserId !== requestedPlayerId
+      ) {
+        return;
+      }
       const upserted = upsertRoomFromSummaryPure(
         ctx.model,
         data.room,
@@ -51,14 +107,20 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
         data.actingPlayerId
       );
       ctx.model = upserted.model;
-      if (upserted.room.roomId === ctx.model.activeRoomId) {
+      if (
+        upserted.room.roomId === ctx.model.activeRoomId &&
+        (ctx.model.viewMode === "room_setup" ||
+          ctx.model.viewMode === "in_game")
+      ) {
         if (
           ctx.model.viewMode === "room_setup" &&
-          prevStatus !== "in_progress" &&
-          upserted.room.status === "in_progress"
+          upserted.room.status === "in_progress" &&
+          upserted.room.remoteState !== null &&
+          !ctx.model.inspectingSetupDuringMatch
         ) {
           ctx.model = resetSubModesPure({
             ...ctx.model,
+            inspectingSetupDuringMatch: false,
             viewMode: "in_game",
           });
         }
@@ -77,7 +139,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
     if (!ctx.model.isAuthenticated || ctx.model.viewMode !== "in_game") {
       return;
     }
-    const room = getActiveRoomPure(ctx.model);
+    const room = findActiveRoomPure(ctx.model);
     if (
       !room ||
       !roomUsesServerPure(ctx.model, room) ||
@@ -99,7 +161,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
     const timer = setTimeout(() => {
       ctx.onlineBotWatchdogTimer = null;
       ctx.connectServerRealtime();
-      sendWsMessage({
+      ctx.sendWsMessage({
         type: "SUBSCRIBE_ROOM",
         roomId: room.roomId,
         playerId: ctx.model.currentUserId,
@@ -112,106 +174,23 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
     ctx.onlineBotWatchdogTimer = timer;
   };
 
-  const connectServerRealtime = (): void => {
-    if (!ctx.model.useServerBackend || typeof WebSocket === "undefined") return;
-    if (
-      ctx.ws &&
-      (ctx.ws.readyState === WebSocket.OPEN ||
-        ctx.ws.readyState === WebSocket.CONNECTING)
-    ) {
-      return;
-    }
-
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsQuery = ctx.model.currentUserId
-      ? `/?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
-      : "";
-    const socket = new WebSocket(`${proto}//${window.location.host}${wsQuery}`);
-    ctx.ws = socket;
-
-    socket.addEventListener("open", () => {
-      ctx.model = { ...ctx.model, serverReachable: true };
-      const active = ctx.model.rooms[ctx.model.activeRoomId];
-      if (
-        (ctx.model.viewMode === "room_setup" ||
-          ctx.model.viewMode === "in_game") &&
-        active &&
-        !active.isOfflineLocal
-      ) {
-        sendWsMessage({
-          type: "SUBSCRIBE_ROOM",
-          roomId: active.roomId,
-          playerId: ctx.model.currentUserId,
-        });
-        void syncActiveServerRoomState();
-      }
-    });
-
-    socket.addEventListener("message", (ev) => {
-      try {
-        const msg = JSON.parse(String(ev.data));
-        if (msg.type === "LOBBY_ROOMS" && Array.isArray(msg.rooms)) {
-          ctx.model = syncOnlineLobbyRoomsPure(ctx.model, msg.rooms);
-          if (ctx.model.viewMode === "lobby") {
-            ctx.renderPreservingFocus();
-          }
-        } else if (msg.type === "ROOM_STATE" && msg.room) {
-          const prevStatus = ctx.model.rooms[msg.room.roomId]?.status;
-          const upserted = upsertRoomFromSummaryPure(
-            ctx.model,
-            msg.room,
-            msg.state,
-            msg.actingPlayerId
-          );
-          ctx.model = upserted.model;
-          const updated = upserted.room;
-          if (updated.roomId === ctx.model.activeRoomId) {
-            if (
-              ctx.model.viewMode === "room_setup" &&
-              prevStatus !== "in_progress" &&
-              updated.status === "in_progress"
-            ) {
-              ctx.model = resetSubModesPure({
-                ...ctx.model,
-                viewMode: "in_game",
-              });
-            }
-            if (updated.status === "finished") {
-              ctx.stopAutoPlay();
-            }
-            ctx.renderPreservingFocus();
-          }
-        }
-      } catch {
-        // Ignore malformed frame
-      }
-    });
-
-    socket.addEventListener("close", () => {
-      if (ctx.ws === socket) {
-        ctx.ws = null;
-      }
-      if (ctx.model.isAuthenticated && ctx.model.useServerBackend) {
-        if (ctx.wsReconnectTimer) clearTimeout(ctx.wsReconnectTimer);
-        const timer = setTimeout(
-          () => connectServerRealtime(),
-          WS_RECONNECT_DELAY_MS
-        );
-        (timer as any).unref?.();
-        ctx.wsReconnectTimer = timer;
-      }
-    });
-  };
-
   const fetchLobbyRooms = async (): Promise<void> => {
     if (!ctx.model.useServerBackend) return;
+    const requestedPlayerId = ctx.model.currentUserId;
     try {
-      const playerQuery = ctx.model.currentUserId
-        ? `?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
+      const playerQuery = requestedPlayerId
+        ? `?playerId=${encodeURIComponent(requestedPlayerId)}`
         : "";
-      const res = await fetch(`/api/rooms${playerQuery}`);
+      const res = await fetchWithTimeout(`/api/rooms${playerQuery}`);
       const ct = res.headers.get("content-type") ?? "";
-      if (!res.ok || !ct.includes("application/json")) {
+
+      if (
+        isLikelyStaticHostResponsePure(
+          res.status,
+          ct,
+          ctx.model.hasEverReachedServer
+        )
+      ) {
         ctx.model = {
           ...ctx.model,
           staticHostOnly: true,
@@ -228,18 +207,55 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
         }
         return;
       }
-      ctx.model = { ...ctx.model, serverReachable: true };
-      connectServerRealtime();
+
+      if (!res.ok || !ct.includes("application/json")) {
+        ctx.model = {
+          ...ctx.model,
+          serverReachable: false,
+          createRoomMode: "offline",
+        };
+        ctx.scheduleWsReconnect();
+        if (ctx.model.viewMode === "lobby") {
+          ctx.renderPreservingFocus();
+        }
+        return;
+      }
+
+      if (ctx.model.currentUserId !== requestedPlayerId) return;
+
+      ctx.wsReconnectAttempt = 0;
+      const wasUnreachable = !ctx.model.serverReachable;
+      ctx.model = {
+        ...ctx.model,
+        serverReachable: true,
+        hasEverReachedServer: true,
+        ...(wasUnreachable ? { createRoomMode: "online" } : {}),
+      };
+      ctx.connectServerRealtime();
+
       const data = await res.json();
+      if (ctx.model.currentUserId !== requestedPlayerId) return;
+
       if (Array.isArray(data.rooms)) {
         ctx.model = syncOnlineLobbyRoomsPure(ctx.model, data.rooms);
-        if (ctx.model.pendingInviteRoomId) {
+        const isReloadSameRoom =
+          ctx.isInitialReloadRoomRestore &&
+          Boolean(ctx.model.pendingInviteRoomId) &&
+          ctx.pendingRestoreRoomId === ctx.model.pendingInviteRoomId;
+        ctx.isInitialReloadRoomRestore = false;
+
+        if (ctx.model.pendingInviteRoomId && !isReloadSameRoom) {
           const inviteId = ctx.model.pendingInviteRoomId;
           ctx.model = { ...ctx.model, pendingInviteRoomId: null };
           ctx.pendingRestoreRoomId = null;
           ctx.enterOrJoinRoom(inviteId);
           return;
         }
+
+        if (isReloadSameRoom) {
+          ctx.model = { ...ctx.model, pendingInviteRoomId: null };
+        }
+
         if (ctx.pendingRestoreRoomId) {
           const restoreId = ctx.pendingRestoreRoomId;
           ctx.pendingRestoreRoomId = null;
@@ -256,6 +272,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
             return;
           }
           clearActiveRoomIdFromStorage();
+          ctx.syncUrlRoomHash(null);
         }
         if (ctx.model.viewMode === "lobby") {
           ctx.renderPreservingFocus();
@@ -267,6 +284,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
         serverReachable: false,
         createRoomMode: "offline",
       };
+      ctx.scheduleWsReconnect();
       if (ctx.model.viewMode === "lobby") {
         ctx.renderPreservingFocus();
       }
@@ -275,51 +293,67 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
 
   const pushServerRoomSetup = (room: ClientRoom, debounceMs = 0): void => {
     if (!roomUsesServerPure(ctx.model, room)) return;
-    if (ctx.setupSyncTimer) {
-      clearTimeout(ctx.setupSyncTimer);
-      ctx.setupSyncTimer = null;
-    }
-    const send = async () => {
-      try {
-        const latest = ctx.model.rooms[room.roomId] ?? room;
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(latest.roomId)}/setup`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              requesterId: ctx.model.currentUserId,
-              name: latest.name,
-              gameId: latest.gameId,
-              isPrivate: latest.isPrivate,
-              botCount: latest.botCount,
-              allBots: latest.allBots,
-              botDifficulty: latest.botDifficulty,
-              startingPlayerMode: latest.startingPlayerMode,
-              config: latest.config,
-            }),
+    cancelPendingSetupSync();
+    const send = async (): Promise<void> => {
+      const p = (async () => {
+        try {
+          const latest = ctx.model.rooms[room.roomId] ?? room;
+          const res = await fetchWithTimeout(
+            `/api/rooms/${encodeURIComponent(latest.roomId)}/setup`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                requesterId: ctx.model.currentUserId,
+                name: latest.name,
+                gameId: latest.gameId,
+                isPrivate: latest.isPrivate,
+                botCount: latest.botCount,
+                allBots: latest.allBots,
+                botDifficulty: latest.botDifficulty,
+                startingPlayerMode: latest.startingPlayerMode,
+                config: latest.config,
+              }),
+            }
+          );
+          if (res.status === 404) {
+            evictDeletedActiveRoom(ctx, latest.roomId);
+            return;
           }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.room) {
-            ctx.model = upsertRoomFromSummaryPure(ctx.model, data.room).model;
-            ctx.renderPreservingFocus();
+          if (res.ok) {
+            const data = await res.json();
+            if (data.room) {
+              ctx.model = upsertRoomFromSummaryPure(
+                ctx.model,
+                data.room
+              ).model;
+              ctx.renderPreservingFocus();
+            }
           }
+        } catch {
+          // Ignore transient network errors
+        } finally {
+          ctx.setupSyncPromise = null;
         }
-      } catch {
-        // Ignore transient network errors
-      }
+      })();
+      ctx.setupSyncPromise = p;
+      await p;
     };
     if (debounceMs > 0) {
-      ctx.setupSyncTimer = setTimeout(() => void send(), debounceMs);
+      ctx.setupSyncFlushFn = send;
+      ctx.setupSyncTimer = setTimeout(() => {
+        ctx.setupSyncTimer = null;
+        ctx.setupSyncFlushFn = null;
+        void send();
+      }, debounceMs);
     } else {
       void send();
     }
   };
 
-  ctx.sendWsMessage = sendWsMessage;
-  ctx.connectServerRealtime = connectServerRealtime;
+  ctx.cancelPendingSetupSync = cancelPendingSetupSync;
+  ctx.flushPendingSetupSync = flushPendingSetupSync;
+  ctx.exitRoomToLobby = exitRoomToLobby;
   ctx.syncActiveServerRoomState = syncActiveServerRoomState;
   ctx.scheduleOnlineBotWatchdogIfNeeded = scheduleOnlineBotWatchdogIfNeeded;
   ctx.fetchLobbyRooms = fetchLobbyRooms;

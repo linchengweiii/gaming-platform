@@ -1,7 +1,7 @@
 import {
   canControlPlayerOnDevicePure,
+  findActiveRoomPure,
   getActingPlayerIdPure,
-  getActiveRoomPure,
   getEngineForGamePure,
   getRoomStatePure,
   roomUsesServerPure,
@@ -11,6 +11,8 @@ import { upsertRoomFromSummaryPure } from "../reducers/room-sync-reducers.ts";
 import { stepSetupBotsRecursive } from "../reducers/session-signout-and-match.ts";
 import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
 import type { AppRuntimeContext } from "./context.ts";
+import { fetchWithTimeout } from "./http-fetch-helper.ts";
+import { evictDeletedActiveRoom } from "./realtime-ws.ts";
 
 export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
   const stopAutoPlay = (): void => {
@@ -30,7 +32,8 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
   };
 
   const stepOneBotMove = (onlyBots = false): boolean => {
-    const room = getActiveRoomPure(ctx.model);
+    const room = findActiveRoomPure(ctx.model);
+    if (!room) return false;
     const usesServer = roomUsesServerPure(ctx.model, room);
     if (onlyBots) {
       const curState = getRoomStatePure(ctx.model, room);
@@ -50,28 +53,36 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     if (usesServer) {
       ctx.connectServerRealtime();
       void (async () => {
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(room.roomId)}/bot-step`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              requesterId: ctx.model.currentUserId,
-              onlyBots,
-            }),
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          ctx.model = resetSubModesPure(
-            upsertRoomFromSummaryPure(
-              ctx.model,
-              data.room,
-              data.state,
-              data.actingPlayerId
-            ).model
+        try {
+          const res = await fetchWithTimeout(
+            `/api/rooms/${encodeURIComponent(room.roomId)}/bot-step`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                requesterId: ctx.model.currentUserId,
+                onlyBots,
+              }),
+            }
           );
-          ctx.render();
+          if (res.status === 404) {
+            evictDeletedActiveRoom(ctx, room.roomId);
+            return;
+          }
+          if (res.ok) {
+            const data = await res.json();
+            ctx.model = resetSubModesPure(
+              upsertRoomFromSummaryPure(
+                ctx.model,
+                data.room,
+                data.state,
+                data.actingPlayerId
+              ).model
+            );
+            ctx.render();
+          }
+        } catch {
+          // Ignore transient network errors
         }
       })();
       return true;
@@ -112,28 +123,37 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
   };
 
   const finishSetupWithBots = (): void => {
-    const room = getActiveRoomPure(ctx.model);
+    const room = findActiveRoomPure(ctx.model);
+    if (!room) return;
     if (roomUsesServerPure(ctx.model, room)) {
       void (async () => {
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(room.roomId)}/finish-setup`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          ctx.model = resetSubModesPure(
-            upsertRoomFromSummaryPure(
-              ctx.model,
-              data.room,
-              data.state,
-              data.actingPlayerId
-            ).model
+        try {
+          const res = await fetchWithTimeout(
+            `/api/rooms/${encodeURIComponent(room.roomId)}/finish-setup`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
+            }
           );
-          ctx.render();
+          if (res.status === 404) {
+            evictDeletedActiveRoom(ctx, room.roomId);
+            return;
+          }
+          if (res.ok) {
+            const data = await res.json();
+            ctx.model = resetSubModesPure(
+              upsertRoomFromSummaryPure(
+                ctx.model,
+                data.room,
+                data.state,
+                data.actingPlayerId
+              ).model
+            );
+            ctx.render();
+          }
+        } catch {
+          // Ignore transient network errors
         }
       })();
       return;
@@ -147,29 +167,38 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
   };
 
   const undoMatch = (): void => {
-    const room = getActiveRoomPure(ctx.model);
+    const room = findActiveRoomPure(ctx.model);
+    if (!room) return;
     stopAutoPlay();
     if (roomUsesServerPure(ctx.model, room)) {
       void (async () => {
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(room.roomId)}/undo`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          ctx.model = resetSubModesPure(
-            upsertRoomFromSummaryPure(
-              ctx.model,
-              data.room,
-              data.state,
-              data.actingPlayerId
-            ).model
+        try {
+          const res = await fetchWithTimeout(
+            `/api/rooms/${encodeURIComponent(room.roomId)}/undo`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
+            }
           );
-          ctx.render();
+          if (res.status === 404) {
+            evictDeletedActiveRoom(ctx, room.roomId);
+            return;
+          }
+          if (res.ok) {
+            const data = await res.json();
+            ctx.model = resetSubModesPure(
+              upsertRoomFromSummaryPure(
+                ctx.model,
+                data.room,
+                data.state,
+                data.actingPlayerId
+              ).model
+            );
+            ctx.render();
+          }
+        } catch {
+          // Ignore transient network errors
         }
       })();
       return;
@@ -207,29 +236,38 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
   };
 
   const redoMatch = (): void => {
-    const room = getActiveRoomPure(ctx.model);
+    const room = findActiveRoomPure(ctx.model);
+    if (!room) return;
     stopAutoPlay();
     if (roomUsesServerPure(ctx.model, room)) {
       void (async () => {
-        const res = await fetch(
-          `/api/rooms/${encodeURIComponent(room.roomId)}/redo`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          ctx.model = resetSubModesPure(
-            upsertRoomFromSummaryPure(
-              ctx.model,
-              data.room,
-              data.state,
-              data.actingPlayerId
-            ).model
+        try {
+          const res = await fetchWithTimeout(
+            `/api/rooms/${encodeURIComponent(room.roomId)}/redo`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
+            }
           );
-          ctx.render();
+          if (res.status === 404) {
+            evictDeletedActiveRoom(ctx, room.roomId);
+            return;
+          }
+          if (res.ok) {
+            const data = await res.json();
+            ctx.model = resetSubModesPure(
+              upsertRoomFromSummaryPure(
+                ctx.model,
+                data.room,
+                data.state,
+                data.actingPlayerId
+              ).model
+            );
+            ctx.render();
+          }
+        } catch {
+          // Ignore transient network errors
         }
       })();
       return;
@@ -250,7 +288,8 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
   };
 
   const toggleAutoRespondBots = (): void => {
-    const room = getActiveRoomPure(ctx.model);
+    const room = findActiveRoomPure(ctx.model);
+    if (!room) return;
     const usesServer = roomUsesServerPure(ctx.model, room);
     const currentEnabled = usesServer
       ? room.autoStepBots
@@ -265,7 +304,7 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
       ctx.connectServerRealtime();
       void (async () => {
         try {
-          const res = await fetch(
+          const res = await fetchWithTimeout(
             `/api/rooms/${encodeURIComponent(room.roomId)}/auto-bots`,
             {
               method: "POST",
@@ -276,6 +315,10 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
               }),
             }
           );
+          if (res.status === 404) {
+            evictDeletedActiveRoom(ctx, room.roomId);
+            return;
+          }
           if (res.ok) {
             const data = await res.json();
             if (data.room) {
@@ -298,7 +341,11 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     } else {
       ctx.model = { ...ctx.model, autoPlayBots: true };
       ctx.autoPlayTimer = setInterval(() => {
-        const room = getActiveRoomPure(ctx.model);
+        const room = findActiveRoomPure(ctx.model);
+        if (!room) {
+          stopAutoPlay();
+          return;
+        }
         const state = getRoomStatePure(ctx.model, room);
         if (!state) {
           stopAutoPlay();

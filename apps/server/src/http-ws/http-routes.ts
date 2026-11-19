@@ -1,37 +1,11 @@
 import type http from "node:http";
+import type { PlatformRoomManager, RoomInstance } from "../room-manager.ts";
 import {
-  type PlatformRoomManager,
-  type RoomInstance,
-  getRoomActingPlayerId,
-} from "../room-manager.ts";
+  buildRedactedStatePayload,
+  handleRoomMatchSubRoute,
+} from "./http-match-routes.ts";
 import type { RealtimeHub } from "./realtime-hub.ts";
-import {
-  readJsonBody,
-  resolveEffectiveViewerIdPure,
-  sendJson,
-} from "./viewer-and-static.ts";
-
-function buildRedactedStatePayload(
-  roomManager: PlatformRoomManager,
-  room: RoomInstance,
-  rawState: any,
-  viewerId: string | null
-): { actingId: string | null; view: any } {
-  const engine = roomManager.registry.get(room.gameId);
-  const actingId = rawState
-    ? getRoomActingPlayerId(room.gameId, rawState)
-    : null;
-  const effectiveViewerId = resolveEffectiveViewerIdPure(
-    room,
-    viewerId,
-    actingId,
-    rawState
-  );
-  const view = rawState
-    ? engine.getPlayerView(rawState, effectiveViewerId)
-    : null;
-  return { actingId, view };
-}
+import { readJsonBody, sendJson } from "./viewer-and-static.ts";
 
 export async function handleApiRequest(
   req: http.IncomingMessage,
@@ -69,7 +43,7 @@ export async function handleApiRequest(
     hub.signOutGuestConnections(playerId);
 
     const result = roomManager.signOutGuest(playerId);
-    result.closedRoomIds.forEach((id) => hub.cleanupDeletedRoomMeta(id));
+    result.closedRoomIds.forEach((id) => hub.notifyRoomClosed(id));
     result.updatedRoomIds.forEach((id) => {
       hub.refreshRoomDisconnectClock(id);
       hub.broadcastRoomState(id);
@@ -107,11 +81,13 @@ export async function handleApiRequest(
   if (pathname === "/api/rooms" && req.method === "POST") {
     const body = await readJsonBody(req);
     const room = roomManager.createRoom(body);
-    const engine = roomManager.registry.get(room.gameId);
     const rawState = room.session?.getState() ?? null;
-    const view = rawState
-      ? engine.getPlayerView(rawState, body.ownerId ?? null)
-      : null;
+    const { actingId, view } = buildRedactedStatePayload(
+      roomManager,
+      room,
+      rawState,
+      body.ownerId ?? null
+    );
     hub.broadcastLobbyRooms();
     if (room.status === "in_progress") {
       hub.scheduleRoomBotTurn(room.roomId);
@@ -119,9 +95,7 @@ export async function handleApiRequest(
     sendJson(res, 201, {
       room: roomManager.toRoomSummary(room, body.ownerId ?? null),
       state: view,
-      actingPlayerId: rawState
-        ? getRoomActingPlayerId(room.gameId, rawState)
-        : null,
+      actingPlayerId: actingId,
     });
     return true;
   }
@@ -132,7 +106,17 @@ export async function handleApiRequest(
   }
 
   const rawRoomId = decodeURIComponent(roomMatch[1]!);
-  const roomId = roomManager.getRoom(rawRoomId).roomId;
+  let targetRoom: RoomInstance;
+  try {
+    targetRoom = roomManager.getRoom(rawRoomId);
+  } catch (err: any) {
+    sendJson(res, 404, {
+      error: err?.message ?? `Room "${rawRoomId}" not found`,
+      code: "ROOM_NOT_FOUND",
+    });
+    return true;
+  }
+  const roomId = targetRoom.roomId;
   const subRoute = roomMatch[2] ?? "";
 
   if (!subRoute && req.method === "GET") {
@@ -207,18 +191,20 @@ export async function handleApiRequest(
       body.playerId
     );
     const room = roomManager.getRoom(roomId);
-    const engine = roomManager.registry.get(room.gameId);
     const rawState = room.session?.getState() ?? null;
-    const view = rawState ? engine.getPlayerView(rawState, player.id) : null;
+    const { actingId, view } = buildRedactedStatePayload(
+      roomManager,
+      room,
+      rawState,
+      player.id
+    );
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
     sendJson(res, 200, {
       player,
       room: roomManager.toRoomSummary(room, player.id),
       state: view,
-      actingPlayerId: rawState
-        ? getRoomActingPlayerId(room.gameId, rawState)
-        : null,
+      actingPlayerId: actingId,
     });
     return true;
   }
@@ -227,7 +213,7 @@ export async function handleApiRequest(
     const body = await readJsonBody(req);
     const room = roomManager.leaveRoom(roomId, body.playerId);
     if (!room) {
-      hub.cleanupDeletedRoomMeta(roomId);
+      hub.notifyRoomClosed(roomId);
       hub.broadcastLobbyRooms();
       sendJson(res, 200, { closed: true, room: null });
       return true;
@@ -243,175 +229,5 @@ export async function handleApiRequest(
     return true;
   }
 
-  if (subRoute === "start" && req.method === "POST") {
-    const body = await readJsonBody(req);
-    hub.clearRoomBotTimer(roomId);
-    const rawState = roomManager.startGame(roomId, body.requesterId);
-    const room = roomManager.getRoom(roomId);
-    const viewerId = body.requesterId ?? null;
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      rawState,
-      viewerId
-    );
-    hub.broadcastRoomState(roomId);
-    hub.broadcastLobbyRooms();
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      room: roomManager.toRoomSummary(room, viewerId),
-      state: view,
-      actingPlayerId: actingId,
-    });
-    return true;
-  }
-
-  if (subRoute === "action" && req.method === "POST") {
-    const body = await readJsonBody(req);
-    hub.clearRoomBotTimer(roomId);
-    const room = roomManager.getRoom(roomId);
-    if (
-      body.requesterId &&
-      !roomManager.canViewerControlActor(room, body.requesterId, body.playerId)
-    ) {
-      throw new Error("You cannot act on behalf of another player");
-    }
-    const prevStatus = room.status;
-    const nextState = roomManager.dispatchAction(
-      roomId,
-      body.playerId,
-      body.action
-    );
-    const viewerId = body.requesterId ?? body.playerId ?? null;
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      nextState,
-      viewerId
-    );
-    hub.broadcastRoomState(roomId);
-    if (room.status !== prevStatus) {
-      hub.broadcastLobbyRooms();
-    }
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      room: roomManager.toRoomSummary(room, viewerId),
-      state: view,
-      actingPlayerId: actingId,
-    });
-    return true;
-  }
-
-  if (subRoute === "bot-step" && req.method === "POST") {
-    const body = await readJsonBody(req);
-    hub.clearRoomBotTimer(roomId);
-    const room = roomManager.getRoom(roomId);
-    const prevStatus = room.status;
-    const result = roomManager.stepBot(roomId, {
-      onlyBots: body.onlyBots !== false,
-    });
-    const viewerId = body.requesterId ?? null;
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      result.state,
-      viewerId
-    );
-    hub.broadcastRoomState(roomId);
-    if (room.status !== prevStatus) {
-      hub.broadcastLobbyRooms();
-    }
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      ...result,
-      state: view,
-      room: roomManager.toRoomSummary(room, viewerId),
-      actingPlayerId: actingId,
-    });
-    return true;
-  }
-
-  if (subRoute === "auto-bots" && req.method === "POST") {
-    const body = await readJsonBody(req);
-    const room = roomManager.setRoomAutoStepBots(roomId, Boolean(body.enabled));
-    hub.broadcastRoomState(roomId);
-    if (room.autoStepBots) {
-      hub.scheduleRoomBotTurn(roomId);
-    } else {
-      hub.clearRoomBotTimer(roomId);
-    }
-    sendJson(res, 200, {
-      room: roomManager.toRoomSummary(room, body.requesterId ?? null),
-    });
-    return true;
-  }
-
-  if (subRoute === "finish-setup" && req.method === "POST") {
-    const body = await readJsonBody(req);
-    hub.clearRoomBotTimer(roomId);
-    const nextState = roomManager.finishCatanSetupWithBots(roomId);
-    const room = roomManager.getRoom(roomId);
-    const viewerId = body.requesterId ?? null;
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      nextState,
-      viewerId
-    );
-    hub.broadcastRoomState(roomId);
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      room: roomManager.toRoomSummary(room, viewerId),
-      state: view,
-      actingPlayerId: actingId,
-    });
-    return true;
-  }
-
-  if (subRoute === "undo" && req.method === "POST") {
-    const body = await readJsonBody(req);
-    hub.clearRoomBotTimer(roomId);
-    const viewerId = body.requesterId ?? null;
-    const nextState = roomManager.undoAction(roomId, viewerId);
-    const room = roomManager.getRoom(roomId);
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      nextState,
-      viewerId
-    );
-    hub.broadcastRoomState(roomId);
-    hub.broadcastLobbyRooms();
-    sendJson(res, 200, {
-      room: roomManager.toRoomSummary(room, viewerId),
-      state: view,
-      actingPlayerId: actingId,
-    });
-    return true;
-  }
-
-  if (subRoute === "redo" && req.method === "POST") {
-    const body = await readJsonBody(req);
-    hub.clearRoomBotTimer(roomId);
-    const viewerId = body.requesterId ?? null;
-    const room = roomManager.getRoom(roomId);
-    const nextState = roomManager.redoAction(roomId, viewerId);
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      nextState,
-      viewerId
-    );
-    hub.broadcastRoomState(roomId);
-    hub.broadcastLobbyRooms();
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      room: roomManager.toRoomSummary(room, viewerId),
-      state: view,
-      actingPlayerId: actingId,
-    });
-    return true;
-  }
-
-  return false;
+  return handleRoomMatchSubRoute(req, res, roomId, subRoute, roomManager, hub);
 }

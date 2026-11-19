@@ -17,12 +17,15 @@ import type {
 export {
   clearActiveRoomIdFromStorage,
   clearGuestSessionFromStorage,
+  clearLastActiveGuestIdFromStorage,
   loadActiveRoomIdFromStorage,
   loadDeviceGuestsFromStorage,
+  loadLastActiveGuestIdFromStorage,
   loadSavedGuestSessionFromStorage,
   saveActiveRoomIdToStorage,
   saveDeviceGuestsToStorage,
   saveGuestSessionToStorage,
+  saveLastActiveGuestIdToStorage,
 } from "./storage.ts";
 
 export interface AppRuntimeContext {
@@ -30,12 +33,20 @@ export interface AppRuntimeContext {
   model: AppModel;
   ws: WebSocket | null;
   wsReconnectTimer: ReturnType<typeof setTimeout> | null;
+  wsPingTimer: ReturnType<typeof setInterval> | null;
+  wsReconnectAttempt: number;
+  lastWsActivityMs: number;
   onlineBotWatchdogTimer: ReturnType<typeof setTimeout> | null;
   setupSyncTimer: ReturnType<typeof setTimeout> | null;
+  setupSyncPromise: Promise<void> | null;
+  setupSyncFlushFn: (() => Promise<void>) | null;
   autoPlayTimer: ReturnType<typeof setInterval> | null;
   botResponseTimeout: ReturnType<typeof setTimeout> | null;
   copyLinkResetTimer: ReturnType<typeof setTimeout> | null;
   pendingRestoreRoomId: string | null;
+  isInitialReloadRoomRestore: boolean;
+  navEpoch: number;
+  createRoomInFlight: boolean;
   readonly roomLensCache: Map<string, ClientRoom>;
   readonly roomsFacade: RoomsMapView;
   getOrCreateRoomLens: (roomId: string) => ClientRoom;
@@ -45,11 +56,15 @@ export interface AppRuntimeContext {
   renderPreservingFocus: () => void;
   stopAutoPlay: () => void;
   sendWsMessage: (msg: Record<string, unknown>) => void;
-  connectServerRealtime: () => void;
+  connectServerRealtime: (forceReconnect?: boolean) => void;
+  scheduleWsReconnect: () => void;
   syncActiveServerRoomState: () => Promise<void>;
   scheduleOnlineBotWatchdogIfNeeded: () => void;
   fetchLobbyRooms: () => Promise<void>;
   pushServerRoomSetup: (room: ClientRoom, debounceMs?: number) => void;
+  flushPendingSetupSync: () => Promise<void>;
+  cancelPendingSetupSync: () => void;
+  exitRoomToLobby: () => void;
   signInAsGuest: (rawName?: string, existingGuestId?: string) => boolean;
   startSoloGameFromLogin: (rawName?: string) => boolean;
   startOfflineLocalFromLogin: (rawName?: string) => boolean;
@@ -85,7 +100,8 @@ export interface AppRuntimeContext {
 export function createAppRuntimeContext(
   root: HTMLElement,
   initialModel: AppModel,
-  initialPendingRestoreRoomId: string | null
+  initialPendingRestoreRoomId: string | null,
+  isInitialReloadRoomRestore = false
 ): AppRuntimeContext {
   const roomLensCache = new Map<string, ClientRoom>();
 
@@ -97,12 +113,20 @@ export function createAppRuntimeContext(
     model: initialModel,
     ws: null,
     wsReconnectTimer: null,
+    wsPingTimer: null,
+    wsReconnectAttempt: 0,
+    lastWsActivityMs: 0,
     onlineBotWatchdogTimer: null,
     setupSyncTimer: null,
+    setupSyncPromise: null,
+    setupSyncFlushFn: null,
     autoPlayTimer: null,
     botResponseTimeout: null,
     copyLinkResetTimer: null,
     pendingRestoreRoomId: initialPendingRestoreRoomId,
+    isInitialReloadRoomRestore,
+    navEpoch: 0,
+    createRoomInFlight: false,
     roomLensCache,
     roomsFacade: null as unknown as RoomsMapView,
     getOrCreateRoomLens: null as unknown as (roomId: string) => ClientRoom,
@@ -113,10 +137,14 @@ export function createAppRuntimeContext(
     stopAutoPlay: noop,
     sendWsMessage: noop,
     connectServerRealtime: noop,
+    scheduleWsReconnect: noop,
     syncActiveServerRoomState: noopAsync,
     scheduleOnlineBotWatchdogIfNeeded: noop,
     fetchLobbyRooms: noopAsync,
     pushServerRoomSetup: noop,
+    flushPendingSetupSync: noopAsync,
+    cancelPendingSetupSync: noop,
+    exitRoomToLobby: noop,
     signInAsGuest: () => false,
     startSoloGameFromLogin: () => false,
     startOfflineLocalFromLogin: () => false,

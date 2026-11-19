@@ -1,4 +1,5 @@
 import {
+  findActiveRoomPure,
   getActiveRoomPure,
   getRoomStatePure,
   roomUsesServerPure,
@@ -193,7 +194,13 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
     }
     if (ctx.model.viewMode === "room_setup") {
       ctx.scheduleOnlineBotWatchdogIfNeeded();
-      const room = getActiveRoomPure(ctx.model);
+      const room = findActiveRoomPure(ctx.model);
+      if (!room) {
+        ctx.model = { ...ctx.model, activeRoomId: "", viewMode: "lobby" };
+        root.innerHTML = renderLobbyViewPure(ctx.model);
+        bindLobbyEvents(ctx);
+        return;
+      }
       const setupRendered = renderRoomSetupViewPure(ctx.model, room);
       root.innerHTML = setupRendered.html;
       bindRoomSetupEvents(
@@ -206,7 +213,14 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
       return;
     }
 
-    const room = getActiveRoomPure(ctx.model);
+    const room = findActiveRoomPure(ctx.model);
+    if (!room) {
+      ctx.model = { ...ctx.model, activeRoomId: "", viewMode: "lobby" };
+      ctx.scheduleOnlineBotWatchdogIfNeeded();
+      root.innerHTML = renderLobbyViewPure(ctx.model);
+      bindLobbyEvents(ctx);
+      return;
+    }
     const rawState = getRoomStatePure(ctx.model, room);
     const usesServer = roomUsesServerPure(ctx.model, room);
     if (!rawState) {

@@ -15,6 +15,7 @@ import type {
 
 export const GUEST_STORAGE_KEY = "ga_guest_session";
 export const DEVICE_GUESTS_STORAGE_KEY = "ga_device_guests";
+export const LAST_ACTIVE_GUEST_STORAGE_KEY = "ga_last_active_guest_id";
 export const ACTIVE_ROOM_STORAGE_KEY = "ga_active_room_id";
 
 export const DEFAULT_AUTOPLAY_SPEED_MS = 150;
@@ -22,8 +23,27 @@ export const BOT_RESPONSE_DELAY_MS = 140;
 export const BOT_SEVEN_WONDERS_DRAFT_DELAY_MS = 380;
 export const SPECIAL_BUILD_AUTO_END_DELAY_MS = 160;
 export const WS_RECONNECT_DELAY_MS = 1500;
+export const WS_RECONNECT_BASE_DELAY_MS = 500;
+export const WS_RECONNECT_MAX_DELAY_MS = 10_000;
+export const WS_CLIENT_PING_INTERVAL_MS = 20_000;
+export const WS_CLIENT_STALE_TIMEOUT_MS = 45_000;
+export const HTTP_FETCH_TIMEOUT_MS = 8_000;
 export const ONLINE_BOT_WATCHDOG_MS = 1200;
 export const COPY_LINK_RESET_DELAY_MS = 2000;
+
+export function computeWsReconnectDelayPure(
+  attempt: number,
+  randomUnit = 0.5
+): number {
+  const clampedAttempt = Math.max(0, Math.min(8, attempt));
+  const exp = Math.min(
+    WS_RECONNECT_MAX_DELAY_MS,
+    WS_RECONNECT_BASE_DELAY_MS * Math.pow(2, clampedAttempt)
+  );
+  const clampedRand = Math.max(0, Math.min(1, randomUnit));
+  const jitter = 0.9 + clampedRand * 0.2;
+  return Math.round(exp * jitter);
+}
 
 export const DEFAULT_TWO_TO_FOUR_PLAYER_BOUNDS = {
   minPlayers: 2,

@@ -124,6 +124,8 @@ export interface AppModel {
   readonly useServerBackend: boolean;
   readonly staticHostOnly: boolean;
   readonly serverReachable: boolean;
+  readonly hasEverReachedServer: boolean;
+  readonly inspectingSetupDuringMatch: boolean;
   readonly isAuthenticated: boolean;
   readonly addingAdditionalGuest: boolean;
   readonly returnViewAfterAddGuest: AppViewMode;

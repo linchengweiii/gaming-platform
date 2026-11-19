@@ -10,8 +10,8 @@ import {
 } from "../../config/app-config.ts";
 import {
   canControlPlayerOnDevicePure,
+  findActiveRoomPure,
   getActingPlayerIdPure,
-  getActiveRoomPure,
   getRoomStatePure,
   roomUsesServerPure,
   updateRoomInModelPure,
@@ -26,12 +26,14 @@ import type { ClientRoom, SupportedGameId } from "../types.ts";
 import { hasTradeGoodsForOfferPure } from "../views/catan-hud-view.ts";
 import { attachBotAndHistoryActions } from "./bot-and-history-actions.ts";
 import type { AppRuntimeContext } from "./context.ts";
+import { fetchWithTimeout } from "./http-fetch-helper.ts";
+import { evictDeletedActiveRoom } from "./realtime-ws.ts";
 
 export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
   attachBotAndHistoryActions(ctx);
 
   const scheduleBotAutoResponseIfNeeded = (): void => {
-    const room = getActiveRoomPure(ctx.model);
+    const room = findActiveRoomPure(ctx.model);
     if (!room || roomUsesServerPure(ctx.model, room)) return;
     if (ctx.botResponseTimeout) {
       clearTimeout(ctx.botResponseTimeout);
@@ -103,9 +105,12 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
     if (!room) return;
 
     if (roomUsesServerPure(ctx.model, room)) {
+      const capturedEpoch = ctx.navEpoch;
       void (async () => {
         try {
-          const res = await fetch(
+          await ctx.flushPendingSetupSync();
+          if (ctx.navEpoch !== capturedEpoch) return;
+          const res = await fetchWithTimeout(
             `/api/rooms/${encodeURIComponent(roomId)}/start`,
             {
               method: "POST",
@@ -113,6 +118,11 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
               body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
             }
           );
+          if (ctx.navEpoch !== capturedEpoch) return;
+          if (res.status === 404) {
+            evictDeletedActiveRoom(ctx, roomId);
+            return;
+          }
           const data = await res.json();
           if (!res.ok) {
             alert(data.error ?? "Cannot start match");
@@ -127,6 +137,7 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
           ctx.model = resetSubModesPure({
             ...upserted.model,
             activeRoomId: upserted.room.roomId,
+            inspectingSetupDuringMatch: false,
             viewMode: "in_game",
           });
           ctx.connectServerRealtime();
@@ -137,6 +148,7 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
           });
           ctx.render();
         } catch (err: any) {
+          if (ctx.navEpoch !== capturedEpoch) return;
           alert(`Unable to start match: ${err?.message ?? String(err)}`);
         }
       })();
@@ -144,7 +156,7 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
     }
 
     const startedRes = startOfflineRoomMatchPure(ctx.model, roomId);
-    ctx.model = startedRes.model;
+    ctx.model = { ...startedRes.model, inspectingSetupDuringMatch: false };
     if (!startedRes.started) return;
     ctx.render();
     scheduleBotAutoResponseIfNeeded();
@@ -155,12 +167,13 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
   };
 
   const dispatch = (playerId: string, action: any): void => {
-    const room = getActiveRoomPure(ctx.model);
+    const room = findActiveRoomPure(ctx.model);
+    if (!room) return;
     if (roomUsesServerPure(ctx.model, room)) {
       ctx.connectServerRealtime();
       void (async () => {
         try {
-          const res = await fetch(
+          const res = await fetchWithTimeout(
             `/api/rooms/${encodeURIComponent(room.roomId)}/action`,
             {
               method: "POST",
@@ -172,6 +185,10 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
               }),
             }
           );
+          if (res.status === 404) {
+            evictDeletedActiveRoom(ctx, room.roomId);
+            return;
+          }
           const data = await res.json();
           if (!res.ok) {
             alert(`Action error: ${data.error ?? "Illegal action"}`);
@@ -227,8 +244,8 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
   };
 
   const dispatchUiAction = (playerId: string, action: any): void => {
-    const room = getActiveRoomPure(ctx.model);
-    if (!canControlPlayerOnDevicePure(ctx.model, room, playerId)) {
+    const room = findActiveRoomPure(ctx.model);
+    if (!room || !canControlPlayerOnDevicePure(ctx.model, room, playerId)) {
       return;
     }
     const rawState = getRoomStatePure(ctx.model, room);

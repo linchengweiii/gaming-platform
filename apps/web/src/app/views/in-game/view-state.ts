@@ -125,6 +125,19 @@ export function computeInGameViewStatePure(
     if (controllableHumansCount === 1) {
       return controllableHumans[0]!.id;
     }
+    if (controllableHumansCount >= 2) {
+      const offerFromId = rawState.activeTradeOffer?.fromPlayerId;
+      if (
+        offerFromId &&
+        controllableHumans.some((p: any) => p.id === offerFromId)
+      ) {
+        return offerFromId;
+      }
+      const primarySeat = controllableHumans.find(
+        (p: any) => p.id === clearedTurnModel.currentUserId
+      );
+      return primarySeat ? primarySeat.id : controllableHumans[0]!.id;
+    }
     return null;
   })();
 
@@ -203,8 +216,6 @@ export function computeInGameViewStatePure(
       state.activeTradeOffer &&
         offerProposer &&
         (!offerProposer.isBot || room.allBots) &&
-        effectiveViewerId &&
-        state.activeTradeOffer.fromPlayerId === effectiveViewerId &&
         canControlPlayerOnDevicePure(
           model,
           room,

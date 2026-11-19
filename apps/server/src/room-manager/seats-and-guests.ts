@@ -256,33 +256,26 @@ export function signOutPlayerFromRoomPure(
   );
 
   const nextSessionState = room.sessionState
-    ? (() => {
-        const cursor = room.sessionState.cursor;
-        const curSnap = room.sessionState.snapshots[cursor];
-        if (!curSnap || !Array.isArray(curSnap.players)) {
-          return room.sessionState;
-        }
-        const updatedSnap = {
-          ...curSnap,
-          players: curSnap.players.map((sp: any) =>
-            leavingSeatIds.has(sp.id)
-              ? {
-                  ...sp,
-                  name: toBotName(sp.name),
-                  isBot: true,
-                  botDifficulty: room.botDifficulty,
-                }
-              : sp
-          ),
-        };
-        const nextSnapshots = room.sessionState.snapshots.map((snap, idx) =>
-          idx === cursor ? updatedSnap : snap
-        );
-        return {
-          ...room.sessionState,
-          snapshots: nextSnapshots,
-        };
-      })()
+    ? {
+        ...room.sessionState,
+        snapshots: room.sessionState.snapshots.map((snap) =>
+          snap && Array.isArray(snap.players)
+            ? {
+                ...snap,
+                players: snap.players.map((sp: any) =>
+                  leavingSeatIds.has(sp.id)
+                    ? {
+                        ...sp,
+                        name: toBotName(sp.name),
+                        isBot: true,
+                        botDifficulty: room.botDifficulty,
+                      }
+                    : sp
+                ),
+              }
+            : snap
+        ),
+      }
     : null;
 
   const updatedRoom: RoomRecord = {

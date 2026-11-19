@@ -1,4 +1,5 @@
 import {
+  findActiveRoomPure,
   getActiveRoomPure,
   getRoomBoundsPure,
   rebuildRoomSeatsPure,
@@ -20,6 +21,7 @@ import {
   saveActiveRoomIdToStorage,
 } from "./context.ts";
 import { attachGuestProfileActions } from "./guest-actions.ts";
+import { fetchWithTimeout } from "./http-fetch-helper.ts";
 import { attachRoomMembershipActions } from "./room-membership-actions.ts";
 
 export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
@@ -36,8 +38,8 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
   };
 
   const getActiveRoom = (): ClientRoom => {
-    const active = getActiveRoomPure(ctx.model);
-    return ctx.getOrCreateRoomLens(active.roomId);
+    const active = findActiveRoomPure(ctx.model) ?? getActiveRoomPure(ctx.model);
+    return active ? ctx.getOrCreateRoomLens(active.roomId) : ({} as ClientRoom);
   };
 
   const rebuildRoomSeats = (roomLike: ClientRoom): void => {
@@ -56,7 +58,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
     if (roomUsesServerPure(ctx.model, liveRoom)) {
       void (async () => {
         try {
-          const res = await fetch(
+          const res = await fetchWithTimeout(
             `/api/rooms/${encodeURIComponent(liveRoom.roomId)}/local-players`,
             {
               method: "POST",
@@ -103,7 +105,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
     if (roomUsesServerPure(ctx.model, liveRoom)) {
       void (async () => {
         try {
-          const res = await fetch(
+          const res = await fetchWithTimeout(
             `/api/rooms/${encodeURIComponent(liveRoom.roomId)}/remove-player`,
             {
               method: "POST",
@@ -137,6 +139,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
   };
 
   const createAndOpenRoom = (): void => {
+    if (ctx.createRoomInFlight) return;
     const selectedGameId =
       ctx.model.lobbyGameFilter || ctx.model.createRoomGameId;
     const explicitName = ctx.model.createRoomName.trim();
@@ -147,9 +150,12 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
       !ctx.model.serverReachable;
 
     if (!openAsOfflineLocal) {
+      ctx.createRoomInFlight = true;
+      ctx.navEpoch += 1;
+      const capturedEpoch = ctx.navEpoch;
       void (async () => {
         try {
-          const res = await fetch("/api/rooms", {
+          const res = await fetchWithTimeout("/api/rooms", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -162,6 +168,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
               autoStart: false,
             }),
           });
+          if (ctx.navEpoch !== capturedEpoch) return;
           const data = await res.json();
           if (!res.ok) {
             alert(data.error ?? "Unable to create room");
@@ -181,6 +188,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
             lobbyGameFilter: created.gameId,
             createRoomGameId: created.gameId,
             activeRoomId: created.roomId,
+            inspectingSetupDuringMatch: false,
             viewMode:
               created.status === "in_progress" ? "in_game" : "room_setup",
           });
@@ -192,11 +200,13 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
           });
           ctx.render();
         } catch {
+          if (ctx.navEpoch !== capturedEpoch) return;
           ctx.model = {
             ...ctx.model,
             serverReachable: false,
             createRoomMode: "offline",
           };
+          ctx.scheduleWsReconnect();
           const fallbackRoom = createLocalRoom({
             ...(explicitName ? { name: explicitName } : {}),
             gameId: selectedGameId,
@@ -212,9 +222,12 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
             lobbyGameFilter: fallbackRoom.gameId,
             createRoomGameId: fallbackRoom.gameId,
             activeRoomId: fallbackRoom.roomId,
+            inspectingSetupDuringMatch: false,
             viewMode: "room_setup",
           });
           ctx.render();
+        } finally {
+          ctx.createRoomInFlight = false;
         }
       })();
       return;
@@ -235,6 +248,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
       lobbyGameFilter: room.gameId,
       createRoomGameId: room.gameId,
       activeRoomId: room.roomId,
+      inspectingSetupDuringMatch: false,
       viewMode: "room_setup",
     });
     ctx.render();

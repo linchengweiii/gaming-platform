@@ -261,12 +261,16 @@ export function syncOnlineLobbyRoomsPure(
   summaries: readonly any[]
 ): AppModel {
   const incomingIds = new Set(summaries.map((s) => s.roomId));
+  const keepActiveUnpruned =
+    (model.viewMode === "room_setup" || model.viewMode === "in_game") &&
+    Boolean(model.activeRoomId);
+
   const prunedModel = model.roomOrder.reduce<AppModel>((acc, id) => {
     const existing = acc.rooms[id];
     if (
       existing &&
       !existing.isOfflineLocal &&
-      id !== acc.activeRoomId &&
+      (!keepActiveUnpruned || id !== acc.activeRoomId) &&
       !incomingIds.has(id)
     ) {
       return removeRoomFromModelPure(acc, id);

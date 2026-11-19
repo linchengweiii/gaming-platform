@@ -18,6 +18,7 @@ export function createInitialAppModelPure(
     readonly randomGuestSuffix: number;
     readonly deviceGuests: readonly GuestSession[];
     readonly savedGuest: GuestSession | null;
+    readonly lastActiveGuestId?: string | null;
     readonly nowMs: number;
     readonly locationSearch?: string;
     readonly locationHash?: string;
@@ -35,6 +36,16 @@ export function createInitialAppModelPure(
     env.locationHash ?? ""
   );
 
+  const fallbackReopenGuest =
+    !env.savedGuest &&
+    options?.startAtLogin === undefined &&
+    pendingInviteRoomId &&
+    env.lastActiveGuestId
+      ? env.deviceGuests.find((g) => g.id === env.lastActiveGuestId) ?? null
+      : null;
+
+  const effectiveSavedGuest = env.savedGuest ?? fallbackReopenGuest;
+
   const authInit = ((): {
     currentUserId: string;
     currentUserName: string;
@@ -43,14 +54,14 @@ export function createInitialAppModelPure(
     isAuthenticated: boolean;
     viewMode: AppViewMode;
   } => {
-    if (env.savedGuest) {
+    if (effectiveSavedGuest) {
       return {
-        currentUserId: env.savedGuest.id,
-        currentUserName: env.savedGuest.name,
-        loginDraftName: env.savedGuest.name,
+        currentUserId: effectiveSavedGuest.id,
+        currentUserName: effectiveSavedGuest.name,
+        loginDraftName: effectiveSavedGuest.name,
         deviceGuests: upsertDeviceGuestListPure(
           env.deviceGuests,
-          env.savedGuest
+          effectiveSavedGuest
         ),
         isAuthenticated: true,
         viewMode: "lobby",
@@ -106,6 +117,8 @@ export function createInitialAppModelPure(
     useServerBackend,
     staticHostOnly,
     serverReachable,
+    hasEverReachedServer: false,
+    inspectingSetupDuringMatch: false,
     isAuthenticated: authInit.isAuthenticated,
     addingAdditionalGuest: false,
     returnViewAfterAddGuest: "lobby",

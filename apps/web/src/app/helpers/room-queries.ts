@@ -80,8 +80,23 @@ export function getRoomListPure(
     .filter((r): r is ClientRoom => Boolean(r));
 }
 
+export function findActiveRoomPure(
+  model: Pick<AppModel, "rooms" | "roomOrder" | "activeRoomId" | "useServerBackend">
+): ClientRoom | null {
+  if (model.activeRoomId && model.rooms[model.activeRoomId]) {
+    return model.rooms[model.activeRoomId]!;
+  }
+  if (!model.useServerBackend) {
+    return getRoomListPure(model as Readonly<AppModel>)[0] ?? null;
+  }
+  return null;
+}
+
 export function getActiveRoomPure(model: Readonly<AppModel>): ClientRoom {
-  return model.rooms[model.activeRoomId] ?? getRoomListPure(model)[0]!;
+  return (
+    findActiveRoomPure(model) ??
+    getRoomListPure(model)[0]!
+  );
 }
 
 export function getRoomStatePure(

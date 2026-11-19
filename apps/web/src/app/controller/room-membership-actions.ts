@@ -1,6 +1,6 @@
 import { resolveClientRoomIdPure } from "../helpers/room-hash-and-links.ts";
 import {
-  getActiveRoomPure,
+  findActiveRoomPure,
   removeRoomFromModelPure,
   roomUsesServerPure,
 } from "../helpers/room-queries.ts";
@@ -16,10 +16,16 @@ import {
   clearActiveRoomIdFromStorage,
   saveActiveRoomIdToStorage,
 } from "./context.ts";
+import { fetchWithTimeout } from "./http-fetch-helper.ts";
+import { evictDeletedActiveRoom } from "./realtime-ws.ts";
 
 export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
   const enterOrJoinRoom = (rawRoomId: string): void => {
+    ctx.navEpoch += 1;
+    const capturedEpoch = ctx.navEpoch;
+    const requestedPlayerId = ctx.model.currentUserId;
     ctx.stopAutoPlay();
+    ctx.cancelPendingSetupSync();
     const roomId = resolveClientRoomIdPure(ctx.model, rawRoomId);
     const room = ctx.model.rooms[roomId];
 
@@ -27,9 +33,10 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
       if (ctx.model.useServerBackend) {
         void (async () => {
           try {
-            const getRes = await fetch(
-              `/api/rooms/${encodeURIComponent(roomId)}?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
+            const getRes = await fetchWithTimeout(
+              `/api/rooms/${encodeURIComponent(roomId)}?playerId=${encodeURIComponent(requestedPlayerId)}`
             );
+            if (ctx.navEpoch !== capturedEpoch) return;
             if (!getRes.ok) {
               clearActiveRoomIdFromStorage();
               ctx.syncUrlRoomHash(null);
@@ -37,24 +44,27 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
               return;
             }
             const getData = await getRes.json();
+            if (ctx.navEpoch !== capturedEpoch) return;
             const fetchedStatus = getData.room?.status ?? "lobby";
             let latestRoom: ClientRoom;
 
             if (fetchedStatus === "lobby" || fetchedStatus === "finished") {
-              const joinRes = await fetch(
+              const joinRes = await fetchWithTimeout(
                 `/api/rooms/${encodeURIComponent(getData.room.roomId)}/join`,
                 {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    playerId: ctx.model.currentUserId,
+                    playerId: requestedPlayerId,
                     playerName: ctx.model.currentUserName,
                   }),
                 }
               );
               const joinData = await joinRes.json();
+              if (ctx.navEpoch !== capturedEpoch) return;
               if (!joinRes.ok) {
                 alert(joinData.error ?? "Unable to join room");
+                clearActiveRoomIdFromStorage();
                 ctx.syncUrlRoomHash(null);
                 ctx.render();
                 return;
@@ -91,11 +101,13 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
               lobbyGameFilter: latestRoom.gameId,
               createRoomGameId: latestRoom.gameId,
               activeRoomId: latestRoom.roomId,
+              inspectingSetupDuringMatch: false,
               viewMode:
                 latestRoom.status === "in_progress" ? "in_game" : "room_setup",
             });
             ctx.render();
           } catch {
+            if (ctx.navEpoch !== capturedEpoch) return;
             ctx.syncUrlRoomHash(null);
             ctx.render();
           }
@@ -109,6 +121,7 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
       lobbyGameFilter: room.gameId,
       createRoomGameId: room.gameId,
       activeRoomId: room.roomId,
+      inspectingSetupDuringMatch: false,
     };
     saveActiveRoomIdToStorage(room.roomId);
     if (!room.isOfflineLocal) {
@@ -120,20 +133,27 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
         try {
           let latestRoom = room;
           if (room.status === "lobby" || room.status === "finished") {
-            const joinRes = await fetch(
+            const joinRes = await fetchWithTimeout(
               `/api/rooms/${encodeURIComponent(room.roomId)}/join`,
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  playerId: ctx.model.currentUserId,
+                  playerId: requestedPlayerId,
                   playerName: ctx.model.currentUserName,
                 }),
               }
             );
+            if (ctx.navEpoch !== capturedEpoch) return;
+            if (joinRes.status === 404) {
+              evictDeletedActiveRoom(ctx, room.roomId);
+              return;
+            }
             const joinData = await joinRes.json();
             if (!joinRes.ok) {
               alert(joinData.error ?? "Unable to join room");
+              ctx.exitRoomToLobby();
+              ctx.render();
               return;
             }
             const upserted = upsertRoomFromSummaryPure(
@@ -145,9 +165,14 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
             ctx.model = upserted.model;
             latestRoom = upserted.room;
           } else {
-            const getRes = await fetch(
-              `/api/rooms/${encodeURIComponent(room.roomId)}?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
+            const getRes = await fetchWithTimeout(
+              `/api/rooms/${encodeURIComponent(room.roomId)}?playerId=${encodeURIComponent(requestedPlayerId)}`
             );
+            if (ctx.navEpoch !== capturedEpoch) return;
+            if (getRes.status === 404) {
+              evictDeletedActiveRoom(ctx, room.roomId);
+              return;
+            }
             if (getRes.ok) {
               const getData = await getRes.json();
               const upserted = upsertRoomFromSummaryPure(
@@ -161,6 +186,7 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
             }
           }
 
+          if (ctx.navEpoch !== capturedEpoch) return;
           ctx.connectServerRealtime();
           ctx.syncUrlRoomHash(latestRoom.roomId);
           ctx.sendWsMessage({
@@ -172,11 +198,14 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
             ...ctx.model,
             lobbyGameFilter: latestRoom.gameId,
             createRoomGameId: latestRoom.gameId,
+            activeRoomId: latestRoom.roomId,
+            inspectingSetupDuringMatch: false,
             viewMode:
               latestRoom.status === "in_progress" ? "in_game" : "room_setup",
           });
           ctx.render();
         } catch (err: any) {
+          if (ctx.navEpoch !== capturedEpoch) return;
           alert(`Unable to enter room: ${err?.message ?? String(err)}`);
         }
       })();
@@ -188,42 +217,54 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
   };
 
   const leaveActiveRoom = (): void => {
-    const room = getActiveRoomPure(ctx.model);
-    if (!room) return;
-    ctx.stopAutoPlay();
-    clearActiveRoomIdFromStorage();
-    ctx.syncUrlRoomHash(null);
+    const room = findActiveRoomPure(ctx.model);
+    if (!room) {
+      ctx.exitRoomToLobby();
+      ctx.render();
+      return;
+    }
+    const leavingRoomId = room.roomId;
+    const leavingPlayerId = ctx.model.currentUserId;
 
     if (roomUsesServerPure(ctx.model, room)) {
+      ctx.exitRoomToLobby();
+      const capturedEpoch = ctx.navEpoch;
+      ctx.render();
       void (async () => {
         try {
-          const res = await fetch(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/leave`,
+          const res = await fetchWithTimeout(
+            `/api/rooms/${encodeURIComponent(leavingRoomId)}/leave`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ playerId: ctx.model.currentUserId }),
+              body: JSON.stringify({ playerId: leavingPlayerId }),
             }
           );
           if (res.ok) {
             const data = await res.json();
             if (data.closed) {
-              ctx.model = removeRoomFromModelPure(ctx.model, room.roomId);
-              ctx.roomLensCache.delete(room.roomId);
+              ctx.model = removeRoomFromModelPure(ctx.model, leavingRoomId);
+              ctx.roomLensCache.delete(leavingRoomId);
             }
           }
         } catch {
           // Ignore network errors
         }
-        ctx.sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
-        ctx.model = resetSubModesPure({ ...ctx.model, viewMode: "lobby" });
-        await ctx.fetchLobbyRooms();
-        ctx.render();
+        if (ctx.navEpoch === capturedEpoch) {
+          await ctx.fetchLobbyRooms();
+          if (ctx.navEpoch === capturedEpoch && ctx.model.viewMode === "lobby") {
+            ctx.renderPreservingFocus();
+          }
+        }
       })();
       return;
     }
 
-    ctx.model = leaveOfflineRoomPure(ctx.model, room.roomId);
+    ctx.navEpoch += 1;
+    ctx.stopAutoPlay();
+    clearActiveRoomIdFromStorage();
+    ctx.syncUrlRoomHash(null);
+    ctx.model = leaveOfflineRoomPure(ctx.model, leavingRoomId);
     ctx.render();
   };
 

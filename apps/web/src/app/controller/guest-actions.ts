@@ -15,10 +15,12 @@ import {
   type AppRuntimeContext,
   clearActiveRoomIdFromStorage,
   clearGuestSessionFromStorage,
+  clearLastActiveGuestIdFromStorage,
   saveActiveRoomIdToStorage,
   saveDeviceGuestsToStorage,
   saveGuestSessionToStorage,
 } from "./context.ts";
+import { fetchWithTimeout } from "./http-fetch-helper.ts";
 
 export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
   const signInAsGuest = (
@@ -39,12 +41,22 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
       return false;
     }
 
+    ctx.navEpoch += 1;
     saveGuestSessionToStorage(res.session);
     saveDeviceGuestsToStorage(ctx.model.deviceGuests);
+
+    if (ctx.model.useServerBackend) {
+      ctx.connectServerRealtime();
+      ctx.sendWsMessage({
+        type: "IDENTIFY_PLAYER",
+        playerId: res.session.id,
+      });
+    }
 
     if (inviteBeforeSignIn) {
       ctx.model = { ...ctx.model, pendingInviteRoomId: null };
       ctx.pendingRestoreRoomId = null;
+      ctx.render();
       if (ctx.model.useServerBackend) {
         void ctx.fetchLobbyRooms();
       }
@@ -79,6 +91,7 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
     ctx.model = resetSubModesPure({
       ...ctx.model,
       activeRoomId: room.roomId,
+      inspectingSetupDuringMatch: false,
       viewMode: "room_setup",
     });
     ctx.render();
@@ -104,6 +117,7 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
     ctx.model = resetSubModesPure({
       ...ctx.model,
       activeRoomId: room.roomId,
+      inspectingSetupDuringMatch: false,
       viewMode: "room_setup",
     });
     ctx.render();
@@ -130,6 +144,10 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
       USER_PROFILES.find((u) => u.id === guestId);
     if (!found) return;
 
+    ctx.navEpoch += 1;
+    const capturedEpoch = ctx.navEpoch;
+    const requestedGuestId = found.id;
+
     const session: GuestSession = {
       id: found.id,
       name: found.name,
@@ -144,33 +162,49 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
     saveGuestSessionToStorage(session);
     saveDeviceGuestsToStorage(ctx.model.deviceGuests);
 
+    if (ctx.model.useServerBackend) {
+      ctx.connectServerRealtime();
+      ctx.sendWsMessage({
+        type: "IDENTIFY_PLAYER",
+        playerId: requestedGuestId,
+      });
+    }
+
     const active = ctx.model.rooms[ctx.model.activeRoomId];
     if (
       active &&
       roomUsesServerPure(ctx.model, active) &&
       (ctx.model.viewMode === "room_setup" || ctx.model.viewMode === "in_game")
     ) {
+      const targetRoomId = active.roomId;
       ctx.sendWsMessage({
         type: "SUBSCRIBE_ROOM",
-        roomId: active.roomId,
-        playerId: ctx.model.currentUserId,
+        roomId: targetRoomId,
+        playerId: requestedGuestId,
       });
-      void fetch(
-        `/api/rooms/${encodeURIComponent(active.roomId)}?playerId=${encodeURIComponent(ctx.model.currentUserId)}`
+      void fetchWithTimeout(
+        `/api/rooms/${encodeURIComponent(targetRoomId)}?playerId=${encodeURIComponent(requestedGuestId)}`
       )
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          if (data?.room) {
-            ctx.model = upsertRoomFromSummaryPure(
-              ctx.model,
-              data.room,
-              data.state,
-              data.actingPlayerId
-            ).model;
-            ctx.render();
+          if (
+            !data?.room ||
+            ctx.navEpoch !== capturedEpoch ||
+            ctx.model.currentUserId !== requestedGuestId
+          ) {
+            return;
           }
+          ctx.model = upsertRoomFromSummaryPure(
+            ctx.model,
+            data.room,
+            data.state,
+            data.actingPlayerId
+          ).model;
+          ctx.render();
         })
         .catch(() => {});
+    } else if (ctx.model.useServerBackend && ctx.model.viewMode === "lobby") {
+      void ctx.fetchLobbyRooms();
     }
 
     ctx.render();
@@ -180,26 +214,10 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
     if (!targetGuestId) return;
     const isSigningOutCurrent = targetGuestId === ctx.model.currentUserId;
     if (isSigningOutCurrent) {
+      ctx.navEpoch += 1;
       ctx.stopAutoPlay();
+      ctx.cancelPendingSetupSync();
       ctx.pendingRestoreRoomId = null;
-    }
-
-    if (ctx.model.useServerBackend) {
-      void fetch("/api/guests/signout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ playerId: targetGuestId }),
-      })
-        .then(() => {
-          if (ctx.model.isAuthenticated && ctx.model.useServerBackend) {
-            return ctx.fetchLobbyRooms();
-          }
-        })
-        .catch(() => {});
-
-      if (isSigningOutCurrent) {
-        ctx.sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
-      }
     }
 
     const cleaned = signOutGuestFromModelPure(
@@ -222,6 +240,10 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
         const active = ctx.model.rooms[ctx.model.activeRoomId];
         if (active && roomUsesServerPure(ctx.model, active)) {
           ctx.sendWsMessage({
+            type: "IDENTIFY_PLAYER",
+            playerId: ctx.model.currentUserId,
+          });
+          ctx.sendWsMessage({
             type: "SUBSCRIBE_ROOM",
             roomId: active.roomId,
             playerId: ctx.model.currentUserId,
@@ -229,10 +251,40 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
         }
       } else {
         clearActiveRoomIdFromStorage();
+        ctx.syncUrlRoomHash(null);
+        if (ctx.model.useServerBackend) {
+          ctx.sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+          ctx.sendWsMessage({
+            type: "IDENTIFY_PLAYER",
+            playerId: ctx.model.currentUserId,
+          });
+        }
       }
     } else if (isSigningOutCurrent) {
       clearGuestSessionFromStorage();
       clearActiveRoomIdFromStorage();
+      if (ctx.model.deviceGuests.length === 0) {
+        clearLastActiveGuestIdFromStorage();
+      }
+      ctx.syncUrlRoomHash(null);
+      if (ctx.model.useServerBackend) {
+        ctx.sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+        ctx.sendWsMessage({ type: "IDENTIFY_PLAYER", playerId: null });
+      }
+    }
+
+    if (ctx.model.useServerBackend) {
+      void fetchWithTimeout("/api/guests/signout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerId: targetGuestId }),
+      })
+        .then(() => {
+          if (ctx.model.isAuthenticated && ctx.model.useServerBackend) {
+            return ctx.fetchLobbyRooms();
+          }
+        })
+        .catch(() => {});
     }
 
     ctx.render();
@@ -261,7 +313,7 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
     saveDeviceGuestsToStorage(ctx.model.deviceGuests);
 
     if (ctx.model.useServerBackend) {
-      void fetch("/api/guests/rename", {
+      void fetchWithTimeout("/api/guests/rename", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
