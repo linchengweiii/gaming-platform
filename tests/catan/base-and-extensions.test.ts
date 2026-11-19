@@ -272,6 +272,10 @@ describe("@gaming-platform/catan - Extensions & Expansions", () => {
     );
 
     expect(state.topology.hexOrder.length).toBe(30);
+    const rowCounts = [-3, -2, -1, 0, 1, 2, 3].map(
+      (r) => Object.values(state.hexes).filter((h) => h.r === r).length
+    );
+    expect(rowCounts).toEqual([3, 4, 5, 6, 5, 4, 3]);
     expect(state.config.enableSpecialBuildingPhase).toBe(true);
 
     // Roll dice for p1 and advance to MAIN_PHASE, then END_TURN -> should enter SPECIAL_BUILDING

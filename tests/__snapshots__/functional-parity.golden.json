@@ -1231,74 +1231,74 @@
     },
     {
       "label": "catan-ext-5p",
-      "steps": 672,
-      "turn": 67,
+      "steps": 576,
+      "turn": 56,
       "phase": "GAME_OVER",
-      "winnerId": "p1",
-      "rngState": 3569439681,
-      "longestRoadOwnerId": "p3",
-      "longestRoadLength": 12,
+      "winnerId": "p5",
+      "rngState": 1993638656,
+      "longestRoadOwnerId": "p5",
+      "longestRoadLength": 7,
       "largestArmyOwnerId": "p5",
       "harbormasterOwnerId": null,
       "bank": {
-        "brick": 21,
+        "brick": 24,
         "lumber": 19,
-        "wool": 18,
-        "grain": 22,
-        "ore": 21
+        "wool": 15,
+        "grain": 24,
+        "ore": 15
       },
       "players": [
         {
           "id": "p1",
-          "victoryPoints": 10,
+          "victoryPoints": 6,
           "resources": {
-            "brick": 1,
+            "brick": 0,
             "lumber": 1,
-            "wool": 0,
+            "wool": 2,
             "grain": 0,
-            "ore": 0
+            "ore": 2
           },
-          "settlementsRemaining": 3,
-          "citiesRemaining": 1,
-          "roadsRemaining": 7,
+          "settlementsRemaining": 0,
+          "citiesRemaining": 4,
+          "roadsRemaining": 8,
           "shipsRemaining": 0,
           "knightsPlayed": 3,
-          "harborPoints": 2,
+          "harborPoints": 0,
           "bonusVictoryPoints": 0
         },
         {
           "id": "p2",
-          "victoryPoints": 5,
+          "victoryPoints": 4,
           "resources": {
-            "brick": 1,
-            "lumber": 0,
-            "wool": 1,
-            "grain": 2,
-            "ore": 0
+            "brick": 0,
+            "lumber": 1,
+            "wool": 0,
+            "grain": 0,
+            "ore": 2
           },
-          "settlementsRemaining": 1,
+          "settlementsRemaining": 2,
           "citiesRemaining": 4,
-          "roadsRemaining": 8,
+          "roadsRemaining": 11,
           "shipsRemaining": 0,
-          "knightsPlayed": 2,
-          "harborPoints": 1,
+          "knightsPlayed": 4,
+          "harborPoints": 2,
           "bonusVictoryPoints": 0
         },
         {
           "id": "p3",
-          "victoryPoints": 8,
+          "victoryPoints": 7,
           "resources": {
-            "brick": 1,
-            "lumber": 4,
+            "brick": 0,
+            "lumber": 1,
             "wool": 3,
             "grain": 0,
-            "ore": 1
+            "ore": 3
           },
-          "settlementsRemaining": 0,
-          "citiesRemaining": 4,
-          "roadsRemaining": 0,
+          "settlementsRemaining": 1,
+          "citiesRemaining": 3,
+          "roadsRemaining": 7,
           "shipsRemaining": 0,
-          "knightsPlayed": 3,
+          "knightsPlayed": 4,
           "harborPoints": 0,
           "bonusVictoryPoints": 0
         },
@@ -1307,49 +1307,49 @@
           "victoryPoints": 5,
           "resources": {
             "brick": 0,
-            "lumber": 0,
-            "wool": 1,
+            "lumber": 2,
+            "wool": 4,
             "grain": 0,
-            "ore": 0
+            "ore": 1
           },
           "settlementsRemaining": 0,
           "citiesRemaining": 4,
-          "roadsRemaining": 3,
+          "roadsRemaining": 4,
           "shipsRemaining": 0,
           "knightsPlayed": 1,
-          "harborPoints": 3,
+          "harborPoints": 0,
           "bonusVictoryPoints": 0
         },
         {
           "id": "p5",
-          "victoryPoints": 7,
+          "victoryPoints": 10,
           "resources": {
             "brick": 0,
             "lumber": 0,
-            "wool": 1,
+            "wool": 0,
             "grain": 0,
-            "ore": 2
+            "ore": 1
           },
-          "settlementsRemaining": 5,
-          "citiesRemaining": 2,
-          "roadsRemaining": 8,
+          "settlementsRemaining": 2,
+          "citiesRemaining": 3,
+          "roadsRemaining": 5,
           "shipsRemaining": 0,
-          "knightsPlayed": 6,
-          "harborPoints": 0,
+          "knightsPlayed": 5,
+          "harborPoints": 2,
           "bonusVictoryPoints": 0
         }
       ],
-      "eventLogLength": 532,
+      "eventLogLength": 468,
       "lastEvents": [
-        "Player 3 declined the trade offer.",
-        "Player 1 declined the trade offer.",
-        "Player 2 ended their turn. Special Building Phase started.",
-        "Player 3 built a road.",
-        "Player 1 built a settlement."
+        "Player 2 declined the trade offer.",
+        "Player 5 declined the trade offer.",
+        "Player 1 ended their turn. Special Building Phase started.",
+        "Player 2 bought a Development Card.",
+        "Player 5 bought a Development Card."
       ],
       "checkpoint25": {
         "turn": 1,
-        "phase": "SPECIAL_BUILDING",
+        "phase": "MAIN_PHASE",
         "rngState": 2576685729,
         "legalCountForActor": 1,
         "p1ViewSummary": {
@@ -1358,28 +1358,28 @@
             {
               "id": "p1",
               "handRedacted": false,
-              "resourceCount": 3,
+              "resourceCount": 2,
               "victoryPoints": 2,
               "devCardTypes": []
             },
             {
               "id": "p2",
               "handRedacted": true,
-              "resourceCount": 3,
+              "resourceCount": 2,
               "victoryPoints": 2,
               "devCardTypes": []
             },
             {
               "id": "p3",
               "handRedacted": true,
-              "resourceCount": 2,
+              "resourceCount": 6,
               "victoryPoints": 2,
               "devCardTypes": []
             },
             {
               "id": "p4",
               "handRedacted": true,
-              "resourceCount": 2,
+              "resourceCount": 3,
               "victoryPoints": 2,
               "devCardTypes": []
             },
