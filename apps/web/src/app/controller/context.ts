@@ -43,6 +43,7 @@ export interface AppRuntimeContext {
   autoPlayTimer: ReturnType<typeof setInterval> | null;
   botResponseTimeout: ReturnType<typeof setTimeout> | null;
   copyLinkResetTimer: ReturnType<typeof setTimeout> | null;
+  cleanupViewportDrag: (() => void) | null;
   pendingRestoreRoomId: string | null;
   isInitialReloadRoomRestore: boolean;
   navEpoch: number;
@@ -132,6 +133,7 @@ export function createAppRuntimeContext(
     autoPlayTimer: null,
     botResponseTimeout: null,
     copyLinkResetTimer: null,
+    cleanupViewportDrag: null,
     pendingRestoreRoomId: initialPendingRestoreRoomId,
     isInitialReloadRoomRestore,
     navEpoch: 0,

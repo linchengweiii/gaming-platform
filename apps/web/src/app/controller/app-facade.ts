@@ -1,6 +1,7 @@
 import type { ResourceMap, ResourceType } from "@gaming-platform/catan";
 import type { GemColor } from "@gaming-platform/splendor";
 import type { AzulDraftSource, AzulTileColor } from "@gaming-platform/azul";
+import type { CatanMapViewport } from "../../catan-graphics/viewport.ts";
 import {
   canControlPlayerOnDevicePure,
   getRoomBoundsPure,
@@ -170,6 +171,12 @@ export function buildMultiGamePlatformAppFacade(
     },
     set selectedBoardSpot(v: BoardSpotSelection | null) {
       ctx.model = { ...ctx.model, selectedBoardSpot: v };
+    },
+    get catanMapViewport() {
+      return ctx.model.catanMapViewport;
+    },
+    set catanMapViewport(v: CatanMapViewport) {
+      ctx.model = { ...ctx.model, catanMapViewport: { ...v } };
     },
     get setupEdgeKind() {
       return ctx.model.setupEdgeKind;

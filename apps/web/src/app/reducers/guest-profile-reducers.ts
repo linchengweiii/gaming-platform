@@ -10,6 +10,7 @@ import {
   upsertDeviceGuestListPure,
 } from "../helpers/room-queries.ts";
 import type { AppModel, ClientRoom, GuestSession } from "../types.ts";
+import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import { resetSubModesPure } from "./trade-and-draft-reducers.ts";
 
 export function signOutGuestFromModelPure(
@@ -208,6 +209,7 @@ export function signOutGuestFromModelPure(
             ? fallbackActiveRoomId
             : "",
         viewMode: nextView,
+        catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
       }),
       removedRoomIds: swept.removedRoomIds,
       switchedToGuest: nextGuest,
@@ -224,6 +226,7 @@ export function signOutGuestFromModelPure(
       loginDraftName: `Guest ${fallbackDraftSuffix}`,
       activeRoomId: swept.model.useServerBackend ? "" : fallbackActiveRoomId,
       viewMode: "login",
+      catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
     }),
     removedRoomIds: swept.removedRoomIds,
     switchedToGuest: null,

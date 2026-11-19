@@ -23,9 +23,14 @@ import {
 } from "@gaming-platform/catan";
 import {
   COMMODITY_META,
+  type CatanMapViewport,
   DISCIPLINE_META,
   RESOURCE_META,
   TRADE_GOOD_META,
+  clampCatanMapViewportPure,
+  formatCatanZoomPercentPure,
+  getCatanBoardViewBox,
+  isDefaultCatanMapViewportPure,
   renderActionPieceIconSvg,
   renderDieSvg,
   renderEventDieSvg,
@@ -34,6 +39,7 @@ import {
   renderResourceGlyphSvg,
   renderRollDiceButtonGraphicSvg,
 } from "../../catan-graphics.ts";
+import { CATAN_MAP_VIEWPORT_CONFIG } from "../../config/app-config.ts";
 
 export function renderCostPipStripPure(cost: Partial<ResourceMap>): string {
   const pips = RESOURCES.flatMap((r) =>
@@ -330,6 +336,34 @@ export function renderCatanMapDiceHudPure(state: CatanState): string {
         </div>
       </div>
     `;
+}
+
+export function renderCatanMapZoomControlsPure(
+  state: CatanState,
+  viewport: CatanMapViewport
+): string {
+  const baseVb = getCatanBoardViewBox(state);
+  const clamped = clampCatanMapViewportPure(viewport, baseVb);
+  const atMin = clamped.zoom <= CATAN_MAP_VIEWPORT_CONFIG.minZoom + 1e-4;
+  const atMax = clamped.zoom >= CATAN_MAP_VIEWPORT_CONFIG.maxZoom - 1e-4;
+  const isDefault = isDefaultCatanMapViewportPure(clamped);
+  const belowClass = state.config.enableCitiesAndKnights
+    ? "map-zoom-controls--below-barbarian"
+    : "";
+
+  return `
+    <div class="map-zoom-controls ${belowClass}" role="group" aria-label="Map zoom and pan controls">
+      <button type="button" id="btn-map-zoom-out" class="map-zoom-btn" aria-label="Zoom out map" title="Zoom out (−)" ${
+        atMin ? "disabled" : ""
+      }>−</button>
+      <button type="button" id="btn-map-zoom-reset" class="map-zoom-btn map-zoom-btn--reset ga-num" aria-label="Reset map zoom and position" title="Reset map view (0) · Drag map to pan, scroll to zoom" ${
+        isDefault ? "disabled" : ""
+      }>${formatCatanZoomPercentPure(clamped.zoom)}</button>
+      <button type="button" id="btn-map-zoom-in" class="map-zoom-btn" aria-label="Zoom in map" title="Zoom in (+)" ${
+        atMax ? "disabled" : ""
+      }>+</button>
+    </div>
+  `;
 }
 
 export function renderMissingCostBadgePure(

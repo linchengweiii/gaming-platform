@@ -1,0 +1,104 @@
+/* ---------------------------------------------------------------- Catan Map Zoom & Pan Controls */
+
+.board-container:not(.board-container--neutral) .board-svg {
+  cursor: grab;
+  touch-action: none;
+}
+
+.board-svg-wrap.is-panning,
+.board-svg-wrap.is-panning .board-svg,
+.board-svg-wrap.is-panning .board-svg * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.map-zoom-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 18;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--r-md);
+  background: rgba(24, 25, 27, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.48);
+}
+
+.map-zoom-controls--below-barbarian {
+  top: 104px;
+}
+
+.map-zoom-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease), opacity 120ms var(--ease);
+}
+
+.map-zoom-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--line-strong);
+}
+
+.map-zoom-btn:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 1px;
+}
+
+.map-zoom-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.map-zoom-btn--reset {
+  min-width: 48px;
+  padding: 0 7px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.map-zoom-btn--reset:not(:disabled) {
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+@media (max-width: 600px) {
+  .map-zoom-controls {
+    top: 8px;
+    right: 8px;
+    padding: 3px;
+  }
+
+  .map-zoom-controls--below-barbarian {
+    top: 88px;
+  }
+
+  .map-zoom-btn {
+    min-width: 26px;
+    height: 26px;
+    font-size: 14px;
+  }
+
+  .map-zoom-btn--reset {
+    min-width: 42px;
+    font-size: 10.5px;
+  }
+}

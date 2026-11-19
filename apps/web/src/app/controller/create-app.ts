@@ -5,6 +5,7 @@ import type {
   MultiGamePlatformAppOptions,
 } from "../types.ts";
 import { buildMultiGamePlatformAppFacade } from "./app-facade.ts";
+import { registerGlobalCatanMapShortcuts } from "./bind-events-catan-viewport.ts";
 import { registerWindowHashChangeListener } from "./bind-events-other-games.ts";
 import { attachCatanUiActions } from "./catan-ui-actions.ts";
 import {
@@ -92,6 +93,7 @@ export function createMultiGamePlatformApp(
   attachRenderHandlers(ctx);
 
   registerGlobalDropdownDismiss(root);
+  registerGlobalCatanMapShortcuts(ctx);
   ctx.render();
   registerWindowHashChangeListener(ctx);
 

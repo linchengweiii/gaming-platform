@@ -21,6 +21,7 @@ import {
   startInteractiveTutorialPure,
   startOfflineRoomMatchPure,
 } from "../reducers/session-signout-and-match.ts";
+import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
 import type { ClientRoom, SupportedGameId } from "../types.ts";
 import { hasTradeGoodsForOfferPure } from "../views/catan-hud-view.ts";
@@ -141,6 +142,7 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
             activeRoomId: upserted.room.roomId,
             inspectingSetupDuringMatch: false,
             viewMode: "in_game",
+            catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
           });
           ctx.connectServerRealtime();
           ctx.sendWsMessage({
