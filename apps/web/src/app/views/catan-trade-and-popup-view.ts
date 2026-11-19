@@ -3,23 +3,45 @@ import {
   type CatanState,
   RESOURCES,
   TRADE_GOODS,
+  type TradeGoodType,
+  getPlayerGoodCount,
   getPlayerResourceCount,
   hasResources,
   isCommodityType,
 } from "@gaming-platform/catan";
 import {
   DISCIPLINE_META,
+  RESOURCE_META,
+  TRADE_GOOD_META,
   renderActionPieceIconSvg,
+  renderMiniResourceCardSvg,
+  renderMiniTradeGoodCardSvg,
   renderRollDiceButtonGraphicSvg,
 } from "../../catan-graphics.ts";
-import { escapeAttr } from "../helpers/html-and-dropdown.ts";
+import { DRAWN_ARROW_SVG, escapeAttr } from "../helpers/html-and-dropdown.ts";
 import { canControlPlayerOnDevicePure } from "../helpers/room-queries.ts";
 import type { AppModel, ClientRoom } from "../types.ts";
-import {
-  hasTradeGoodsForOfferPure,
-  renderResourceColumnHeadersPure,
-  renderTradeGoodColumnHeadersPure,
-} from "./catan-hud-view.ts";
+import { hasTradeGoodsForOfferPure } from "./catan-hud-view.ts";
+
+function renderTradeOfferChipPure(
+  isCk: boolean,
+  good: TradeGoodType,
+  amount: number,
+  sign: "+" | "−",
+  ownedCount?: number
+): string {
+  const cardSvg = isCk
+    ? renderMiniTradeGoodCardSvg(good, 30, 19)
+    : renderMiniResourceCardSvg(good as (typeof RESOURCES)[number], 32, 20);
+  const label = isCk
+    ? TRADE_GOOD_META[good].label
+    : RESOURCE_META[good as (typeof RESOURCES)[number]].label;
+  const haveBadge =
+    ownedCount !== undefined
+      ? ` <span class="ga-trade-offer-have ${ownedCount < amount ? "is-short" : ""} ga-num">(have ${ownedCount})</span>`
+      : "";
+  return `<span class="map-yield-chip" title="${escapeAttr(label)}">${sign}${amount} ${cardSvg}<span>${escapeAttr(label)}</span>${haveBadge}</span>`;
+}
 
 export function renderActiveTradeOfferCardPure(
   model: Readonly<AppModel>,
@@ -82,75 +104,99 @@ export function renderActiveTradeOfferCardPure(
         </div>`
     : "";
 
-  const tradeOfferMatrixHtml = state.config.enableCitiesAndKnights
-    ? `<div class="ga-res-matrix ga-res-matrix--ck">
-        ${renderTradeGoodColumnHeadersPure(
-          canRespond ? actingPlayer : canManage ? fromP : undefined
-        )}
+  const isCk = Boolean(state.config.enableCitiesAndKnights);
+  const goodsList: readonly TradeGoodType[] = isCk ? TRADE_GOODS : RESOURCES;
+  const getOfferGiveAmt = (g: TradeGoodType): number =>
+    isCommodityType(g) ? offer.giveCommodities?.[g] ?? 0 : offer.give[g] ?? 0;
+  const getOfferWantAmt = (g: TradeGoodType): number =>
+    isCommodityType(g) ? offer.wantCommodities?.[g] ?? 0 : offer.want[g] ?? 0;
 
-        <div class="ga-res-matrix__row-label">
-          <span class="ga-res-row-dot ga-res-row-dot--give"></span>Gives
+  const giveEntries = goodsList
+    .map((g) => ({ good: g, amount: getOfferGiveAmt(g) }))
+    .filter((entry) => entry.amount > 0);
+  const wantEntries = goodsList
+    .map((g) => ({ good: g, amount: getOfferWantAmt(g) }))
+    .filter((entry) => entry.amount > 0);
+
+  const exchangeHtml = canRespond
+    ? `
+        <div class="ga-trade-offer-side ga-trade-offer-side--gain">
+          <span class="ga-trade-offer-side__label">
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>You get
+          </span>
+          ${giveEntries
+            .map(({ good, amount }) =>
+              renderTradeOfferChipPure(isCk, good, amount, "+")
+            )
+            .join("")}
         </div>
-        ${TRADE_GOODS.map((g) => {
-          const amt = isCommodityType(g)
-            ? offer.giveCommodities?.[g] ?? 0
-            : offer.give[g] ?? 0;
-          return `
-            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-give" : ""}" style="justify-content: center;">
-              <span class="ga-res-step-val">${amt > 0 ? `+${amt}` : "—"}</span>
-            </div>
-          `;
-        }).join("")}
-
-        <div class="ga-res-matrix__row-label">
-          <span class="ga-res-row-dot ga-res-row-dot--want"></span>Wants
+        ${DRAWN_ARROW_SVG}
+        <div class="ga-trade-offer-side ga-trade-offer-side--cost">
+          <span class="ga-trade-offer-side__label">
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>You give
+          </span>
+          ${wantEntries
+            .map(({ good, amount }) =>
+              renderTradeOfferChipPure(
+                isCk,
+                good,
+                amount,
+                "−",
+                getPlayerGoodCount(actingPlayer, good)
+              )
+            )
+            .join("")}
         </div>
-        ${TRADE_GOODS.map((g) => {
-          const amt = isCommodityType(g)
-            ? offer.wantCommodities?.[g] ?? 0
-            : offer.want[g] ?? 0;
-          return `
-            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-want" : ""}" style="justify-content: center;">
-              <span class="ga-res-step-val">${amt > 0 ? `−${amt}` : "—"}</span>
-            </div>
-          `;
-        }).join("")}
-      </div>`
-    : `<div class="ga-res-matrix">
-        ${renderResourceColumnHeadersPure(
-          canRespond
-            ? actingPlayer.resources
-            : canManage
-              ? fromP.resources
-              : undefined
-        )}
-
-        <div class="ga-res-matrix__row-label">
-          <span class="ga-res-row-dot ga-res-row-dot--give"></span>Gives
+      `
+    : canManage
+      ? `
+        <div class="ga-trade-offer-side ga-trade-offer-side--cost">
+          <span class="ga-trade-offer-side__label">
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>You give
+          </span>
+          ${giveEntries
+            .map(({ good, amount }) =>
+              renderTradeOfferChipPure(isCk, good, amount, "−")
+            )
+            .join("")}
         </div>
-        ${RESOURCES.map((r) => {
-          const amt = offer.give[r] ?? 0;
-          return `
-            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-give" : ""}" style="justify-content: center;">
-              <span class="ga-res-step-val">${amt > 0 ? `+${amt}` : "—"}</span>
-            </div>
-          `;
-        }).join("")}
-
-        <div class="ga-res-matrix__row-label">
-          <span class="ga-res-row-dot ga-res-row-dot--want"></span>Wants
+        ${DRAWN_ARROW_SVG}
+        <div class="ga-trade-offer-side ga-trade-offer-side--gain">
+          <span class="ga-trade-offer-side__label">
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>You get
+          </span>
+          ${wantEntries
+            .map(({ good, amount }) =>
+              renderTradeOfferChipPure(isCk, good, amount, "+")
+            )
+            .join("")}
         </div>
-        ${RESOURCES.map((r) => {
-          const amt = offer.want[r] ?? 0;
-          return `
-            <div class="ga-res-cell ${amt > 0 ? "ga-res-cell--active-want" : ""}" style="justify-content: center;">
-              <span class="ga-res-step-val">${amt > 0 ? `−${amt}` : "—"}</span>
-            </div>
-          `;
-        }).join("")}
-      </div>`;
+      `
+      : `
+        <div class="ga-trade-offer-side ga-trade-offer-side--cost">
+          <span class="ga-trade-offer-side__label">
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Gives
+          </span>
+          ${giveEntries
+            .map(({ good, amount }) =>
+              renderTradeOfferChipPure(isCk, good, amount, "+")
+            )
+            .join("")}
+        </div>
+        ${DRAWN_ARROW_SVG}
+        <div class="ga-trade-offer-side ga-trade-offer-side--gain">
+          <span class="ga-trade-offer-side__label">
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Wants
+          </span>
+          ${wantEntries
+            .map(({ good, amount }) =>
+              renderTradeOfferChipPure(isCk, good, amount, "−")
+            )
+            .join("")}
+        </div>
+      `;
 
-  const canAffordOfferWant = state.config.enableCitiesAndKnights
+  const canAffordOfferWant = isCk
     ? hasTradeGoodsForOfferPure(actingPlayer, offer)
     : hasResources(actingPlayer.resources, offer.want);
 
@@ -164,11 +210,11 @@ export function renderActiveTradeOfferCardPure(
         <span class="t-label muted">${statusLabel}</span>
       </div>
 
-      ${tradeOfferMatrixHtml}
-
-      <div class="ga-trade-preview">
-        <span class="t-label muted">Inspect the map above while deciding on this trade</span>
-        <div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto;">
+      <div class="ga-trade-offer-bar">
+        <div class="ga-trade-offer-exchange">
+          ${exchangeHtml}
+        </div>
+        <div class="ga-trade-offer-actions">
           ${
             canRespond
               ? `

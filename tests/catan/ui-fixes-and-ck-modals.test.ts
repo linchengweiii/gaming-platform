@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolveEffectiveViewerIdPure } from "../../apps/server/src/index.ts";
 import {
   CatanEngine,
   type CatanState,
@@ -257,5 +258,88 @@ describe("@gaming-platform/catan - Web UI Layout Fixes & Multi-Step C&K Modals",
         expect(uiRoot.innerHTML).toContain(snippet);
       }
     }
+  });
+
+  test("keeps player hand tray unobstructed during incoming domestic and Commercial Harbor trades and resolves responder viewer accurately", () => {
+    const css = readCombinedWebStyles();
+    expect(css).toContain(
+      ".ga-game-canvas .action-dock > .sub-modal.sub-modal--trade-offer"
+    );
+    expect(css).toContain(
+      ".ga-game-canvas .action-dock > .sub-modal.sub-modal--keep-hand"
+    );
+    expect(css).toContain("bottom: 0;");
+    expect(css).toContain(".ga-trade-offer-bar");
+
+    // 1. Base Catan incoming domestic trade: responder sees You get / You give / (have N) AND full visual-hand-tray
+    const { uiRoot, uiApp, room, aliceId, bobId } = setupMainPhaseCatanApp(false);
+    const st = room.session.getState() as CatanState;
+    for (const p of st.players) {
+      for (const r of ["brick", "lumber", "wool", "grain", "ore"] as const) {
+        st.bank[r] += p.resources[r];
+        p.resources[r] = 0;
+      }
+    }
+    st.players[0]!.resources.brick = 2;
+    st.bank.brick -= 2;
+    st.players[1]!.resources.ore = 3;
+    st.bank.ore -= 3;
+
+    uiApp.dispatch(aliceId, {
+      type: "OFFER_DOMESTIC_TRADE",
+      toPlayerId: bobId,
+      give: { brick: 1 },
+      want: { ore: 1 },
+    });
+    expect(uiRoot.innerHTML).toContain("sub-modal--trade-offer");
+    expect(uiRoot.innerHTML).toContain("You get");
+    expect(uiRoot.innerHTML).toContain("You give");
+    expect(uiRoot.innerHTML).toContain("(have 3)");
+    expect(uiRoot.innerHTML).toContain('class="visual-hand-tray"');
+    expect(uiRoot.innerHTML.indexOf("sub-modal--trade-offer")).toBeLessThan(
+      uiRoot.innerHTML.indexOf('class="visual-hand-tray"')
+    );
+
+    // 2. Cities & Knights Commercial Harbor response uses sub-modal--keep-hand and displays owned commodity counts
+    const ck = setupMainPhaseCatanApp(true);
+    const ckState = ck.room.session.getState() as CatanState;
+    const ckAlice = ckState.players.find((p) => p.id === ck.aliceId)!;
+    ckAlice.commodities.paper = 2;
+    const mutableCk = ckState as any;
+    mutableCk.phase = "CK_INTERACTION";
+    mutableCk.pendingCkInteraction = {
+      kind: "commercial_harbor_respond",
+      actorId: ck.aliceId,
+      initiatorId: ck.bobId,
+      offeredResource: "brick",
+      offeredPlayerIds: [],
+    } satisfies PendingCkInteraction;
+    ck.uiApp.render();
+    expect(ck.uiRoot.innerHTML).toContain("sub-modal--keep-hand");
+    expect(ck.uiRoot.innerHTML).toContain("Give Paper (×2)");
+    expect(ck.uiRoot.innerHTML).toContain("visual-hand-tray");
+
+    // 3. Server viewer resolution prioritizes the responder's own hand even when a local guest proposed the trade
+    const resolvedViewer = resolveEffectiveViewerIdPure(
+      {
+        gameId: "catan",
+        players: [
+          { id: "host-1", name: "Host", color: "#e11d48", isBot: false },
+          {
+            id: "guest-local",
+            name: "Local Guest",
+            color: "#2563eb",
+            isBot: false,
+            controllerId: "host-1",
+          },
+        ],
+      },
+      "host-1",
+      "host-1",
+      {
+        activeTradeOffer: { fromPlayerId: "guest-local" },
+      }
+    );
+    expect(resolvedViewer).toBe("host-1");
   });
 });

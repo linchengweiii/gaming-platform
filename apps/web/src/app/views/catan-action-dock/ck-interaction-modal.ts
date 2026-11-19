@@ -234,7 +234,7 @@ export function renderCkInteractionDockPure(
     case "commercial_harbor_offer": {
       const availRes = RESOURCES.filter((r) => actingPlayer.resources[r] > 0);
       return `
-        <div class="sub-modal sub-modal--trade">
+        <div class="sub-modal sub-modal--trade sub-modal--keep-hand">
           <div class="ga-trade-head">
             <span class="action-prompt"><strong>Commercial Harbor · ${escapeAttr(actingPlayer.name)}:</strong> Offer 1 resource to an eligible opponent for 1 commodity</span>
             <button type="button" id="btn-ck-ch-end" class="btn btn--secondary btn--sm">Done trading</button>
@@ -252,7 +252,7 @@ export function renderCkInteractionDockPure(
                     .map(
                       (r) => `<button type="button" data-ck-ch-offer="${oppId}:${r}" class="btn btn--secondary btn--sm action-btn-graphic">
                         ${renderMiniResourceCardSvg(r, 26, 16)}
-                        <span>Offer ${RESOURCE_META[r].label}</span>
+                        <span>Offer ${RESOURCE_META[r].label} (×${actingPlayer.resources[r]})</span>
                       </button>`
                     )
                     .join("")}
@@ -263,7 +263,7 @@ export function renderCkInteractionDockPure(
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("maritime_trade", "#fbbf24", 20)}
-          <span class="action-prompt"><strong>Commercial Harbor:</strong> Choose an opponent &amp; resource below, or click <strong>Done trading</strong>.</span>
+          <span class="action-prompt"><strong>Commercial Harbor:</strong> Choose an opponent &amp; resource, or click <strong>Done trading</strong>.</span>
         </div>`;
     }
 
@@ -271,19 +271,27 @@ export function renderCkInteractionDockPure(
       const initiator = state.players.find((p) => p.id === pending.initiatorId);
       const availComms = COMMODITIES.filter((c) => actingPlayer.commodities[c] > 0);
       return `
-        <div class="sub-modal sub-modal--trade">
+        <div class="sub-modal sub-modal--trade sub-modal--keep-hand">
           <div class="ga-trade-head">
             <span class="action-prompt"><strong>Commercial Harbor · ${escapeAttr(actingPlayer.name)}:</strong> ${escapeAttr(initiator?.name ?? "Player")} offers 1 ${RESOURCE_META[pending.offeredResource].label} — choose 1 commodity to trade</span>
           </div>
-          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-            ${availComms
-              .map(
-                (c) => `<button type="button" data-ck-ch-resp="${c}" class="btn btn--primary btn--sm action-btn-graphic">
-                  ${renderMiniTradeGoodCardSvg(c, 30, 19)}
-                  <span>Give ${COMMODITY_META[c].label}</span>
-                </button>`
-              )
-              .join("")}
+          <div class="ga-trade-offer-bar">
+            <div class="ga-trade-offer-side ga-trade-offer-side--gain">
+              <span class="ga-trade-offer-side__label">
+                <span class="ga-res-row-dot ga-res-row-dot--want"></span>You get
+              </span>
+              <span class="map-yield-chip">+1 ${renderMiniResourceCardSvg(pending.offeredResource, 30, 19)}<span>${RESOURCE_META[pending.offeredResource].label}</span></span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto;">
+              ${availComms
+                .map(
+                  (c) => `<button type="button" data-ck-ch-resp="${c}" class="btn btn--primary btn--sm action-btn-graphic">
+                    ${renderMiniTradeGoodCardSvg(c, 30, 19)}
+                    <span>Give ${COMMODITY_META[c].label} (×${actingPlayer.commodities[c]})</span>
+                  </button>`
+                )
+                .join("")}
+            </div>
           </div>
         </div>
         <div class="action-buttons">

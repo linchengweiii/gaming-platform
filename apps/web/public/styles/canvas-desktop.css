@@ -229,6 +229,17 @@
     min-height: auto;
   }
 
+  /* Keep the player's own resource hand tray unobstructed during incoming/active trades */
+  .ga-game-canvas .action-dock > .sub-modal.sub-modal--trade-offer,
+  .ga-game-canvas .action-dock > .sub-modal.sub-modal--keep-hand {
+    bottom: 0;
+    min-height: 48px;
+    max-height: min(240px, calc(100dvh - 300px));
+    padding: 8px 16px;
+    gap: 6px;
+    border-bottom: 1px solid var(--line-strong);
+  }
+
   .ga-game-canvas .action-dock > .sub-modal .ga-trade-head {
     gap: 6px 8px;
     min-height: 24px;

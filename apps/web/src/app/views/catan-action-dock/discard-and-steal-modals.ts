@@ -330,7 +330,7 @@ export function renderCatanSetupAndPhaseDockPure(
         )}</div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("domestic_trade", pColor, 20)}
-          <span class="action-prompt"><strong>Active player trade:</strong> Inspect the map above and respond to the resource offer below.</span>
+          <span class="action-prompt"><strong>Active player trade:</strong> Inspect the map above and your hand below while deciding on this trade.</span>
         </div>`;
   }
 
