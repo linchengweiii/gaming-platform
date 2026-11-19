@@ -206,7 +206,6 @@ export const STANDARD_HARBORS: readonly HarborType[] = [
 ];
 
 export const BIG_ISLAND_EXTRA_COORDS: readonly AxialCoord[] = [
-  { q: 0, r: -3 },
   { q: 1, r: -3 },
   { q: 2, r: -3 },
   { q: 3, r: -3 },
@@ -217,6 +216,7 @@ export const BIG_ISLAND_EXTRA_COORDS: readonly AxialCoord[] = [
   { q: 1, r: 2 },
   { q: 0, r: 3 },
   { q: -1, r: 3 },
+  { q: -2, r: 3 },
 ];
 
 export const BIG_ISLAND_TERRAINS: readonly TerrainType[] = [
