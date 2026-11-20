@@ -299,7 +299,7 @@ export function chooseCkPriorityMainAction(
           continue;
         }
 
-        const reqComm = craneActive ? Math.max(1, nextLv - 1) : nextLv;
+        const reqComm = craneActive ? Math.max(0, nextLv - 1) : nextLv;
         const comm = DISCIPLINE_TO_COMMODITY[d];
         if (state.commodityBank[comm] < 1) continue;
         const missingComm = reqComm - player.commodities[comm];

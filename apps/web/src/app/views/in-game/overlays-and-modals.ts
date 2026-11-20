@@ -60,7 +60,7 @@ export function computeCkBoardOptionsPure(
         progressTargetVertexIds: getLegalPromoteKnightVertices(
           cState,
           actingPlayer.id,
-          true
+          false
         ).filter((vId) => vId !== model.smithVertex1),
       };
     }

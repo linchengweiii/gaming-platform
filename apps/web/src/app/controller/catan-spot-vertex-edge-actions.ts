@@ -217,7 +217,7 @@ export function handleCatanVertexSpotClick(
         const promotable = getLegalPromoteKnightVertices(
           state,
           actingPlayerId,
-          true
+          false
         );
         if (promotable.includes(vertexId)) {
           if (promotable.length === 1) {

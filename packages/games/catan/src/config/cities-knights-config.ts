@@ -233,7 +233,8 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     title: "Spy",
     copies: 3,
     phase: "MAIN_PHASE",
-    description: "Steal 1 random Progress Card from an opponent.",
+    description:
+      "Inspect an opponent's Progress Cards and take 1 of your choice.",
   },
   warlord: {
     type: "warlord",

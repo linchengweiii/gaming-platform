@@ -387,7 +387,7 @@ export function displaceKnightAtVertexPure(
 
 /**
  * Returns open-ended roads eligible for `diplomat` removal.
- * A road is open-ended if at least one of its endpoints has no other road/ship of that owner,
+ * A road is open-ended if at least one of its endpoints has no other road of that owner,
  * no building of that owner, and no knight of that owner.
  */
 export function getDiplomatRemovableRoadEdges(state: CatanState): EdgeId[] {
@@ -401,10 +401,13 @@ export function getDiplomatRemovableRoadEdges(state: CatanState): EdgeId[] {
         if (state.buildings[vId]?.ownerId === route.ownerId) return false;
         if (state.knights[vId]?.ownerId === route.ownerId) return false;
         const vNode = state.topology.vertices[vId]!;
-        const otherOwnRoutes = vNode.incidentEdgeIds.filter(
-          (incId) => incId !== eId && state.edges[incId]?.ownerId === route.ownerId
+        const otherOwnRoads = vNode.incidentEdgeIds.filter(
+          (incId) =>
+            incId !== eId &&
+            state.edges[incId]?.ownerId === route.ownerId &&
+            state.edges[incId]?.type === "road"
         );
-        return otherOwnRoutes.length === 0;
+        return otherOwnRoads.length === 0;
       };
 
       return isOpenEndpoint(eNode.v1) || isOpenEndpoint(eNode.v2);

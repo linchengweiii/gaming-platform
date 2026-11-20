@@ -37,7 +37,7 @@ function chooseCkDiscardWithCommodities(
       const curLvl = player.cityImprovements[disc];
       if (curLvl >= 5) return 0.5;
       const nextReq = Math.max(
-        1,
+        0,
         curLvl + 1 - (player.activeTurnDiscounts.crane ? 1 : 0)
       );
       const held = remComm[good];

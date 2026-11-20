@@ -108,7 +108,7 @@ export function chooseCkPreUpgradeDefenseAction(
       const hasCity = Object.values(state.buildings).some(
         (b) => b.ownerId === playerId && b.type === "city"
       );
-      return hasCity && player.commodities[comm] >= Math.max(1, lvl);
+      return hasCity && player.commodities[comm] >= Math.max(0, lvl);
     });
     if (craneUnlocksOrSaves) {
       return { action: craneAct, cityInDanger, stepsLeft };
@@ -360,7 +360,7 @@ export function chooseCkPostBuildAction(
       if (lvl >= 5) continue;
       const comm = DISCIPLINE_TO_COMMODITY[d];
       const needed = Math.max(
-        1,
+        0,
         lvl + 1 - (player.activeTurnDiscounts.crane ? 1 : 0)
       );
       if (

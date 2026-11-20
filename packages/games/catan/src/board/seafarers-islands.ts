@@ -149,7 +149,8 @@ export function generateSeafarersFourIslandsBoardPure(
       topology,
       hexes,
       harbors,
-      robberHexId: island1Coords[0],
+      // No desert hex on this map: official Seafarers rule starts the Robber off-board
+      robberHexId: "",
       pirateHexId: hexId(0, 0),
       fogPool: [],
     },
@@ -314,7 +315,8 @@ export function generateSeafarersSixIslands56BoardPure(
       topology,
       hexes,
       harbors,
-      robberHexId: island1Coords[0],
+      // No desert hex on this map: official Seafarers rule starts the Robber off-board
+      robberHexId: "",
       pirateHexId: hexId(1, -1),
       fogPool: [],
     },

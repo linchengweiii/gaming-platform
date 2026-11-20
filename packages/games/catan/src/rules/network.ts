@@ -196,6 +196,7 @@ export function getLegalMoveShipActions(
 
       const isEndpointOpen = (vId: VertexId): boolean => {
         if (state.buildings[vId]?.ownerId === playerId) return false;
+        if (state.knights[vId]?.ownerId === playerId) return false;
         const vNode = state.topology.vertices[vId]!;
         const otherOwnShips = vNode.incidentEdgeIds.filter(
           (incId) =>
@@ -273,9 +274,17 @@ export function revealAdjacentFogHexesPure(
         numberToken: revealed.numberToken,
       };
 
+      const availableBankResources = RESOURCES.filter(
+        (r) => acc.state.bank[r] > 0
+      );
       const [prodRes, nextRngState] =
         revealed.terrain === "gold"
-          ? pickPure(acc.state.rngState, RESOURCES)
+          ? pickPure(
+              acc.state.rngState,
+              availableBankResources.length > 0
+                ? availableBankResources
+                : RESOURCES
+            )
           : [TERRAIN_TO_RESOURCE[revealed.terrain], acc.state.rngState];
 
       const grantResource = Boolean(prodRes && acc.state.bank[prodRes] > 0);
