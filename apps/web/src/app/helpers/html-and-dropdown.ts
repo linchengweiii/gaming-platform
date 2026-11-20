@@ -63,10 +63,10 @@ export function renderDropdown(spec: DropdownSpec): string {
         ${disAttr}${titleAttr}
       >
         <span class="ga-dropdown__label-group">
-          <span class="ga-dropdown__value">${selectedOpt.label}</span>
+          <span class="ga-dropdown__value">${escapeHtml(selectedOpt.label)}</span>
           ${
             selectedOpt.meta
-              ? `<span class="ga-dropdown__meta">${selectedOpt.meta}</span>`
+              ? `<span class="ga-dropdown__meta">${escapeHtml(selectedOpt.meta)}</span>`
               : `<span class="ga-dropdown__meta" hidden></span>`
           }
         </span>
@@ -85,9 +85,9 @@ export function renderDropdown(spec: DropdownSpec): string {
             data-dropdown-meta="${escapeAttr(opt.meta ?? "")}"
             aria-selected="${opt.value === selectedOpt.value ? "true" : "false"}"
           >
-            <span>${opt.label}</span>
+            <span>${escapeHtml(opt.label)}</span>
             <span class="ga-dropdown__option-right">
-              ${opt.meta ? `<span class="ga-dropdown__meta">${opt.meta}</span>` : ""}
+              ${opt.meta ? `<span class="ga-dropdown__meta">${escapeHtml(opt.meta)}</span>` : ""}
               ${DROPDOWN_CHECK_SVG}
             </span>
           </button>

@@ -6,9 +6,11 @@ import {
 } from "../cities-and-knights/barbarians.ts";
 import {
   consumePlayerProgressCardPure,
+  isResourceType,
   rollEventDiePure,
 } from "../cities-and-knights/helpers.ts";
 import { getPlayerVulnerableCities } from "../cities-and-knights/improvements.ts";
+import { IMPROVEMENT_DISCIPLINES, RESOURCES } from "../types/domain.ts";
 import type { CatanAction } from "../types/actions.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import {
@@ -287,6 +289,17 @@ export function applySelectProgressDeckPure(
   ) {
     throw new Error("Not your turn to select a Progress Card deck");
   }
+  if (
+    !(IMPROVEMENT_DISCIPLINES as readonly string[]).includes(action.discipline)
+  ) {
+    throw new Error(`Invalid Progress Card discipline: ${String(action.discipline)}`);
+  }
+  const hasAnyDeck = IMPROVEMENT_DISCIPLINES.some(
+    (d) => currentState.progressDecks[d].length > 0
+  );
+  if (hasAnyDeck && currentState.progressDecks[action.discipline].length === 0) {
+    throw new Error(`Progress Card ${action.discipline} deck is empty`);
+  }
   const nextPicks = currentState.pendingDefenderDeckPicks.slice(1);
   const drawn = drawProgressCardForPlayerPure(
     { ...currentState, pendingDefenderDeckPicks: nextPicks },
@@ -306,6 +319,7 @@ export function applyDiscardProgressCardPure(
 ): { state: CatanState; events: GameEvent[] } {
   if (
     currentState.phase !== "PROGRESS_CARD_SELECTION" ||
+    currentState.pendingDefenderDeckPicks.length > 0 ||
     currentState.pendingProgressDiscards[0] !== playerId
   ) {
     throw new Error("Not your turn to discard a Progress Card");
@@ -360,6 +374,15 @@ export function applySelectGoldResourcePure(
   const remaining = currentState.pendingGoldPicks[playerId] ?? 0;
   if (remaining <= 0) {
     throw new Error("Player has no pending gold resource picks");
+  }
+  if (!isResourceType(action.resource)) {
+    throw new Error(`Invalid resource selected: ${String(action.resource)}`);
+  }
+  if (
+    currentState.bank[action.resource] <= 0 &&
+    RESOURCES.some((r) => currentState.bank[r] > 0)
+  ) {
+    throw new Error(`Bank has no ${action.resource} remaining`);
   }
 
   const picked =

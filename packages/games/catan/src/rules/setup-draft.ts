@@ -14,7 +14,6 @@ import {
   getLegalSettlementVertices,
   getLegalShipEdges,
   recordIslandSettlementPure,
-  revealAdjacentFogHexesPure,
 } from "./network.ts";
 
 export function applyPlaceSetupSettlementPure(
@@ -193,19 +192,13 @@ export function applyPlaceSetupEdgePure(
     };
   })();
 
-  const fogRevealed = revealAdjacentFogHexesPure(
-    placedEdgeState,
-    action.edgeId,
-    playerId,
-    []
-  );
   const clearedAnchor: CatanState = {
-    ...fogRevealed.state,
+    ...placedEdgeState,
     lastSetupSettlementVertexId: null,
   };
   const logged = appendCatanEvent(
     clearedAnchor,
-    fogRevealed.emitted,
+    [],
     "SETUP_EDGE",
     `${player.name} placed a starting ${action.edgeKind}.`,
     playerId,

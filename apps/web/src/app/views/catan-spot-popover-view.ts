@@ -14,6 +14,7 @@ import {
   renderActionPieceIconSvg,
   renderMiniResourceCardSvg,
 } from "../../catan-graphics.ts";
+import { escapeHtml } from "../helpers/html-and-dropdown.ts";
 import type { AppModel } from "../types.ts";
 import {
   renderCostPipStripPure,
@@ -131,7 +132,7 @@ export function renderCatanSpotPopoverPure(
         if (actionItems.length > 0) return "";
         if (route) {
           const owner = state.players.find((p) => p.id === route.ownerId);
-          return `<div class="t-label muted" style="display: flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg(route.type, owner?.color ?? pColor, 18)} <span>${owner?.name ?? "Player"} ${route.type}</span></div>`;
+          return `<div class="t-label muted" style="display: flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg(route.type, owner?.color ?? pColor, 18)} <span>${escapeHtml(owner?.name ?? "Player")} ${route.type}</span></div>`;
         }
         const roadGeomOk = getLegalRoadEdges(
           state,

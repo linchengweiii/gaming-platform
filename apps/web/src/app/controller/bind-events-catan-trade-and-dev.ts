@@ -55,14 +55,6 @@ export function bindCatanTradeEvents(
     }
   });
 
-  root.querySelector("#sel-dom-target")?.addEventListener("change", (e) => {
-    ctx.model = {
-      ...ctx.model,
-      domesticTargetPlayerId: (e.target as HTMLSelectElement).value,
-    };
-    ctx.render();
-  });
-
   root.querySelectorAll("[data-dom-give]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const r = btn.getAttribute("data-dom-give") as ResourceType;

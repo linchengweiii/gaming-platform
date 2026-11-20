@@ -375,6 +375,9 @@ export function renderAzulActionDock(
   const count = srcTiles.filter((c) => c === selectedDraft.color).length;
   const takesFirst =
     selectedDraft.source.kind === "center" && state.centerHasFirstPlayerMarker;
+  const firstMarkerPenalty = takesFirst
+    ? computeMarginalFloorPenaltyUi(actingPlayer.floorLine.length, 1)
+    : 0;
 
   const srcName =
     selectedDraft.source.kind === "factory"
@@ -384,7 +387,11 @@ export function renderAzulActionDock(
   return `<div class="action-buttons">
     ${renderAzulTile(selectedDraft.color, 24, true)}
     <span class="action-prompt"><strong>Step 2 of 2:</strong> Drafting <strong>${count}× ${AZUL_TILE_STYLES[selectedDraft.color].label}</strong> from ${srcName}${
-      takesFirst ? " (+ 1st marker, -1 floor)" : ""
+      takesFirst
+        ? firstMarkerPenalty > 0
+          ? ` (+ 1st marker, -${firstMarkerPenalty} floor)`
+          : " (+ 1st marker)"
+        : ""
     }. Click a highlighted pattern row (1–5) or the floor line.</span>
     <button type="button" id="btn-azul-cancel-draft" class="btn btn--secondary btn--sm">Cancel selection</button>
   </div>`;

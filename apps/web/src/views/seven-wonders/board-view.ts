@@ -51,8 +51,8 @@ export function renderSevenWondersBoardView(
     state.phase === "SEVENTH_CARD_PLAY"
       ? "Bonus 7th card play — no hand pass"
       : state.passDirection === "clockwise"
-        ? "Pass clockwise (West → You → East)"
-        : "Pass counter-clockwise (East → You → West)";
+        ? "Pass clockwise (East → You → West)"
+        : "Pass counter-clockwise (West → You → East)";
   const ageRoman = state.age === 1 ? "I" : state.age === 2 ? "II" : "III";
 
   const handOrResolutionHtml = renderHandOrResolutionHtml(

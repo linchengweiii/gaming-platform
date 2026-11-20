@@ -197,10 +197,13 @@ export function getLegalMoveShipActions(
       const isEndpointOpen = (vId: VertexId): boolean => {
         if (state.buildings[vId]?.ownerId === playerId) return false;
         const vNode = state.topology.vertices[vId]!;
-        const otherOwnEdges = vNode.incidentEdgeIds.filter(
-          (incId) => incId !== eId && state.edges[incId]?.ownerId === playerId
+        const otherOwnShips = vNode.incidentEdgeIds.filter(
+          (incId) =>
+            incId !== eId &&
+            state.edges[incId]?.ownerId === playerId &&
+            state.edges[incId]?.type === "ship"
         );
-        return otherOwnEdges.length === 0;
+        return otherOwnShips.length === 0;
       };
 
       return isEndpointOpen(eNode.v1) || isEndpointOpen(eNode.v2);
@@ -243,7 +246,15 @@ export function revealAdjacentFogHexesPure(
     return { state, emitted: emitted.slice() };
   }
 
-  return eNode.adjacentHexIds.reduce<StateWithEvents>(
+  const candidateHexIds = Array.from(
+    new Set([
+      ...eNode.adjacentHexIds,
+      ...(state.topology.vertices[eNode.v1]?.adjacentHexIds ?? []),
+      ...(state.topology.vertices[eNode.v2]?.adjacentHexIds ?? []),
+    ])
+  );
+
+  return candidateHexIds.reduce<StateWithEvents>(
     (acc, hId) => {
       const tile = acc.state.hexes[hId];
       if (!tile || tile.terrain !== "fog") return acc;

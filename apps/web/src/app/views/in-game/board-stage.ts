@@ -232,7 +232,8 @@ export function renderInGameBoardStagePure(
                       catanLegalActions
                     )}
                     ${
-                      isMyTurn
+                      isMyTurn &&
+                      !(controllableHumansCount >= 2 && model.hidePassAndPlayHand)
                         ? renderCatanMapBuildAndEndTurnHudPure(
                             model,
                             state as CatanState,

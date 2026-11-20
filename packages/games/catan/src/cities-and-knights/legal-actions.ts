@@ -208,9 +208,7 @@ export function getLegalProgressCardActions(
             const vNode = state.topology.vertices[vId];
             return Boolean(
               vNode?.incidentEdgeIds.some(
-                (eId) =>
-                  state.edges[eId]?.ownerId === player.id &&
-                  state.edges[eId]?.type === "road"
+                (eId) => state.edges[eId]?.ownerId === player.id
               )
             );
           })

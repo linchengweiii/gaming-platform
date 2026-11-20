@@ -5,6 +5,7 @@ import {
   subtractCommoditiesPure,
   totalCommodityCount,
 } from "../cities-and-knights/helpers.ts";
+import { COMMODITIES, RESOURCES } from "../types/domain.ts";
 import type { CatanAction } from "../types/actions.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import {
@@ -26,6 +27,17 @@ export function applyOfferDomesticTradePure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Can only offer domestic trade on your main phase");
   }
+  if (currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
+  if (action.toPlayerId !== null) {
+    if (
+      action.toPlayerId === playerId ||
+      !currentState.players.some((p) => p.id === action.toPlayerId)
+    ) {
+      throw new Error("Invalid domestic trade target player");
+    }
+  }
   assertNonNegativeIntGoodMapPure(action.give, "Trade give resource");
   assertNonNegativeIntGoodMapPure(action.want, "Trade want resource");
   assertNonNegativeIntGoodMapPure(action.giveCommodities, "Trade give commodity");
@@ -43,6 +55,17 @@ export function applyOfferDomesticTradePure(
     totalResourceCount(action.want) + wantCommTotal <= 0
   ) {
     throw new Error("Domestic trade must give and want at least 1 card");
+  }
+  const hasSameResourceOverlap = RESOURCES.some(
+    (r) => (action.give[r] ?? 0) > 0 && (action.want[r] ?? 0) > 0
+  );
+  const hasSameCommodityOverlap = COMMODITIES.some(
+    (c) =>
+      (action.giveCommodities?.[c] ?? 0) > 0 &&
+      (action.wantCommodities?.[c] ?? 0) > 0
+  );
+  if (hasSameResourceOverlap || hasSameCommodityOverlap) {
+    throw new Error("Cannot offer and request the same resource or commodity");
   }
   if (
     !hasResources(player.resources, action.give) ||
@@ -161,10 +184,11 @@ export function applyAcceptDomesticTradePure(
   }
 
   const prevAccepted = offer.acceptedBy ?? [];
-  const nextAccepted = prevAccepted.includes(playerId)
-    ? prevAccepted
-    : [...prevAccepted, playerId];
-  const nextDeclined = offer.declinedBy.filter((id) => id !== playerId);
+  if (prevAccepted.includes(playerId) || offer.declinedBy.includes(playerId)) {
+    throw new Error("You have already responded to this trade offer");
+  }
+  const nextAccepted = [...prevAccepted, playerId];
+  const nextDeclined = offer.declinedBy;
 
   const acceptedState: CatanState = {
     ...currentState,
@@ -189,17 +213,27 @@ export function applyAcceptDomesticTradePure(
 export function applyDeclineDomesticTradePure(
   currentState: CatanState,
   player: CatanPlayerState,
-  playerId: string
+  playerId: string,
+  action: Extract<CatanAction, { type: "DECLINE_DOMESTIC_TRADE" }>
 ): { state: CatanState; events: GameEvent[] } {
   if (currentState.phase !== "MAIN_PHASE" || !currentState.activeTradeOffer) {
     throw new Error("No active trade offer");
   }
   const offer = currentState.activeTradeOffer;
+  if (offer.id !== action.offerId) {
+    throw new Error("Mismatched trade offer ID");
+  }
+  if (offer.fromPlayerId === playerId) {
+    throw new Error("Cannot decline your own trade offer");
+  }
+  if (offer.toPlayerId !== null && offer.toPlayerId !== playerId) {
+    throw new Error("This trade offer is for another player");
+  }
   const accepted = offer.acceptedBy ?? [];
-  const nextDeclined =
-    !offer.declinedBy.includes(playerId) && !accepted.includes(playerId)
-      ? [...offer.declinedBy, playerId]
-      : offer.declinedBy;
+  if (offer.declinedBy.includes(playerId) || accepted.includes(playerId)) {
+    throw new Error("You have already responded to this trade offer");
+  }
+  const nextDeclined = [...offer.declinedBy, playerId];
 
   const otherPlayers = currentState.players.filter(
     (p) => p.id !== offer.fromPlayerId

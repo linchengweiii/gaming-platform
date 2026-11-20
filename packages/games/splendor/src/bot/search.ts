@@ -264,20 +264,17 @@ export function chooseMasterSplendorAction(
     decks: {
       1: [],
       2: [],
-      3: considerBlindT3
-        ? [
-            {
-              id: "blind-ev-t3",
-              tier: 3,
-              bonus: "onyx",
-              points: 0,
-              cost: emptyGemMap(),
-              reservedFromDeck: true,
-              redacted: true,
-            },
-          ]
-        : [],
+      3: [],
     },
+  };
+  const blindT3Placeholder: SplendorCard = {
+    id: "blind-ev-t3",
+    tier: 3,
+    bonus: "onyx",
+    points: 0,
+    cost: emptyGemMap(),
+    reservedFromDeck: true,
+    redacted: true,
   };
 
   const maxOppSteps = Math.max(1, state.players.length - 1);
@@ -305,7 +302,14 @@ export function chooseMasterSplendorAction(
             })()
           : 0.85;
 
-    const afterMyT1 = stepPublicTurn(decklessRoot, playerId, rootAct);
+    const rootForAct =
+      rootAct.type === "RESERVE_CARD" && rootAct.deckTier === 3
+        ? {
+            ...decklessRoot,
+            decks: { ...decklessRoot.decks, 3: [blindT3Placeholder] },
+          }
+        : decklessRoot;
+    const afterMyT1 = stepPublicTurn(rootForAct, playerId, rootAct);
     if (afterMyT1.phase === "GAME_OVER") {
       return evaluateMasterPublicState(afterMyT1, playerId) + tieBias;
     }

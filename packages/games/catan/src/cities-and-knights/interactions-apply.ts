@@ -115,8 +115,12 @@ export function applyCkInteractionActionPure(
         return p;
       });
       const updatedActor = nextPlayers.find((p) => p.id === playerId)!;
+      const activePlayerId =
+        currentState.players[currentState.activePlayerIndex]?.id;
+      const mustDiscardImmediately =
+        updatedActor.progressCards.length > 4 && playerId !== activePlayerId;
       const nextPendingDiscards =
-        updatedActor.progressCards.length > 4 &&
+        mustDiscardImmediately &&
         !currentState.pendingProgressDiscards.includes(playerId)
           ? [...currentState.pendingProgressDiscards, playerId]
           : currentState.pendingProgressDiscards;

@@ -208,6 +208,9 @@ export function applyMoveKnightPure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Can only move a Knight during your main phase");
   }
+  if (currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
   const legalMoves = getLegalMoveKnightActions(currentState, playerId);
   const isLegal = legalMoves.some(
     (m) =>
@@ -307,12 +310,15 @@ export function applyChaseRobberWithKnightPure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Can only chase the Robber during your main phase");
   }
+  if (currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
   const targetKind = action.targetKind ?? "robber";
   const legalChases = getLegalChaseRobberActions(
     currentState,
     playerId,
     getLegalRobberHexes(currentState, playerId),
-    getLegalPirateHexes(currentState)
+    getLegalPirateHexes(currentState, playerId)
   );
   const isLegal = legalChases.some(
     (c) =>

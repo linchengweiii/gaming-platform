@@ -85,13 +85,12 @@ export function generateSeafarersNewShoresBoardPure(
     "forest",
     "mountains",
   ]);
-  const [foreignNumbers, rng3] = shufflePure(rng2, [
-    4, 5, 6, 8, 9, 10, 11, 12,
-  ]);
+  const foreignNumbers = [4, 5, 6, 8, 9, 10, 11, 12] as const;
 
   const laidOut = coords.reduce<{
     hexes: Record<HexId, HexTile>;
     mainProductiveIds: HexId[];
+    foreignProductiveIds: HexId[];
     mainIdx: number;
     foreignIdx: number;
     robberHexId: HexId;
@@ -110,13 +109,13 @@ export function generateSeafarersNewShoresBoardPure(
           allowSetupSettlement: true,
         };
         return {
+          ...acc,
           hexes: { ...acc.hexes, [id]: tile },
           mainProductiveIds:
             terrain === "desert"
               ? acc.mainProductiveIds
               : [...acc.mainProductiveIds, id],
           mainIdx: acc.mainIdx + 1,
-          foreignIdx: acc.foreignIdx,
           robberHexId: terrain === "desert" ? id : acc.robberHexId,
         };
       }
@@ -127,13 +126,14 @@ export function generateSeafarersNewShoresBoardPure(
           q,
           r,
           terrain: foreignTerrains[acc.foreignIdx]!,
-          numberToken: foreignNumbers[acc.foreignIdx]!,
+          numberToken: null,
           islandId,
           allowSetupSettlement: false,
         };
         return {
           ...acc,
           hexes: { ...acc.hexes, [id]: tile },
+          foreignProductiveIds: [...acc.foreignProductiveIds, id],
           foreignIdx: acc.foreignIdx + 1,
         };
       }
@@ -154,16 +154,24 @@ export function generateSeafarersNewShoresBoardPure(
     {
       hexes: {},
       mainProductiveIds: [],
+      foreignProductiveIds: [],
       mainIdx: 0,
       foreignIdx: 0,
       robberHexId: hexId(-1, 0),
     }
   );
 
-  const [hexes, rng4] = assignBalancedNumbersPure(
+  const [mainAssignedHexes, rng3] = assignBalancedNumbersPure(
     laidOut.hexes,
     laidOut.mainProductiveIds,
     mainNumbers,
+    rng2,
+    config.balancedNumbers
+  );
+  const [hexes, rng4] = assignBalancedNumbersPure(
+    mainAssignedHexes,
+    laidOut.foreignProductiveIds,
+    foreignNumbers,
     rng3,
     config.balancedNumbers
   );
@@ -269,13 +277,12 @@ export function generateSeafarersNewShores56BoardPure(
     "pasture",
     "forest",
   ]);
-  const [foreignNumbers, rng3] = shufflePure(rng2, [
-    4, 5, 6, 8, 9, 9, 10, 10, 11, 12,
-  ]);
+  const foreignNumbers = [4, 5, 6, 8, 9, 9, 10, 10, 11, 12] as const;
 
   const laidOut = coords.reduce<{
     hexes: Record<HexId, HexTile>;
     mainProductiveIds: HexId[];
+    foreignProductiveIds: HexId[];
     mainIdx: number;
     foreignIdx: number;
     robberHexId: HexId;
@@ -294,13 +301,13 @@ export function generateSeafarersNewShores56BoardPure(
           allowSetupSettlement: true,
         };
         return {
+          ...acc,
           hexes: { ...acc.hexes, [id]: tile },
           mainProductiveIds:
             terrain === "desert"
               ? acc.mainProductiveIds
               : [...acc.mainProductiveIds, id],
           mainIdx: acc.mainIdx + 1,
-          foreignIdx: acc.foreignIdx,
           robberHexId: terrain === "desert" ? id : acc.robberHexId,
         };
       }
@@ -311,13 +318,14 @@ export function generateSeafarersNewShores56BoardPure(
           q,
           r,
           terrain: foreignTerrains[acc.foreignIdx]!,
-          numberToken: foreignNumbers[acc.foreignIdx]!,
+          numberToken: null,
           islandId,
           allowSetupSettlement: false,
         };
         return {
           ...acc,
           hexes: { ...acc.hexes, [id]: tile },
+          foreignProductiveIds: [...acc.foreignProductiveIds, id],
           foreignIdx: acc.foreignIdx + 1,
         };
       }
@@ -338,16 +346,24 @@ export function generateSeafarersNewShores56BoardPure(
     {
       hexes: {},
       mainProductiveIds: [],
+      foreignProductiveIds: [],
       mainIdx: 0,
       foreignIdx: 0,
       robberHexId: hexId(-1, 0),
     }
   );
 
-  const [hexes, rng4] = assignBalancedNumbersPure(
+  const [mainAssignedHexes, rng3] = assignBalancedNumbersPure(
     laidOut.hexes,
     laidOut.mainProductiveIds,
     mainNumbers,
+    rng2,
+    config.balancedNumbers
+  );
+  const [hexes, rng4] = assignBalancedNumbersPure(
+    mainAssignedHexes,
+    laidOut.foreignProductiveIds,
+    foreignNumbers,
     rng3,
     config.balancedNumbers
   );

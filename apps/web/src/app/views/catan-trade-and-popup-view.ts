@@ -252,7 +252,7 @@ export function renderCatanMapDecisionPopupPure(
               const victim = state.players.find((p) => p.id === vId)!;
               return `<button type="button" data-steal-victim="${vId}" class="btn btn--primary btn--sm action-btn-graphic">
                 <span class="player-dot" style="background: ${victim.color}"></span>
-                <span>${victim.name} (${getPlayerResourceCount(victim)})</span>
+                <span>${escapeAttr(victim.name)} (${getPlayerResourceCount(victim)})</span>
               </button>`;
             })
             .join("")}

@@ -67,8 +67,18 @@ export function createRoomPure(
         },
       ];
 
-  const defaultBotCount =
-    options.botCount ?? (options.allBots ? 4 : options.autoStart ? 3 : 0);
+  const defaultBotCount = (() => {
+    if (options.botCount !== undefined) {
+      if (
+        typeof options.botCount !== "number" ||
+        !Number.isFinite(options.botCount)
+      ) {
+        throw new Error("botCount must be a finite number");
+      }
+      return Math.trunc(options.botCount);
+    }
+    return options.allBots ? 4 : options.autoStart ? 3 : 0;
+  })();
 
   const defaultConfig =
     gameId === "catan"
@@ -172,7 +182,12 @@ export function updateRoomSetupPure(
                   updates.config.scenarioId !== undefined &&
                   updates.config.enable56PlayerExtension === undefined
                 ? { ...base, enable56PlayerExtension: true }
-                : base;
+                : !isExpanded56Scenario(effectiveScenario) &&
+                    updates.config.scenarioId !== undefined &&
+                    updates.config.enable56PlayerExtension === undefined &&
+                    Boolean(base.enable56PlayerExtension)
+                  ? { ...base, enable56PlayerExtension: false }
+                  : base;
 
           const prevIsCkPreset = Boolean(
             SCENARIO_CATALOG[prevScenario]?.enableCitiesAndKnights
@@ -254,12 +269,24 @@ export function updateRoomSetupPure(
 
   const nextBotCount = (() => {
     if (updates.botCount !== undefined) {
-      return updates.botCount;
+      if (
+        typeof updates.botCount !== "number" ||
+        !Number.isFinite(updates.botCount)
+      ) {
+        throw new Error("botCount must be a finite number");
+      }
+      return Math.trunc(updates.botCount);
     }
     if (updates.playerCount !== undefined) {
+      if (
+        typeof updates.playerCount !== "number" ||
+        !Number.isFinite(updates.playerCount)
+      ) {
+        throw new Error("playerCount must be a finite number");
+      }
       const clampedTarget = Math.max(
         bounds.minPlayers,
-        Math.min(bounds.maxPlayers, updates.playerCount)
+        Math.min(bounds.maxPlayers, Math.trunc(updates.playerCount))
       );
       return nextAllBots
         ? clampedTarget

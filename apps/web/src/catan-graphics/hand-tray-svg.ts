@@ -12,6 +12,7 @@ import {
   totalCommodityCount,
   totalResourceCount,
 } from "@gaming-platform/catan";
+import { escapeHtml } from "../app/helpers/html-and-dropdown.ts";
 import {
   COMMODITY_META,
   DEV_CARD_META,
@@ -79,7 +80,7 @@ export function renderCatanVisualHandTray(
         <div class="hand-tray-header">
           <div class="hand-tray-header__left">
             <span class="player-dot" style="background: ${player.color}"></span>
-            <strong style="font-size: var(--t-small); font-weight: 500;">${player.name} hand</strong>
+            <strong style="font-size: var(--t-small); font-weight: 500;">${escapeHtml(player.name)} hand</strong>
             <span class="ga-chip ${totalHandCards > safeLimit ? "ga-chip--danger" : "ga-chip--ok"} ga-num">
               ${totalHandCards}/${safeLimit} cards (${totalRes}R · ${totalComm}C)
             </span>
@@ -245,7 +246,7 @@ export function renderCatanVisualHandTray(
       <div class="hand-tray-header">
         <div class="hand-tray-header__left">
           <span class="player-dot" style="background: ${player.color}"></span>
-          <strong style="font-size: var(--t-small); font-weight: 500;">${player.name} hand</strong>
+          <strong style="font-size: var(--t-small); font-weight: 500;">${escapeHtml(player.name)} hand</strong>
           <span class="ga-chip ${totalRes > safeLimit ? "ga-chip--danger" : "ga-chip--ok"} ga-num">
             ${totalRes}/${safeLimit} resources
           </span>

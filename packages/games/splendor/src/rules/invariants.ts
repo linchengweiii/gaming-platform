@@ -33,10 +33,17 @@ export function checkSplendorInvariants(
 
   const goldSum =
     state.bank.gold + state.players.reduce((s, p) => s + p.tokens.gold, 0);
-  const goldViolations =
-    goldSum !== SPLENDOR_GOLD_COUNT
+  const goldViolations = [
+    ...(state.bank.gold < 0
+      ? [`Negative bank gold: ${state.bank.gold}`]
+      : []),
+    ...state.players
+      .filter((p) => p.tokens.gold < 0)
+      .map((p) => `Player ${p.id} has negative gold`),
+    ...(goldSum !== SPLENDOR_GOLD_COUNT
       ? [`Gold conservation violated: ${goldSum} !== ${SPLENDOR_GOLD_COUNT}`]
-      : [];
+      : []),
+  ];
 
   const playerViolations = state.players.flatMap((p) => {
     const reservedErr =

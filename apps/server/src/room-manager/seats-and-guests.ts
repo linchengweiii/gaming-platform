@@ -79,6 +79,10 @@ export function joinRoomPure(
     };
   }
 
+  if (room.allBots) {
+    throw new Error("Cannot join an all-bots room");
+  }
+
   if (room.humanPlayers.length >= bounds.maxPlayers) {
     throw new Error(`Room is full (max ${bounds.maxPlayers} human players)`);
   }

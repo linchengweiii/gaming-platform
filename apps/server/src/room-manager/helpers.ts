@@ -91,7 +91,9 @@ export function canViewerControlActorPure(
   if (!viewerId || !actorId) return false;
   const actor = room.players.find((p) => p.id === actorId);
   if (!actor || actor.isBot) return false;
-  return actor.id === viewerId || actor.controllerId === viewerId;
+  return actor.controllerId
+    ? actor.controllerId === viewerId
+    : actor.id === viewerId;
 }
 
 export function resolveUndoTargetPlayerIdPure(
@@ -329,9 +331,12 @@ export function rebuildRoomPlayersPure(
   const bounds = getRoomPlayerBoundsPure(registry, room.gameId, room.config);
 
   if (room.allBots) {
+    const rawBots = Number.isFinite(room.botCount)
+      ? Math.trunc(room.botCount)
+      : 4;
     const clampedBotCount = Math.max(
       bounds.minPlayers,
-      Math.min(bounds.maxPlayers, room.botCount || 4)
+      Math.min(bounds.maxPlayers, rawBots || 4)
     );
     const nextPlayers: PlayerDescriptor[] = Array.from(
       { length: clampedBotCount },
@@ -360,7 +365,10 @@ export function rebuildRoomPlayersPure(
 
   const trimmedHumans = room.humanPlayers.slice(0, bounds.maxPlayers);
   const maxBots = Math.max(0, bounds.maxPlayers - trimmedHumans.length);
-  const clampedBotCount = Math.max(0, Math.min(maxBots, room.botCount));
+  const rawBots = Number.isFinite(room.botCount)
+    ? Math.trunc(room.botCount)
+    : 0;
+  const clampedBotCount = Math.max(0, Math.min(maxBots, rawBots));
 
   const seatedHumans: PlayerDescriptor[] = trimmedHumans.map((hp, idx) => ({
     ...hp,

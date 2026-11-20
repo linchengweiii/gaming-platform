@@ -228,11 +228,20 @@ export function renderDevCardSubModalPure(
 ): string {
   const pColor = actingPlayer.color;
   if (model.buildMode === "year_of_plenty") {
+    const totalBankRes = RESOURCES.reduce<number>(
+      (sum, r) => sum + state.bank[r],
+      0
+    );
+    const singleCardOnly = totalBankRes === 1;
+    const canExecYoP = singleCardOnly
+      ? state.bank[model.yopRes1] === 1 && model.yopRes2 === model.yopRes1
+      : state.bank[model.yopRes1] >= 1 &&
+        state.bank[model.yopRes2] >= (model.yopRes1 === model.yopRes2 ? 2 : 1);
     return `<div class="sub-modal">
         <div class="ga-trade-head">
           <div style="display: inline-flex; align-items: center; gap: 7px;">
             ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
-            <strong style="font-size: var(--t-small); font-weight: 500;">Year of plenty — choose 2 free bank cards</strong>
+            <strong style="font-size: var(--t-small); font-weight: 500;">Year of plenty — choose ${singleCardOnly ? "1 remaining bank card" : "2 free bank cards"}</strong>
           </div>
           <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
         </div>
@@ -260,7 +269,13 @@ export function renderDevCardSubModalPure(
               <button type="button" data-yop-pick2="${r}" class="ga-res-port-btn ${
                 model.yopRes2 === r ? "is-selected-want" : ""
               }" ${
-                state.bank[r] <= (model.yopRes1 === r ? 1 : 0) ? "disabled" : ""
+                singleCardOnly
+                  ? state.bank[r] <= 0
+                    ? "disabled"
+                    : ""
+                  : state.bank[r] <= (model.yopRes1 === r ? 1 : 0)
+                    ? "disabled"
+                    : ""
               }>
                 <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
               </button>
@@ -270,9 +285,9 @@ export function renderDevCardSubModalPure(
         <div class="ga-trade-preview">
           <div class="ga-trade-bundle">
             ${renderMiniResourceCardSvg(model.yopRes1, 42, 27)}
-            ${renderMiniResourceCardSvg(model.yopRes2, 42, 27)}
+            ${singleCardOnly ? "" : renderMiniResourceCardSvg(model.yopRes2, 42, 27)}
           </div>
-          <button type="button" id="btn-exec-yop" class="btn btn--primary btn--sm">Take 2 resources</button>
+          <button type="button" id="btn-exec-yop" class="btn btn--primary btn--sm" ${canExecYoP ? "" : "disabled"}>${singleCardOnly ? "Take 1 resource" : "Take 2 resources"}</button>
         </div>
       </div>`;
   }

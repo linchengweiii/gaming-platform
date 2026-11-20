@@ -31,21 +31,42 @@ import {
   resolveNoblesAndAdvanceTurn,
   resolvePostMainAction,
 } from "./turn-flow.ts";
+import { getSplendorLegalActions } from "./legal-actions.ts";
 
 export function applySplendorAction(
   currentState: SplendorState,
   playerId: string,
   action: SplendorAction
 ): { state: SplendorState; events: GameEvent[] } {
+  if (currentState.phase === "GAME_OVER") {
+    throw new Error("Game is already over");
+  }
   const player = currentState.players[currentState.activePlayerIndex]!;
   if (player.id !== playerId) {
     throw new Error("Not your turn");
+  }
+  if (!action || typeof action !== "object") {
+    throw new Error("Invalid Splendor action");
   }
 
   switch (action.type) {
     case "TAKE_GEMS": {
       if (currentState.phase !== "MAIN_ACTION") {
         throw new Error("Cannot take gems now");
+      }
+      if (!action.gems || typeof action.gems !== "object") {
+        throw new Error("Invalid gem selection");
+      }
+      for (const [key, rawVal] of Object.entries(action.gems)) {
+        if (!(GEM_COLORS as readonly string[]).includes(key)) {
+          throw new Error(`Invalid gem color: ${key}`);
+        }
+        if (
+          rawVal !== undefined &&
+          (typeof rawVal !== "number" || !Number.isInteger(rawVal) || rawVal < 0)
+        ) {
+          throw new Error(`Invalid gem quantity for ${key}`);
+        }
       }
       const entries = GEM_COLORS.map(
         (c) => [c, action.gems[c] ?? 0] as const
@@ -141,10 +162,15 @@ export function applySplendorAction(
         throw new Error("Cannot hold more than 3 reserved cards");
       }
 
+      if (action.cardId && action.deckTier) {
+        throw new Error("Cannot specify both cardId and deckTier when reserving");
+      }
+
       const drawSelection = (): {
         card: SplendorCard;
         market: Record<CardTier, SplendorCard[]>;
         decks: Record<CardTier, SplendorCard[]>;
+        fromDeck: boolean;
       } => {
         if (action.cardId) {
           const loc = findMarketCardLocation(
@@ -154,12 +180,15 @@ export function applySplendorAction(
           if (!loc) {
             throw new Error("Target card to reserve not found");
           }
-          return takeMarketCardAndRefill(
-            currentState.market,
-            currentState.decks,
-            loc.tier,
-            loc.index
-          );
+          return {
+            ...takeMarketCardAndRefill(
+              currentState.market,
+              currentState.decks,
+              loc.tier,
+              loc.index
+            ),
+            fromDeck: false,
+          };
         }
         if (action.deckTier) {
           const deck = currentState.decks[action.deckTier];
@@ -173,13 +202,14 @@ export function applySplendorAction(
               ...currentState.decks,
               [action.deckTier]: deck.slice(0, -1),
             },
+            fromDeck: true,
           };
         }
         throw new Error("Target card to reserve not found");
       };
 
-      const { card: rawReservedCard, market, decks } = drawSelection();
-      const fromDeck = Boolean(action.deckTier);
+      const { card: rawReservedCard, market, decks, fromDeck } =
+        drawSelection();
       const reservedCard: SplendorCard = fromDeck
         ? { ...rawReservedCard, reservedFromDeck: true }
         : rawReservedCard;
@@ -233,7 +263,7 @@ export function applySplendorAction(
           ? player.reservedCards[reservedIdx]!
           : null;
 
-      if (!targetCard) {
+      if (!targetCard || targetCard.redacted) {
         throw new Error(
           `Card ${action.cardId} not found in market or reserved hand`
         );
@@ -298,16 +328,38 @@ export function applySplendorAction(
       if (currentState.phase !== "RETURN_TOKENS") {
         throw new Error("Not in token return phase");
       }
-      const excess = totalTokens(player.tokens) - SPLENDOR_HAND_TOKEN_LIMIT;
-      const returnSum = totalTokens(action.tokens);
-      if (returnSum <= 0 || returnSum > excess) {
-        throw new Error(`Must return between 1 and ${excess} tokens`);
+      if (!action.tokens || typeof action.tokens !== "object") {
+        throw new Error("Invalid token return payload");
       }
+      for (const [key, rawVal] of Object.entries(action.tokens)) {
+        if (!(ALL_TOKEN_COLORS as readonly string[]).includes(key)) {
+          throw new Error(`Invalid token color: ${key}`);
+        }
+        if (
+          rawVal !== undefined &&
+          (typeof rawVal !== "number" || !Number.isInteger(rawVal) || rawVal < 0)
+        ) {
+          throw new Error(`Invalid return amount for ${key}`);
+        }
+      }
+      const excess = totalTokens(player.tokens) - SPLENDOR_HAND_TOKEN_LIMIT;
       for (const color of ALL_TOKEN_COLORS) {
         const amt = action.tokens[color] ?? 0;
-        if (amt < 0 || player.tokens[color] < amt) {
+        if (
+          !Number.isInteger(amt) ||
+          amt < 0 ||
+          player.tokens[color] < amt
+        ) {
           throw new Error(`Invalid return amount for ${color}`);
         }
+      }
+      const returnSum = totalTokens(action.tokens);
+      if (
+        !Number.isInteger(returnSum) ||
+        returnSum <= 0 ||
+        returnSum > excess
+      ) {
+        throw new Error(`Must return between 1 and ${excess} tokens`);
       }
 
       const updatedPlayer: SplendorPlayerState = {
@@ -370,6 +422,13 @@ export function applySplendorAction(
     }
 
     case "PASS_TURN": {
+      if (currentState.phase !== "MAIN_ACTION") {
+        throw new Error("Cannot pass turn in current phase");
+      }
+      const legal = getSplendorLegalActions(currentState, playerId);
+      if (!legal.every((a) => a.type === "PASS_TURN")) {
+        throw new Error("Cannot pass turn while legal actions are available");
+      }
       const logged = appendSplendorEvent(
         currentState,
         [],
@@ -379,5 +438,10 @@ export function applySplendorAction(
       );
       return resolveNoblesAndAdvanceTurn(logged.state, logged.events);
     }
+
+    default:
+      throw new Error(
+        `Unknown Splendor action type: ${String((action as { type?: unknown }).type)}`
+      );
   }
 }

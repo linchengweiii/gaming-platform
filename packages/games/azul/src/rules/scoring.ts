@@ -116,6 +116,18 @@ function tileSinglePlayerWallPure(
   const completedRows = ROW_INDICES.filter((r) =>
     rowTiled.wall[r]!.every((cell) => cell !== null)
   ).length;
+  const completedCols = COL_INDICES.filter((c) =>
+    ROW_INDICES.every((r) => rowTiled.wall[r]![c] !== null)
+  ).length;
+  const completedColorSets = AZUL_COLORS.filter(
+    (color) =>
+      ROW_INDICES.reduce<number>(
+        (sum, r) =>
+          sum +
+          COL_INDICES.filter((c) => rowTiled.wall[r]![c] === color).length,
+        0
+      ) === AZUL_WALL_SIZE
+  ).length;
 
   const nextScore = Math.max(
     0,
@@ -130,6 +142,8 @@ function tileSinglePlayerWallPure(
       patternLines: rowTiled.patternLines,
       floorLine: [],
       completedRows,
+      completedCols,
+      completedColorSets,
     },
     discardLid: [...rowTiled.discardLid, ...floorTilesToDiscard],
     roundPointsGained: rowTiled.roundPointsGained,

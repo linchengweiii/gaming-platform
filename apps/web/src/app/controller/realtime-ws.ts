@@ -3,7 +3,10 @@ import {
   WS_CLIENT_STALE_TIMEOUT_MS,
   computeWsReconnectDelayPure,
 } from "../../config/app-config.ts";
-import { removeRoomFromModelPure } from "../helpers/room-queries.ts";
+import {
+  removeRoomFromModelPure,
+  roomUsesServerPure,
+} from "../helpers/room-queries.ts";
 import { signOutGuestFromModelPure } from "../reducers/guest-profile-reducers.ts";
 import {
   syncOnlineLobbyRoomsPure,
@@ -221,6 +224,11 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
           msg.playerId === ctx.model.currentUserId &&
           ctx.model.isAuthenticated
         ) {
+          ctx.navEpoch += 1;
+          ctx.stopAutoPlay();
+          ctx.cancelPendingSetupSync();
+          ctx.pendingRestoreRoomId = null;
+          const prevActiveRoom = ctx.model.rooms[ctx.model.activeRoomId];
           const cleaned = signOutGuestFromModelPure(
             ctx.model,
             msg.playerId,
@@ -235,7 +243,26 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
               type: "IDENTIFY_PLAYER",
               playerId: cleaned.switchedToGuest.id,
             });
+            const nextActive = ctx.model.rooms[ctx.model.activeRoomId];
+            if (
+              nextActive &&
+              (ctx.model.viewMode === "room_setup" ||
+                ctx.model.viewMode === "in_game") &&
+              roomUsesServerPure(ctx.model, nextActive)
+            ) {
+              sendWsMessage({
+                type: "SUBSCRIBE_ROOM",
+                roomId: nextActive.roomId,
+                playerId: cleaned.switchedToGuest.id,
+              });
+            } else if (prevActiveRoom) {
+              sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+            }
           } else {
+            if (prevActiveRoom) {
+              sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
+            }
+            sendWsMessage({ type: "IDENTIFY_PLAYER", playerId: null });
             clearGuestSessionFromStorage();
             clearActiveRoomIdFromStorage();
             if (ctx.model.deviceGuests.length === 0) {

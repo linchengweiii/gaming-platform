@@ -31,10 +31,10 @@ export function getWheelIntelForPlayer(
       returningCardNames: {},
     };
   }
-  const builtNames: Record<string, number> = {};
+  const builtIds = new Set<string>();
   for (const p of fairView.players) {
     for (const c of p.tableau) {
-      builtNames[c.name] = (builtNames[c.name] ?? 0) + 1;
+      builtIds.add(c.id);
     }
   }
   const myHandIds: Record<string, true> = {};
@@ -50,14 +50,14 @@ export function getWheelIntelForPlayer(
     for (const c of h) {
       if (myHandIds[c.id]) continue;
       seenCards[c.id] = c;
-      if (willReturn && (builtNames[c.name] ?? 0) === 0) {
+      if (willReturn && !builtIds.has(c.id)) {
         returning[c.name] = true;
       }
     }
   });
 
   const shieldCards = Object.values(seenCards).filter(
-    (c) => c.color === "red" && (builtNames[c.name] ?? 0) === 0
+    (c) => c.color === "red" && !builtIds.has(c.id)
   ).length;
   return { circulatingShieldCards: shieldCards, returningCardNames: returning };
 }
@@ -66,7 +66,8 @@ export function evaluateMasterScienceBonus(
   fairView: SevenWondersState,
   pIdx: number,
   beforeScore: ReturnType<typeof computeSevenWondersScoreBreakdown>,
-  afterScore: ReturnType<typeof computeSevenWondersScoreBreakdown>
+  afterScore: ReturnType<typeof computeSevenWondersScoreBreakdown>,
+  candidateCard?: SevenWondersCard
 ): number {
   const sciCfg = SEVEN_WONDERS_MASTER_BOT_WEIGHTS.science;
   const me = fairView.players[pIdx]!;
@@ -123,13 +124,20 @@ export function evaluateMasterScienceBonus(
         if (ef.kind === "wildcard_science") wilds += 1;
       }
     }
-    const afterCounts: ScienceMap = {
-      compass: baseCounts.compass + Math.max(0, a.compass - b.compass),
-      gear: baseCounts.gear + Math.max(0, a.gear - b.gear),
-      tablet: baseCounts.tablet + Math.max(0, a.tablet - b.tablet),
-    };
+    const afterCounts: ScienceMap = { ...baseCounts };
+    let afterWilds = wilds;
+    if (candidateCard) {
+      for (const ef of candidateCard.effects) {
+        if (ef.kind === "science") afterCounts[ef.symbol] += 1;
+        if (ef.kind === "wildcard_science") afterWilds += 1;
+      }
+    } else {
+      afterCounts.compass += Math.max(0, a.compass - b.compass);
+      afterCounts.gear += Math.max(0, a.gear - b.gear);
+      afterCounts.tablet += Math.max(0, a.tablet - b.tablet);
+    }
     const futureDelta =
-      computeOptimalScienceScorePure(afterCounts, wilds).points -
+      computeOptimalScienceScorePure(afterCounts, afterWilds).points -
       computeOptimalScienceScorePure(baseCounts, wilds).points;
     const currentDelta = afterScore.scientificVp - beforeScore.scientificVp;
     if (futureDelta > currentDelta) {

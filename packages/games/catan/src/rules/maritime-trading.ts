@@ -37,6 +37,9 @@ export function applyMaritimeTradePure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Can only trade during your main phase");
   }
+  if (currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
   const goodRatios = getPlayerGoodTradeRatios(currentState, playerId);
 
   const { giveBundle, receiveBundle } = (() => {

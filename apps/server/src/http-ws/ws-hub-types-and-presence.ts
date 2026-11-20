@@ -30,7 +30,8 @@ export interface RealtimeHub {
   broadcastRoomState(roomId: string): void;
   clearRoomBotTimer(roomId: string): void;
   scheduleRoomBotTurn(roomId: string): void;
-  handleUpgrade(req: http.IncomingMessage, socket: Duplex): void;
+  getConnectedPlayerIds(): ReadonlySet<string>;
+  handleUpgrade(req: http.IncomingMessage, socket: Duplex, head?: Buffer): void;
   shutdown(): void;
 }
 
@@ -157,6 +158,7 @@ export function createPresenceTracker(roomManager: PlatformRoomManager) {
   return {
     seenConnectedPlayersByRoom,
     roomAllDisconnectedSince,
+    getConnectedPlayerIds,
     recordPlayerRoomPresence,
     refreshRoomDisconnectClock,
     enrichSummaryWithPresence,

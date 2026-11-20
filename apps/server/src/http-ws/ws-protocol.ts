@@ -57,25 +57,13 @@ export function decodeWsFramesStreamPure(
   readonly remainder: Buffer;
   readonly pendingFragments: readonly Buffer[];
 } {
-  const sumBytes = (parts: readonly Buffer[]): number =>
-    parts.reduce((sum, b) => sum + b.length, 0);
+  const MAX_PENDING_FRAGMENTS = 128;
+  const frames: DecodedWsFrame[] = [];
+  let fragments: Buffer[] = [...pendingFragments];
+  let fragmentsByteLen = fragments.reduce((sum, b) => sum + b.length, 0);
+  let cursor = 0;
 
-  const parseFrom = (
-    cursor: number,
-    acc: readonly DecodedWsFrame[],
-    fragments: readonly Buffer[]
-  ): {
-    readonly frames: readonly DecodedWsFrame[];
-    readonly remainder: Buffer;
-    readonly pendingFragments: readonly Buffer[];
-  } => {
-    if (cursor + 2 > buffer.length) {
-      return {
-        frames: acc,
-        remainder: buffer.subarray(cursor),
-        pendingFragments: fragments,
-      };
-    }
+  while (cursor + 2 <= buffer.length) {
     const firstByte = buffer[cursor]!;
     const secondByte = buffer[cursor + 1]!;
     const isFin = Boolean(firstByte & 0x80);
@@ -87,82 +75,60 @@ export function decodeWsFramesStreamPure(
       throw new Error("Invalid WebSocket control frame");
     }
 
-    const lengthInfo = (() => {
-      if (rawLen === 126) {
-        if (cursor + 4 > buffer.length) return null;
-        return {
-          payloadLen: buffer.readUInt16BE(cursor + 2),
-          offset: cursor + 4,
-        };
+    let payloadLen: number;
+    let offset: number;
+    if (rawLen === 126) {
+      if (cursor + 4 > buffer.length) break;
+      payloadLen = buffer.readUInt16BE(cursor + 2);
+      offset = cursor + 4;
+    } else if (rawLen === 127) {
+      if (cursor + 10 > buffer.length) break;
+      const bigLen = buffer.readBigUInt64BE(cursor + 2);
+      if (bigLen > BigInt(maxPayloadBytes)) {
+        throw new Error("WebSocket frame exceeds maximum payload size");
       }
-      if (rawLen === 127) {
-        if (cursor + 10 > buffer.length) return null;
-        const bigLen = buffer.readBigUInt64BE(cursor + 2);
-        if (bigLen > BigInt(maxPayloadBytes)) {
-          throw new Error("WebSocket frame exceeds maximum payload size");
-        }
-        return {
-          payloadLen: Number(bigLen),
-          offset: cursor + 10,
-        };
-      }
-      return { payloadLen: rawLen, offset: cursor + 2 };
-    })();
-
-    if (!lengthInfo) {
-      return {
-        frames: acc,
-        remainder: buffer.subarray(cursor),
-        pendingFragments: fragments,
-      };
+      payloadLen = Number(bigLen);
+      offset = cursor + 10;
+    } else {
+      payloadLen = rawLen;
+      offset = cursor + 2;
     }
 
-    if (lengthInfo.payloadLen > maxPayloadBytes) {
+    if (payloadLen > maxPayloadBytes) {
       throw new Error("WebSocket frame exceeds maximum payload size");
     }
 
-    const totalNeeded =
-      lengthInfo.offset + (isMasked ? 4 : 0) + lengthInfo.payloadLen;
+    const totalNeeded = offset + (isMasked ? 4 : 0) + payloadLen;
     if (totalNeeded > buffer.length) {
-      return {
-        frames: acc,
-        remainder: buffer.subarray(cursor),
-        pendingFragments: fragments,
-      };
+      break;
     }
 
     const extractPayload = (): Buffer => {
       if (!isMasked) {
-        return Buffer.from(
-          buffer.subarray(
-            lengthInfo.offset,
-            lengthInfo.offset + lengthInfo.payloadLen
-          )
-        );
+        return Buffer.from(buffer.subarray(offset, offset + payloadLen));
       }
-      const mask = buffer.subarray(lengthInfo.offset, lengthInfo.offset + 4);
-      const dataStart = lengthInfo.offset + 4;
+      const mask = buffer.subarray(offset, offset + 4);
+      const dataStart = offset + 4;
       const unmasked = Uint8Array.from(
-        { length: lengthInfo.payloadLen },
+        { length: payloadLen },
         (_, i) => buffer[dataStart + i]! ^ mask[i % 4]!
       );
       return Buffer.from(unmasked);
     };
 
     if (opcode === 0x08) {
+      frames.push({ opcode: 0x08 });
       return {
-        frames: [...acc, { opcode: 0x08 }],
+        frames,
         remainder: Buffer.alloc(0),
         pendingFragments: [],
       };
     }
 
     if (opcode === 0x09 || opcode === 0x0a) {
-      return parseFrom(
-        totalNeeded,
-        [...acc, { opcode, payload: extractPayload() }],
-        fragments
-      );
+      frames.push({ opcode, payload: extractPayload() });
+      cursor = totalNeeded;
+      continue;
     }
 
     if (opcode === 0x01 || opcode === 0x02) {
@@ -171,39 +137,49 @@ export function decodeWsFramesStreamPure(
       }
       const payload = extractPayload();
       if (isFin) {
-        return parseFrom(
-          totalNeeded,
-          [...acc, { opcode: 0x01, text: payload.toString("utf8") }],
-          []
-        );
+        frames.push({ opcode: 0x01, text: payload.toString("utf8") });
+        fragments = [];
+        fragmentsByteLen = 0;
+      } else {
+        fragments = [payload];
+        fragmentsByteLen = payload.length;
       }
-      return parseFrom(totalNeeded, acc, [payload]);
+      cursor = totalNeeded;
+      continue;
     }
 
     if (opcode === 0x00) {
       if (fragments.length === 0) {
         throw new Error("Unexpected WebSocket continuation frame");
       }
+      if (fragments.length >= MAX_PENDING_FRAGMENTS) {
+        throw new Error("Fragmented WebSocket message exceeds maximum frames");
+      }
       const payload = extractPayload();
-      const nextFragments = [...fragments, payload];
-      if (sumBytes(nextFragments) > maxPayloadBytes) {
+      fragmentsByteLen += payload.length;
+      if (fragmentsByteLen > maxPayloadBytes) {
         throw new Error("Fragmented WebSocket message exceeds maximum size");
       }
+      fragments.push(payload);
       if (isFin) {
-        const merged = Buffer.concat(nextFragments);
-        return parseFrom(
-          totalNeeded,
-          [...acc, { opcode: 0x01, text: merged.toString("utf8") }],
-          []
-        );
+        const merged = Buffer.concat(fragments);
+        frames.push({ opcode: 0x01, text: merged.toString("utf8") });
+        fragments = [];
+        fragmentsByteLen = 0;
       }
-      return parseFrom(totalNeeded, acc, nextFragments);
+      cursor = totalNeeded;
+      continue;
     }
 
-    return parseFrom(totalNeeded, [...acc, { opcode }], fragments);
-  };
+    frames.push({ opcode });
+    cursor = totalNeeded;
+  }
 
-  return parseFrom(0, [], pendingFragments);
+  return {
+    frames,
+    remainder: buffer.subarray(cursor),
+    pendingFragments: fragments,
+  };
 }
 
 export function decodeWsFramesPure(buffer: Buffer): readonly DecodedWsFrame[] {

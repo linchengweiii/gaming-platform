@@ -258,7 +258,12 @@ export function applyCatanAction(
         action
       );
     case "DECLINE_DOMESTIC_TRADE":
-      return applyDeclineDomesticTradePure(currentState, player, playerId);
+      return applyDeclineDomesticTradePure(
+        currentState,
+        player,
+        playerId,
+        action
+      );
     case "CONFIRM_DOMESTIC_TRADE":
       return applyConfirmDomesticTradePure(
         currentState,

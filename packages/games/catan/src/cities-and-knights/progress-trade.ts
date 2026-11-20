@@ -148,17 +148,24 @@ export function applyTradeProgressCardPure(
       }
       const nextState: CatanState = {
         ...stateAfterConsume,
-        players: stateAfterConsume.players.map((p) =>
-          p.id === playerId
-            ? {
-                ...p,
-                activeTurnDiscounts: {
-                  ...p.activeTurnDiscounts,
-                  merchantFleetGood: good,
-                },
-              }
-            : p
-        ),
+        players: stateAfterConsume.players.map((p) => {
+          if (p.id !== playerId) return p;
+          const prevGoods = [
+            ...(p.activeTurnDiscounts.merchantFleetGoods ?? []),
+            ...(p.activeTurnDiscounts.merchantFleetGood
+              ? [p.activeTurnDiscounts.merchantFleetGood]
+              : []),
+          ];
+          const nextGoods = Array.from(new Set([...prevGoods, good]));
+          return {
+            ...p,
+            activeTurnDiscounts: {
+              ...p.activeTurnDiscounts,
+              merchantFleetGood: good,
+              merchantFleetGoods: nextGoods,
+            },
+          };
+        }),
       };
       return pushCkEvent(
         nextState,

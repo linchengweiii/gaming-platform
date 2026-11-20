@@ -13,6 +13,7 @@ import {
   getPlayerShields,
   getRightNeighborIndex,
   getWonderBoardDefinition,
+  hasDuplicateCardName,
 } from "@gaming-platform/seven-wonders";
 import {
   SW_CARD_COLOR_META,
@@ -33,6 +34,9 @@ export function computeImmediateCardPreviewHtml(
 ): string {
   const players = state.players;
   const player = players[playerIndex]!;
+  if (hasDuplicateCardName(player, card.name)) {
+    return "";
+  }
   const left = players[getLeftNeighborIndex(playerIndex, players.length)]!;
   const right = players[getRightNeighborIndex(playerIndex, players.length)]!;
 

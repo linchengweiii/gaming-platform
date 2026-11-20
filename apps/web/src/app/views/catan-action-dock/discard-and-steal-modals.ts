@@ -33,7 +33,7 @@ export function renderCatanSetupAndPhaseDockPure(
   if (state.phase === "GAME_OVER" || !actingPlayer) {
     const winner = state.players.find((p) => p.id === state.winnerId);
     return `<div class="action-buttons" style="justify-content: space-between;">
-        <span class="action-prompt"><strong>Match complete.</strong> ${winner?.name ?? "Player"} wins Catan with ${
+        <span class="action-prompt"><strong>Match complete.</strong> ${escapeAttr(winner?.name ?? "Player")} wins Catan with ${
           winner ? computePlayerVictoryPoints(state, winner.id, false) : 0
         } victory points.</span>
         <button type="button" id="btn-goto-setup-finished" class="btn btn--primary btn--sm">Configure next game${DRAWN_ARROW_SVG}</button>
@@ -52,12 +52,12 @@ export function renderCatanSetupAndPhaseDockPure(
     ) {
       return `<div class="action-buttons">
         ${renderActionPieceIconSvg("city", pColor, 22)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click any pulsing intersection on the map to place a starting city.</span>
+        <span class="action-prompt"><strong>${escapeAttr(actingPlayer.name)}:</strong> Click any pulsing intersection on the map to place a starting city.</span>
       </div>`;
     }
     return `<div class="action-buttons">
         ${renderActionPieceIconSvg("settlement", pColor, 22)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click any pulsing intersection on the map to place a starting settlement.</span>
+        <span class="action-prompt"><strong>${escapeAttr(actingPlayer.name)}:</strong> Click any pulsing intersection on the map to place a starting settlement.</span>
       </div>`;
   }
 
@@ -72,7 +72,7 @@ export function renderCatanSetupAndPhaseDockPure(
         : "settlement";
     return `<div class="action-buttons">
         ${renderActionPieceIconSvg(model.setupEdgeKind, pColor, 22)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click a pulsing edge next to your ${anchorKind} to place a starting ${model.setupEdgeKind}.</span>
+        <span class="action-prompt"><strong>${escapeAttr(actingPlayer.name)}:</strong> Click a pulsing edge next to your ${anchorKind} to place a starting ${model.setupEdgeKind}.</span>
         ${
           canShip
             ? `<button type="button" id="btn-toggle-setup-edge" class="btn btn--secondary btn--sm is-selected action-btn-graphic">
@@ -203,7 +203,7 @@ export function renderCatanSetupAndPhaseDockPure(
   if (state.phase === "MOVE_ROBBER_OR_PIRATE") {
     return `<div class="action-buttons">
         ${renderActionPieceIconSvg(model.robberOrPirateMode, pColor, 22)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Click any pulsing hex on the map to move the ${
+        <span class="action-prompt"><strong>${escapeAttr(actingPlayer.name)}:</strong> Click any pulsing hex on the map to move the ${
           model.robberOrPirateMode === "pirate" ? "pirate ship" : "robber"
         }.</span>
         ${
@@ -224,7 +224,7 @@ export function renderCatanSetupAndPhaseDockPure(
   if (state.phase === "STEAL_RESOURCE") {
     return `<div class="action-buttons">
         ${renderActionPieceIconSvg("robber", pColor, 20)}
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Choose an adjacent player on the map popup above to draw 1 card.</span>
+        <span class="action-prompt"><strong>${escapeAttr(actingPlayer.name)}:</strong> Choose an adjacent player on the map popup above to draw 1 card.</span>
       </div>`;
   }
 
@@ -301,12 +301,12 @@ export function renderCatanSetupAndPhaseDockPure(
             </div>
           </div>
           <div class="action-buttons">
-            <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Set your Alchemist dice below or close to roll normally.</span>
+            <span class="action-prompt"><strong>${escapeAttr(actingPlayer.name)}:</strong> Set your Alchemist dice below or close to roll normally.</span>
           </div>`;
       }
     }
     return `<div class="action-buttons">
-        <span class="action-prompt"><strong>${actingPlayer.name}:</strong> Roll the dice directly on the map above to start your turn (or click any map hex to inspect).</span>
+        <span class="action-prompt"><strong>${escapeAttr(actingPlayer.name)}:</strong> Roll the dice directly on the map above to start your turn (or click any map hex to inspect).</span>
       </div>`;
   }
 

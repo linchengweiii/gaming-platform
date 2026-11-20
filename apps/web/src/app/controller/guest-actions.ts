@@ -152,12 +152,14 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
       name: found.name,
       mode: "guest",
     };
-    ctx.model = {
+    ctx.model = resetSubModesPure({
       ...ctx.model,
       currentUserId: found.id,
       currentUserName: found.name,
+      editingGuestName: false,
+      guestRenameDraft: "",
       deviceGuests: upsertDeviceGuestListPure(ctx.model.deviceGuests, session),
-    };
+    });
     saveGuestSessionToStorage(session);
     saveDeviceGuestsToStorage(ctx.model.deviceGuests);
 

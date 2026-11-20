@@ -11,6 +11,7 @@ import {
   RESOURCE_META,
   renderActionPieceIconSvg,
 } from "../../catan-graphics.ts";
+import { escapeHtml } from "../helpers/html-and-dropdown.ts";
 import type { AppModel } from "../types.ts";
 import {
   renderCostPipStripPure,
@@ -239,7 +240,7 @@ export function computeVertexSpotPopoverDetailsPure(
     }
     if (existing) {
       const owner = state.players.find((p) => p.id === existing.ownerId);
-      return `<div class="t-label muted">${owner?.name ?? "Player"} ${existing.type}${existing.hasWall ? " · walled" : ""}</div>`;
+      return `<div class="t-label muted">${escapeHtml(owner?.name ?? "Player")} ${existing.type}${existing.hasWall ? " · walled" : ""}</div>`;
     }
     const adjOccupied = vNode.adjacentVertexIds.some((nbV) =>
       Boolean(state.buildings[nbV])

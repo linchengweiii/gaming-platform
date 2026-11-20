@@ -27,6 +27,9 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
     ? BANK_LIMITS.expandedPerCommodity
     : BANK_LIMITS.standardPerCommodity;
   const hasRedactedHands = state.players.some((p) => p.handRedacted);
+  const hasRedactedProgressCards = state.players.some(
+    (p) => typeof p.hiddenProgressCardCount === "number"
+  );
 
   // 1. Non-negative bank & player resources/commodities + total conservation
   const resourceViolations: string[] = hasRedactedHands
@@ -251,7 +254,7 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
           }
           return [];
         }),
-        ...(!hasRedactedHands
+        ...(!hasRedactedHands && !hasRedactedProgressCards
           ? IMPROVEMENT_DISCIPLINES.flatMap((d) => {
               const inDeck = state.progressDecks[d].length;
               const inHands = state.players.reduce<number>(

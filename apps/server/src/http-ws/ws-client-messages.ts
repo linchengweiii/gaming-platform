@@ -102,6 +102,12 @@ export function handleClientJsonMessage(
         if (seen.has(prevPlayerId)) affectedRooms.add(rid);
       });
     }
+    if (nextPlayerId && nextPlayerId !== prevPlayerId) {
+      const targetNextId = nextPlayerId;
+      deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
+        if (seen.has(targetNextId)) affectedRooms.add(rid);
+      });
+    }
     affectedRooms.forEach((rid) => {
       deps.refreshRoomDisconnectClock(rid);
       deps.broadcastRoomState(rid);
@@ -109,7 +115,9 @@ export function handleClientJsonMessage(
 
     if (nextRoomId && nextPlayerId) {
       deps.presence.recordPlayerRoomPresence(nextRoomId, nextPlayerId);
-      deps.broadcastRoomState(nextRoomId);
+      if (!affectedRooms.has(nextRoomId)) {
+        deps.broadcastRoomState(nextRoomId);
+      }
     }
     if (prevPlayerId !== nextPlayerId) {
       deps.broadcastLobbyRooms();
@@ -121,6 +129,8 @@ export function handleClientJsonMessage(
   }
 
   if (msg.type === "SUBSCRIBE_ROOM") {
+    const prevRoomId = curClient.roomId;
+    const prevPlayerId = curClient.playerId;
     const claimedPlayerId =
       typeof msg.playerId === "string" && msg.playerId.trim()
         ? msg.playerId.trim()
@@ -148,6 +158,29 @@ export function handleClientJsonMessage(
       return;
     }
 
+    const syncPreviousPresence = (newRoomId: string | null): void => {
+      const affected = new Set<string>();
+      if (prevRoomId && prevRoomId !== newRoomId) affected.add(prevRoomId);
+      if (prevPlayerId && prevPlayerId !== nextPlayerId) {
+        if (prevRoomId) affected.add(prevRoomId);
+        deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
+          if (seen.has(prevPlayerId)) affected.add(rid);
+        });
+      }
+      if (nextPlayerId && nextPlayerId !== prevPlayerId) {
+        const targetNextId = nextPlayerId;
+        deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
+          if (seen.has(targetNextId)) affected.add(rid);
+        });
+      }
+      affected.forEach((rid) => {
+        if (rid !== newRoomId) {
+          deps.refreshRoomDisconnectClock(rid);
+          deps.broadcastRoomState(rid);
+        }
+      });
+    };
+
     const requestedRoomId =
       typeof msg.roomId === "string" ? msg.roomId.trim() : "";
     if (!requestedRoomId) {
@@ -156,6 +189,10 @@ export function handleClientJsonMessage(
         roomId: null,
         playerId: nextPlayerId,
       });
+      syncPreviousPresence(null);
+      if (prevRoomId || prevPlayerId !== nextPlayerId) {
+        deps.broadcastLobbyRooms();
+      }
       return;
     }
     let targetRoom: RoomInstance | null = null;
@@ -170,6 +207,10 @@ export function handleClientJsonMessage(
         roomId: null,
         playerId: nextPlayerId,
       });
+      syncPreviousPresence(null);
+      if (prevRoomId || prevPlayerId !== nextPlayerId) {
+        deps.broadcastLobbyRooms();
+      }
       sendWsFrameSafe(curClient.socket, {
         type: "ROOM_CLOSED",
         roomId: requestedRoomId,
@@ -182,6 +223,7 @@ export function handleClientJsonMessage(
       roomId: canonicalId,
       playerId: nextPlayerId,
     });
+    syncPreviousPresence(canonicalId);
     deps.presence.recordPlayerRoomPresence(canonicalId, nextPlayerId);
     deps.broadcastRoomState(canonicalId);
     deps.broadcastLobbyRooms();
@@ -230,7 +272,7 @@ export function handleClientJsonMessage(
       throw new Error("Authentication required to step bots");
     }
     const room = deps.roomManager.getRoom(curClient.roomId);
-    if (!room.allBots && !isViewerSeatedOrOwnerPure(room, curClient.playerId)) {
+    if (!isViewerSeatedOrOwnerPure(room, curClient.playerId)) {
       throw new Error("Only seated players or room host can step bots");
     }
     const prevStatus = room.status;

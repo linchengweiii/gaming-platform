@@ -163,7 +163,9 @@ export function handleCatanVertexSpotClick(
         state,
         actingPlayerId,
         getLegalRobberHexes(state, actingPlayerId),
-        state.config.enableSeafarers ? getLegalPirateHexes(state) : []
+        state.config.enableSeafarers
+          ? getLegalPirateHexes(state, actingPlayerId)
+          : []
       );
       if (chases.some((c) => c.vertexId === vertexId)) {
         ctx.model = {
@@ -381,12 +383,26 @@ export function handleCatanEdgeSpotClick(
       card?.type === "diplomat" &&
       getDiplomatRemovableRoadEdges(state).includes(edgeId)
     ) {
-      const ownRebuilds = getLegalRoadEdges(
-        state,
-        actingPlayerId,
-        null
-      ).filter((rId) => rId !== edgeId);
       const isOwn = state.edges[edgeId]?.ownerId === actingPlayerId;
+      const ownRebuilds = isOwn
+        ? (() => {
+            const withoutEdge = Object.fromEntries(
+              Object.entries(state.edges).filter(([k]) => k !== edgeId)
+            );
+            const afterRemove: CatanState = {
+              ...state,
+              edges: withoutEdge,
+              players: state.players.map((p) =>
+                p.id === actingPlayerId
+                  ? { ...p, roadsRemaining: p.roadsRemaining + 1 }
+                  : p
+              ),
+            };
+            return getLegalRoadEdges(afterRemove, actingPlayerId, null).filter(
+              (rId) => rId !== edgeId
+            );
+          })()
+        : [];
       ctx.dispatch(actingPlayerId, {
         type: "PLAY_PROGRESS_CARD",
         cardId: card.id,

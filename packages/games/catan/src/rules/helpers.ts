@@ -237,6 +237,9 @@ export function assertCanBuildInCurrentPhase(
     if (active.id !== playerId) {
       throw new Error("Not your turn");
     }
+    if (state.activeTradeOffer) {
+      throw new Error("Resolve the active domestic trade offer first");
+    }
     return;
   }
   if (state.phase === "SPECIAL_BUILDING") {

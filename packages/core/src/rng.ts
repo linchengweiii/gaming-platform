@@ -174,6 +174,8 @@ export const SeededRNG: SeededRNGConstructor = Object.assign(
   {
     hashString: hashSeedString,
     fromState: (state: number): SeededRNG =>
-      createSeededRngFromState(normalizeRngState(state)),
+      createSeededRngFromState(
+        Number.isFinite(state) ? state >>> 0 : FALLBACK_RNG_STATE
+      ),
   }
 );

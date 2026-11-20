@@ -57,9 +57,30 @@ export function getCatanPlayerViewPure(
   if (state.phase === "GAME_OVER") {
     return state;
   }
+  const redactedPendingCk = (() => {
+    const p = state.pendingCkInteraction;
+    if (!p) return null;
+    if (p.kind === "commercial_harbor_offer" && p.actorId !== viewerPlayerId) {
+      return { ...p, eligibleTargetIds: [] };
+    }
+    if (
+      p.kind === "commercial_harbor_respond" &&
+      p.actorId !== viewerPlayerId &&
+      p.initiatorId !== viewerPlayerId
+    ) {
+      return {
+        ...p,
+        offeredResource: "brick" as const,
+        offeredResourceRedacted: true,
+      };
+    }
+    return p;
+  })();
+
   return {
     ...state,
     rngState: 0,
+    pendingCkInteraction: redactedPendingCk,
     devCardDeck: state.devCardDeck.map(() => "knight"),
     progressDecks: {
       trade: state.progressDecks.trade.map(() => "merchant"),
@@ -77,6 +98,34 @@ export function getCatanPlayerViewPure(
       if (evt.type === "CARDS_DISCARDED" && evt.playerId !== viewerPlayerId) {
         const { payload: _hidden, ...rest } = evt;
         return rest;
+      }
+      if (evt.type === "COMMERCIAL_HARBOR_OFFERED") {
+        const targetId = (evt.payload as { targetPlayerId?: string } | undefined)
+          ?.targetPlayerId;
+        if (evt.playerId !== viewerPlayerId && targetId !== viewerPlayerId) {
+          const actorName =
+            state.players.find((p) => p.id === evt.playerId)?.name ?? "A player";
+          const targetName =
+            state.players.find((p) => p.id === targetId)?.name ?? "an opponent";
+          const { payload: _hidden, ...rest } = evt;
+          return {
+            ...rest,
+            message: `${actorName} offered 1 resource to ${targetName} via Commercial Harbor.`,
+          };
+        }
+      }
+      if (evt.type === "COMMERCIAL_HARBOR_SWAPPED") {
+        const initId = (evt.payload as { initiatorId?: string } | undefined)
+          ?.initiatorId;
+        if (evt.playerId !== viewerPlayerId && initId !== viewerPlayerId) {
+          const actorName =
+            state.players.find((p) => p.id === evt.playerId)?.name ?? "A player";
+          const { payload: _hidden, ...rest } = evt;
+          return {
+            ...rest,
+            message: `${actorName} completed a Commercial Harbor swap.`,
+          };
+        }
       }
       return evt;
     }),

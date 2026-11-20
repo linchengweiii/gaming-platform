@@ -2,6 +2,7 @@ import type { GameEvent } from "@gaming-platform/core";
 import { BUILDING_COSTS } from "../config/costs-and-limits.ts";
 import type { CatanAction } from "../types/actions.ts";
 import type { DevCardInstance, ResourceMap } from "../types/domain.ts";
+import { isResourceType } from "../cities-and-knights/helpers.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import {
   checkAndAssignWinnerPure,
@@ -15,6 +16,7 @@ import {
   hasResources,
   markFirstPlayableDevCardUsed,
   subtractResourcesPure,
+  totalResourceCount,
   updatePlayerById,
 } from "./helpers.ts";
 import { getLegalRoadEdges, getLegalShipEdges } from "./network.ts";
@@ -76,6 +78,9 @@ export function applyPlayKnightPure(
   ) {
     throw new Error("Cannot play Knight right now");
   }
+  if (currentState.phase === "MAIN_PHASE" && currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
   if (!canPlayDevCard(currentState, player, "knight")) {
     throw new Error("No playable Knight card");
   }
@@ -124,6 +129,9 @@ export function applyPlayRoadBuildingPure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Cannot play Road Building right now");
   }
+  if (currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
   if (!canPlayDevCard(currentState, player, "road_building")) {
     throw new Error("No playable Road Building card");
   }
@@ -134,6 +142,11 @@ export function applyPlayRoadBuildingPure(
     getLegalShipEdges(currentState, playerId, null).length;
   const freeRoadsRemaining =
     availableSpots > 0 ? Math.min(2, availablePieces) : 0;
+  if (freeRoadsRemaining <= 0) {
+    throw new Error(
+      "No legal road or ship placements available for Road Building"
+    );
+  }
 
   const playedState: CatanState = {
     ...currentState,
@@ -170,11 +183,28 @@ export function applyPlayYearOfPlentyPure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Cannot play Year of Plenty right now");
   }
+  if (currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
   if (!canPlayDevCard(currentState, player, "year_of_plenty")) {
     throw new Error("No playable Year of Plenty card");
   }
+  if (
+    !isResourceType(action.resource1) ||
+    !isResourceType(action.resource2)
+  ) {
+    throw new Error("Invalid resource selected for Year of Plenty");
+  }
+  const totalBankResources = totalResourceCount(currentState.bank);
+  if (totalBankResources <= 0) {
+    throw new Error("Bank has no resources remaining");
+  }
+  const singleBankCardOnly =
+    action.resource1 === action.resource2 &&
+    totalBankResources === 1 &&
+    currentState.bank[action.resource1] === 1;
   if (action.resource1 === action.resource2) {
-    if (currentState.bank[action.resource1] < 2) {
+    if (!singleBankCardOnly && currentState.bank[action.resource1] < 2) {
       throw new Error(`Bank does not have 2 ${action.resource1}`);
     }
   } else {
@@ -188,7 +218,7 @@ export function applyPlayYearOfPlentyPure(
 
   const delta: Partial<ResourceMap> =
     action.resource1 === action.resource2
-      ? { [action.resource1]: 2 }
+      ? { [action.resource1]: singleBankCardOnly ? 1 : 2 }
       : { [action.resource1]: 1, [action.resource2]: 1 };
 
   const playedState: CatanState = {
@@ -227,8 +257,14 @@ export function applyPlayMonopolyPure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Cannot play Monopoly right now");
   }
+  if (currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
   if (!canPlayDevCard(currentState, player, "monopoly")) {
     throw new Error("No playable Monopoly card");
+  }
+  if (!isResourceType(action.resource)) {
+    throw new Error("Invalid resource selected for Monopoly");
   }
 
   const totalClaimed = currentState.players.reduce<number>(

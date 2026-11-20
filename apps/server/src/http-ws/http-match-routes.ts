@@ -138,30 +138,28 @@ export async function handleRoomMatchSubRoute(
     const currentActingId = rawState
       ? getRoomActingPlayerId(room.gameId, rawState)
       : null;
-    if (!room.allBots) {
-      if (body.onlyBots === false) {
-        const canControlHuman =
-          room.ownerId === authPlayerId ||
-          Boolean(
-            currentActingId &&
-              roomManager.canViewerControlActor(
-                room,
-                authPlayerId,
-                currentActingId
-              )
-          );
-        if (!canControlHuman) {
-          throw createHttpError(
-            403,
-            "Only the room host or active seat controller can step a human turn"
-          );
-        }
-      } else if (!isViewerSeatedOrOwnerPure(room, authPlayerId)) {
+    if (body.onlyBots === false) {
+      const canControlHuman =
+        room.ownerId === authPlayerId ||
+        Boolean(
+          currentActingId &&
+            roomManager.canViewerControlActor(
+              room,
+              authPlayerId,
+              currentActingId
+            )
+        );
+      if (!canControlHuman) {
         throw createHttpError(
           403,
-          "Only seated players or room host can step bots"
+          "Only the room host or active seat controller can step a human turn"
         );
       }
+    } else if (!isViewerSeatedOrOwnerPure(room, authPlayerId)) {
+      throw createHttpError(
+        403,
+        "Only seated players or room host can step bots"
+      );
     }
     const prevStatus = room.status;
     const result = roomManager.stepBot(roomId, {
@@ -179,7 +177,8 @@ export async function handleRoomMatchSubRoute(
     }
     hub.scheduleRoomBotTurn(roomId);
     sendJson(res, 200, {
-      ...result,
+      actedPlayerId: result.actedPlayerId,
+      action: result.action ? { type: result.action.type } : null,
       state: view,
       room: hub.enrichSummaryWithPresence(
         roomManager.toRoomSummary(room, authPlayerId)
@@ -194,10 +193,7 @@ export async function handleRoomMatchSubRoute(
     const body = await readJsonBody(req);
     assertRequesterMatchesAuth(body.requesterId, authPlayerId);
     const currentRoom = roomManager.getRoom(roomId);
-    if (
-      !currentRoom.allBots &&
-      !isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)
-    ) {
+    if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
       throw createHttpError(403, "Only seated players can toggle auto-bots");
     }
     const room = roomManager.setRoomAutoStepBots(roomId, Boolean(body.enabled));
@@ -221,17 +217,12 @@ export async function handleRoomMatchSubRoute(
     assertRequesterMatchesAuth(body.requesterId, authPlayerId);
     const currentRoom = roomManager.getRoom(roomId);
     if (
-      !currentRoom.allBots &&
       currentRoom.ownerId !== authPlayerId &&
       !isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)
     ) {
       throw createHttpError(403, "Only seated players can auto-place setup");
     }
-    if (
-      !currentRoom.allBots &&
-      currentRoom.ownerId &&
-      currentRoom.ownerId !== authPlayerId
-    ) {
+    if (currentRoom.ownerId && currentRoom.ownerId !== authPlayerId) {
       throw createHttpError(403, "Only the room host can auto-place setup");
     }
     const prevStatus = currentRoom.status;
@@ -263,10 +254,7 @@ export async function handleRoomMatchSubRoute(
     const body = await readJsonBody(req);
     assertRequesterMatchesAuth(body.requesterId, authPlayerId);
     const currentRoom = roomManager.getRoom(roomId);
-    if (
-      !currentRoom.allBots &&
-      !isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)
-    ) {
+    if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
       throw createHttpError(403, "Only seated players can undo");
     }
     const nextState = roomManager.undoAction(roomId, authPlayerId);
@@ -295,10 +283,7 @@ export async function handleRoomMatchSubRoute(
     const body = await readJsonBody(req);
     assertRequesterMatchesAuth(body.requesterId, authPlayerId);
     const currentRoom = roomManager.getRoom(roomId);
-    if (
-      !currentRoom.allBots &&
-      !isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)
-    ) {
+    if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
       throw createHttpError(403, "Only seated players can redo");
     }
     const nextState = roomManager.redoAction(roomId, authPlayerId);

@@ -73,6 +73,9 @@ export function applyScienceProgressCardPure(
     }
 
     case "crane": {
+      if (actor.activeTurnDiscounts.crane) {
+        throw new Error("Crane discount is already active this turn");
+      }
       const nextState: CatanState = {
         ...stateAfterConsume,
         players: stateAfterConsume.players.map((p) =>
@@ -95,6 +98,9 @@ export function applyScienceProgressCardPure(
     }
 
     case "medicine": {
+      if (actor.activeTurnDiscounts.medicine) {
+        throw new Error("Medicine discount is already active this turn");
+      }
       const nextState: CatanState = {
         ...stateAfterConsume,
         players: stateAfterConsume.players.map((p) =>
@@ -179,15 +185,18 @@ export function applyScienceProgressCardPure(
     }
 
     case "smith": {
-      const targets = (params?.vertexIds ?? []).slice(0, 2);
-      if (targets.length === 0) {
-        throw new Error("Smith requires at least 1 promotable knight");
+      const rawTargets = params?.vertexIds ?? [];
+      if (rawTargets.length === 0 || rawTargets.length > 2) {
+        throw new Error("Smith requires 1 or 2 promotable knights");
       }
-      const uniqueTargets = Array.from(new Set(targets));
+      const uniqueTargets = Array.from(new Set(rawTargets));
+      if (uniqueTargets.length !== rawTargets.length) {
+        throw new Error("Smith target vertices must be distinct");
+      }
       const promoted = uniqueTargets.reduce<CatanState>((acc, vId) => {
         const curPlayer = acc.players.find((p) => p.id === playerId)!;
         if (!canPromoteKnightAtVertex(acc, curPlayer, vId, true)) {
-          return acc;
+          throw new Error(`Knight at ${vId} cannot be promoted with Smith`);
         }
         const k = acc.knights[vId]!;
         const nextLevel = (k.level + 1) as KnightLevel;
