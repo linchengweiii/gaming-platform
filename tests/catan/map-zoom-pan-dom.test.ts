@@ -91,15 +91,15 @@ function makeFakeEl(opts: {
     parent: opts.parent ?? null,
     children: [],
     setAttribute(k, v) {
-      attrs[k] = String(v);
+      el.attrs[k] = String(v);
     },
     getAttribute(k) {
-      return k in attrs ? attrs[k]! : null;
+      return k in el.attrs ? el.attrs[k]! : null;
     },
     addEventListener(type, fn, rawOpts) {
       const capture =
         typeof rawOpts === "boolean" ? rawOpts : Boolean(rawOpts?.capture);
-      listeners[type] = [...(listeners[type] ?? []), { fn, capture }];
+      el.listeners[type] = [...(el.listeners[type] ?? []), { fn, capture }];
     },
     dispatch(type, extra = {}) {
       let stopped = false;
@@ -185,13 +185,13 @@ function makeFakeEl(opts: {
       return found;
     },
     classList: {
-      add: (...cs) => cs.forEach((c) => classes.add(c)),
-      remove: (...cs) => cs.forEach((c) => classes.delete(c)),
-      contains: (c) => classes.has(c),
+      add: (...cs) => cs.forEach((c) => el.classes.add(c)),
+      remove: (...cs) => cs.forEach((c) => el.classes.delete(c)),
+      contains: (c) => el.classes.has(c),
       toggle: (c, force) => {
-        const next = force !== undefined ? force : !classes.has(c);
-        if (next) classes.add(c);
-        else classes.delete(c);
+        const next = force !== undefined ? force : !el.classes.has(c);
+        if (next) el.classes.add(c);
+        else el.classes.delete(c);
         return next;
       },
     },
