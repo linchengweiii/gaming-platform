@@ -2,11 +2,12 @@ import type http from "node:http";
 import type { Duplex } from "node:stream";
 import {
   ABANDONED_ROOM_IDLE_MS,
-  BOT_STEP_DELAY_MS,
   MAX_WS_PAYLOAD_BYTES,
+  SEVEN_WONDERS_SECRET_LOCK_MAX_DELAY_MS,
   WS_DEAD_PEER_TIMEOUT_MS,
   WS_HEARTBEAT_INTERVAL_MS,
   WS_TCP_KEEPALIVE_MS,
+  clampServerBotStepDelayMsPure,
 } from "../config.ts";
 import {
   type PlatformRoomManager,
@@ -256,6 +257,16 @@ export function createRealtimeHub(
     const actor = state.players.find((p: any) => p.id === actingId);
     if (!actor || !actor.isBot) return;
 
+    const baseDelayMs = clampServerBotStepDelayMsPure(room.botStepDelayMs);
+    const isHiddenSwSecretLock =
+      room.gameId === "seven_wonders" &&
+      state.phase === "AGE_DRAFT" &&
+      Array.isArray(state.lockedPlayerIds) &&
+      state.lockedPlayerIds.length + 1 < state.players.length;
+    const stepDelayMs = isHiddenSwSecretLock
+      ? Math.min(baseDelayMs, SEVEN_WONDERS_SECRET_LOCK_MAX_DELAY_MS)
+      : baseDelayMs;
+
     const timer = setTimeout(() => {
       roomBotTimers.delete(roomId);
       try {
@@ -273,7 +284,7 @@ export function createRealtimeHub(
       } catch {
         // Ignore stopped or replaced match errors
       }
-    }, BOT_STEP_DELAY_MS);
+    }, stepDelayMs);
     roomBotTimers.set(roomId, timer);
   }
 

@@ -20,6 +20,7 @@ import { renderSevenWondersPlayerCard } from "../../../seven-wonders-view.ts";
 import { escapeAttr } from "../../helpers/html-and-dropdown.ts";
 import type { ClientRoom } from "../../types.ts";
 import { renderCatanPlayerCardPure } from "../catan-player-card-view.ts";
+import { extractBotMoveFeedPure } from "./bot-move-feed.ts";
 import type { InGameComputedContext } from "./view-state.ts";
 
 export function renderInGameSidebarPure(
@@ -273,14 +274,36 @@ export function renderInGameSidebarPure(
                   <span class="ga-num">${state.eventLog.length}</span>
                 </div>
                 <div class="event-log">
-                  ${[...state.eventLog]
-                    .reverse()
-                    .slice(0, 35)
-                    .map(
-                      (evt: any) =>
-                        `<div class="event-item"><strong>T${evt.turn}</strong> ${escapeAttr(evt.message)}</div>`
-                    )
-                    .join("")}
+                  ${(() => {
+                    const botById = new Map<string, any>();
+                    for (const p of state.players ?? []) {
+                      if (p?.isBot) botById.set(p.id, p);
+                    }
+                    const latestBotMoveId = model.showBotMoves
+                      ? extractBotMoveFeedPure(room.gameId, state).latestMove?.id ??
+                        null
+                      : null;
+                    return [...state.eventLog]
+                      .reverse()
+                      .slice(0, 35)
+                      .map((evt: any) => {
+                        const bot = evt?.playerId
+                          ? botById.get(evt.playerId)
+                          : undefined;
+                        const isLatestBot =
+                          Boolean(latestBotMoveId) && evt?.id === latestBotMoveId;
+                        const cls = bot
+                          ? isLatestBot
+                            ? "event-item event-item--bot event-item--latest-bot"
+                            : "event-item event-item--bot"
+                          : "event-item";
+                        const styleAttr = bot?.color
+                          ? ` style="--bot-accent: ${escapeAttr(bot.color)};"`
+                          : "";
+                        return `<div class="${cls}"${styleAttr}><strong>T${evt.turn}</strong> ${escapeAttr(evt.message)}</div>`;
+                      })
+                      .join("");
+                  })()}
                 </div>
               </div>
             </div>

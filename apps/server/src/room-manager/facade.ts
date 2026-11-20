@@ -40,6 +40,7 @@ import {
   finishCatanSetupWithBotsPure,
   redoActionPure,
   setRoomAutoStepBotsPure,
+  setRoomBotStepDelayPure,
   startGamePure,
   stepBotPure,
   undoActionPure,
@@ -297,6 +298,7 @@ export function createPlatformRoomManager(): PlatformRoomManager {
         allBots: r.allBots,
         startingPlayerMode: r.startingPlayerMode,
         autoStepBots: r.autoStepBots,
+        botStepDelayMs: r.botStepDelayMs,
         players: r.players,
         config: r.config,
         seed: r.seed,
@@ -421,6 +423,10 @@ export function createPlatformRoomManager(): PlatformRoomManager {
     },
     setRoomAutoStepBots(roomId, enabled) {
       state = setRoomAutoStepBotsPure(state, roomId, enabled);
+      return getOrCreateRoomLens(roomId);
+    },
+    setRoomBotStepDelay(roomId, delayMs) {
+      state = setRoomBotStepDelayPure(state, roomId, delayMs);
       return getOrCreateRoomLens(roomId);
     },
   };

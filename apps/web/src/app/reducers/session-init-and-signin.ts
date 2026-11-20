@@ -1,7 +1,12 @@
 import type { PlayerDescriptor } from "@gaming-platform/core";
 import { PLAYER_COLORS, emptyCommodities, emptyResources } from "@gaming-platform/catan";
 import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
-import { DEFAULT_AUTOPLAY_SPEED_MS } from "../../config/app-config.ts";
+import {
+  DEFAULT_AUTOPLAY_SPEED_MS,
+  DEFAULT_BOT_MOVE_THROTTLE_MS,
+  DEFAULT_SHOW_BOT_MOVES,
+  clampBotMoveThrottleMsPure,
+} from "../../config/app-config.ts";
 import {
   extractDebugModeFromLocationPure,
   extractInviteRoomHashFromLocationPure,
@@ -23,6 +28,8 @@ export function createInitialAppModelPure(
     readonly nowMs: number;
     readonly locationSearch?: string;
     readonly locationHash?: string;
+    readonly savedShowBotMoves?: boolean | null;
+    readonly savedBotMoveThrottleMs?: number | null;
   }
 ): AppModel {
   const staticHostOnly = env.isStaticHost;
@@ -191,6 +198,16 @@ export function createInitialAppModelPure(
     autoPlayBots: false,
     autoRespondBotsToHuman: true,
     autoPlaySpeedMs: DEFAULT_AUTOPLAY_SPEED_MS,
+    showBotMoves:
+      env.savedShowBotMoves !== undefined && env.savedShowBotMoves !== null
+        ? Boolean(env.savedShowBotMoves)
+        : DEFAULT_SHOW_BOT_MOVES,
+    botFeedHistoryExpanded: false,
+    botMoveThrottleMs:
+      env.savedBotMoveThrottleMs !== undefined &&
+      env.savedBotMoveThrottleMs !== null
+        ? clampBotMoveThrottleMsPure(env.savedBotMoveThrottleMs)
+        : DEFAULT_BOT_MOVE_THROTTLE_MS,
   };
 
   if (!useServerBackend && !staticHostOnly) {

@@ -37,6 +37,11 @@ import {
 } from "../catan-hud-view.ts";
 import { renderCatanSpotPopoverPure } from "../catan-spot-popover-view.ts";
 import { renderActiveTradeOfferCardPure } from "../catan-trade-and-popup-view.ts";
+import {
+  extractBotMoveFeedPure,
+  renderBotBannerControlsPure,
+  renderBotMoveFeedBarPure,
+} from "./bot-move-feed.ts";
 import type { InGameComputedContext } from "./view-state.ts";
 
 export function renderInGameBoardStagePure(
@@ -75,6 +80,22 @@ export function renderInGameBoardStagePure(
     (state as CatanState).config.enableCitiesAndKnights
       ? "Setup city 2"
       : formatPhaseLabel(state.phase);
+
+  const botMoveFeed = extractBotMoveFeedPure(room.gameId, state);
+  const canAdjustRoomPace = !usesServer || isOwner || Boolean(mySeatedPlayer);
+  const botBannerControlsHtml = renderBotBannerControlsPure(
+    model,
+    room,
+    botMoveFeed.hasBots,
+    canAdjustRoomPace
+  );
+  const botMoveFeedBarHtml = renderBotMoveFeedBarPure(
+    model,
+    room,
+    state,
+    actingPlayer,
+    botMoveFeed
+  );
 
   return `          <div class="board-container ${
             room.gameId !== "catan" ? "board-container--neutral" : ""
@@ -137,7 +158,7 @@ export function renderInGameBoardStagePure(
               </div>
 
               <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 5px;">
-                <button type="button" data-open-guide="${room.gameId}" class="btn btn--secondary btn--sm">Guide</button>
+                <button type="button" data-open-guide="${room.gameId}" class="btn btn--secondary btn--sm">Guide</button>${botBannerControlsHtml}
                 ${
                   (room.gameId === "catan" || room.gameId === "seven_wonders") &&
                   controllableHumansCount >= 2
@@ -192,7 +213,7 @@ export function renderInGameBoardStagePure(
                 }
               </div>
             </div>
-
+${botMoveFeedBarHtml}
             <div class="board-svg-wrap">
               ${tutorialCoachHtml}
               ${

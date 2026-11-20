@@ -80,6 +80,7 @@ export interface ClientRoom {
   botDifficulty: BotDifficulty;
   startingPlayerMode: string; // "random" | "first" | playerId
   autoStepBots: boolean;
+  botStepDelayMs: number;
   players: PlayerDescriptor[];
   config: ClientRoomConfig;
   seed: string;
@@ -106,6 +107,7 @@ export interface CreateLocalRoomOptions {
   readonly botCount?: number;
   readonly allBots?: boolean;
   readonly botDifficulty?: BotDifficulty;
+  readonly botStepDelayMs?: number;
   readonly startingPlayerMode?: string;
   readonly scenarioId?: ScenarioId;
   readonly enable56PlayerExtension?: boolean;
@@ -201,6 +203,9 @@ export interface AppModel {
   readonly autoPlayBots: boolean;
   readonly autoRespondBotsToHuman: boolean;
   readonly autoPlaySpeedMs: number;
+  readonly showBotMoves: boolean;
+  readonly botFeedHistoryExpanded: boolean;
+  readonly botMoveThrottleMs: number;
 }
 
 export interface DropdownOption {
@@ -287,6 +292,9 @@ export interface MultiGamePlatformApp {
   debugMode: boolean;
   autoRespondBotsToHuman: boolean;
   autoPlaySpeedMs: number;
+  showBotMoves: boolean;
+  botFeedHistoryExpanded: boolean;
+  botMoveThrottleMs: number;
   render(): void;
   signInAsGuest(rawName?: string, existingGuestId?: string): boolean;
   startSoloGameFromLogin(rawName?: string): boolean;
@@ -325,6 +333,10 @@ export interface MultiGamePlatformApp {
   toggleAutoRespondBots(): void;
   toggleAutoPlay(): void;
   stopAutoPlay(): void;
+  toggleShowBotMoves(): void;
+  toggleBotFeedHistory(): void;
+  setBotMoveThrottleMs(delayMs: number): void;
+  cycleBotMoveThrottle(): void;
   switchTradeMode(nextMode: "maritime_trade" | "domestic_trade" | null): void;
   setSharedTradeWant(resource: ResourceType, amount: number): void;
 }

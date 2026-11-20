@@ -5,7 +5,11 @@ import {
   type ScenarioId,
   isExpanded56Scenario,
 } from "@gaming-platform/catan";
-import { INITIAL_LOBBY_ROOM_SEEDS } from "../../config/app-config.ts";
+import {
+  DEFAULT_BOT_MOVE_THROTTLE_MS,
+  INITIAL_LOBBY_ROOM_SEEDS,
+  clampBotMoveThrottleMsPure,
+} from "../../config/app-config.ts";
 import {
   computeClientRoomHashPure,
   formatRoomHashLabelPure,
@@ -64,6 +68,12 @@ export function createLocalRoomPure(
     botDifficulty,
     startingPlayerMode: opts.startingPlayerMode ?? "random",
     autoStepBots: true,
+    botStepDelayMs:
+      opts.botStepDelayMs !== undefined
+        ? clampBotMoveThrottleMsPure(opts.botStepDelayMs)
+        : clampBotMoveThrottleMsPure(
+            model.botMoveThrottleMs ?? DEFAULT_BOT_MOVE_THROTTLE_MS
+          ),
     players: [],
     config: (() => {
       const scId = opts.scenarioId ?? "standard";
@@ -189,6 +199,10 @@ export function upsertRoomFromSummaryPure(
     startingPlayerMode: summary.startingPlayerMode ?? "random",
     autoStepBots:
       summary.autoStepBots !== undefined ? Boolean(summary.autoStepBots) : true,
+    botStepDelayMs:
+      typeof summary.botStepDelayMs === "number"
+        ? clampBotMoveThrottleMsPure(summary.botStepDelayMs)
+        : (existing?.botStepDelayMs ?? DEFAULT_BOT_MOVE_THROTTLE_MS),
     players,
     config: (() => {
       const scId = (cfg.scenarioId as ScenarioId) ?? "standard";

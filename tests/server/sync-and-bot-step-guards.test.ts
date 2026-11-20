@@ -137,6 +137,7 @@ describe("@gaming-platform/server - Sync Revisions, Auto-Bots Continuity & Step-
           botCount: 2,
           startingPlayerMode: "first",
           autoStepBots: true,
+          botStepDelayMs: 150,
           autoStart: true,
         }),
       });

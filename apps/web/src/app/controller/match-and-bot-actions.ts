@@ -4,9 +4,9 @@ import {
   canPlayerUnselectDraftPick,
 } from "@gaming-platform/seven-wonders";
 import {
-  BOT_RESPONSE_DELAY_MS,
   BOT_SEVEN_WONDERS_DRAFT_DELAY_MS,
   SPECIAL_BUILD_AUTO_END_DELAY_MS,
+  clampBotMoveThrottleMsPure,
 } from "../../config/app-config.ts";
 import {
   canControlPlayerOnDevicePure,
@@ -66,14 +66,17 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
 
     if (!ctx.model.autoRespondBotsToHuman || ctx.model.autoPlayBots) return;
     if (actor && actor.isBot) {
-      const delayMs =
+      const baseDelayMs = clampBotMoveThrottleMsPure(
+        room.botStepDelayMs ?? ctx.model.botMoveThrottleMs
+      );
+      const isHiddenSwSecretLock =
         room.gameId === "seven_wonders" &&
         state.phase === "AGE_DRAFT" &&
-        state.players.some(
-          (p: any) => !p.isBot && state.lockedPlayerIds.includes(p.id)
-        )
-          ? BOT_SEVEN_WONDERS_DRAFT_DELAY_MS
-          : BOT_RESPONSE_DELAY_MS;
+        Array.isArray(state.lockedPlayerIds) &&
+        state.lockedPlayerIds.length + 1 < state.players.length;
+      const delayMs = isHiddenSwSecretLock
+        ? Math.min(baseDelayMs, BOT_SEVEN_WONDERS_DRAFT_DELAY_MS)
+        : baseDelayMs;
       ctx.botResponseTimeout = setTimeout(() => {
         ctx.stepOneBotMove();
       }, delayMs);

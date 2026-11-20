@@ -211,6 +211,31 @@ export async function handleRoomMatchSubRoute(
     return true;
   }
 
+  if (subRoute === "bot-speed") {
+    const authPlayerId = guestSessions.requireAuthPlayerId(req);
+    const body = await readJsonBody(req);
+    assertRequesterMatchesAuth(body.requesterId, authPlayerId);
+    const currentRoom = roomManager.getRoom(roomId);
+    if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
+      throw createHttpError(403, "Only seated players can change bot move pace");
+    }
+    const rawDelay = Number(body.botStepDelayMs);
+    if (!Number.isFinite(rawDelay)) {
+      throw createHttpError(400, "botStepDelayMs must be a finite number");
+    }
+    const room = roomManager.setRoomBotStepDelay(roomId, rawDelay);
+    hub.broadcastRoomState(roomId);
+    if (room.autoStepBots && room.status === "in_progress") {
+      hub.scheduleRoomBotTurn(roomId);
+    }
+    sendJson(res, 200, {
+      room: hub.enrichSummaryWithPresence(
+        roomManager.toRoomSummary(room, authPlayerId)
+      ),
+    });
+    return true;
+  }
+
   if (subRoute === "finish-setup") {
     const authPlayerId = guestSessions.requireAuthPlayerId(req);
     const body = await readJsonBody(req);

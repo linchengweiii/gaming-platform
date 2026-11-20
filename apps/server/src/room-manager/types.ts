@@ -20,6 +20,7 @@ export interface RoomSummary {
   allBots: boolean;
   startingPlayerMode: string; // "random" | "first" | playerId
   autoStepBots: boolean;
+  botStepDelayMs: number;
   players: PlayerDescriptor[];
   config: Record<string, unknown>;
   canUndo: boolean;
@@ -45,6 +46,7 @@ export interface RoomRecord {
   readonly allBots: boolean;
   readonly startingPlayerMode: string;
   readonly autoStepBots: boolean;
+  readonly botStepDelayMs: number;
   readonly players: readonly PlayerDescriptor[];
   readonly config: Readonly<Record<string, unknown>>;
   readonly seed: string;
@@ -68,6 +70,7 @@ export interface RoomInstance {
   allBots: boolean;
   startingPlayerMode: string; // "random" | "first" | playerId
   autoStepBots: boolean;
+  botStepDelayMs: number;
   players: PlayerDescriptor[];
   config: Record<string, unknown>;
   seed: string;
@@ -95,6 +98,7 @@ export interface CreateRoomOptions {
   allBots?: boolean;
   startingPlayerMode?: string;
   autoStepBots?: boolean;
+  botStepDelayMs?: number;
   config?: Record<string, unknown>;
   seed?: string;
   autoStart?: boolean;
@@ -109,6 +113,7 @@ export interface RoomSetupUpdates {
   allBots?: boolean;
   botDifficulty?: BotDifficulty;
   startingPlayerMode?: string;
+  botStepDelayMs?: number;
   config?: Record<string, unknown>;
   seed?: string;
 }
@@ -181,6 +186,7 @@ export interface PlatformRoomManager {
     state: any;
   };
   setRoomAutoStepBots(roomId: string, enabled: boolean): RoomInstance;
+  setRoomBotStepDelay(roomId: string, delayMs: number): RoomInstance;
 }
 
 export interface PlatformRoomManagerConstructor {
