@@ -191,6 +191,71 @@
   gap: 6px;
 }
 
+.ga-trade-offer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.ga-trade-offer-exchange {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.ga-trade-offer-side {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.ga-trade-offer-side--gain {
+  border-color: rgba(74, 222, 128, 0.45);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.ga-trade-offer-side--cost {
+  border-color: rgba(251, 146, 60, 0.45);
+  background: rgba(251, 146, 60, 0.08);
+}
+
+.ga-trade-offer-side__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ga-trade-offer-have {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ga-trade-offer-have.is-short {
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.ga-trade-offer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 /* ---------------------------------------------------------------- Tactile Playing Cards Hand Tray */
 .visual-hand-tray {
   width: 100%;
