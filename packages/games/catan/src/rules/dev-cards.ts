@@ -4,10 +4,7 @@ import type { CatanAction } from "../types/actions.ts";
 import type { DevCardInstance, ResourceMap } from "../types/domain.ts";
 import { isResourceType } from "../cities-and-knights/helpers.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
-import {
-  checkAndAssignWinnerPure,
-  recalculateAwardsPure,
-} from "./awards-and-vp.ts";
+import { checkAndAssignWinnerPure } from "./awards-and-vp.ts";
 import {
   addResourcesPure,
   appendCatanEvent,
@@ -109,10 +106,13 @@ export function applyPlayKnightPure(
   );
   const returnPhase: "PRE_ROLL" | "MAIN_PHASE" =
     currentState.phase === "PRE_ROLL" ? "PRE_ROLL" : "MAIN_PHASE";
-  const awarded = recalculateAwardsPure(logged.state);
+  const checked = checkAndAssignWinnerPure(logged.state, playerId);
+  if (checked.won) {
+    return { state: checked.state, events: logged.emitted };
+  }
   return {
     state: {
-      ...awarded,
+      ...checked.state,
       phaseAfterRobber: returnPhase,
       phase: "MOVE_ROBBER_OR_PIRATE",
     },

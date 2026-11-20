@@ -155,6 +155,9 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
     const citiesOnBoard = Object.values(state.buildings).filter(
       (b) => b.ownerId === p.id && b.type === "city"
     ).length;
+    const cityWallsOnBoard = Object.values(state.buildings).filter(
+      (b) => b.ownerId === p.id && b.type === "city" && Boolean(b.hasWall)
+    ).length;
     const roadsOnBoard = Object.values(state.edges).filter(
       (e) => e.ownerId === p.id && e.type === "road"
     ).length;
@@ -201,6 +204,12 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
       shipsOnBoard + p.shipsRemaining !== DEFAULT_PIECE_LIMITS.ships
         ? [
             `Player ${p.id} ship count mismatch: ${shipsOnBoard} + ${p.shipsRemaining} !== ${DEFAULT_PIECE_LIMITS.ships}`,
+          ]
+        : []),
+      ...(state.config.enableCityWalls &&
+      cityWallsOnBoard + p.cityWallsRemaining !== DEFAULT_PIECE_LIMITS.cityWalls
+        ? [
+            `Player ${p.id} city wall count mismatch: ${cityWallsOnBoard} + ${p.cityWallsRemaining} !== ${DEFAULT_PIECE_LIMITS.cityWalls}`,
           ]
         : []),
       ...(state.config.enableCitiesAndKnights &&

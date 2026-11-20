@@ -256,10 +256,7 @@ export function renderProgressCardSubModalPure(
   );
 
   const controlsHtml = ((): string => {
-    if (
-      card.type === "resource_monopoly" ||
-      card.type === "commercial_harbor"
-    ) {
+    if (card.type === "resource_monopoly") {
       const availRes = RESOURCES.filter((r) =>
         matchingActions.some((a) => a.params?.resource === r)
       );
@@ -339,7 +336,7 @@ export function renderProgressCardSubModalPure(
       const promotable = getLegalPromoteKnightVertices(
         state,
         actingPlayer.id,
-        true
+        false
       );
       return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
               <span class="t-small muted">${

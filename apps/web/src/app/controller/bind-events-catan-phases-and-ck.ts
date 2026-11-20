@@ -328,7 +328,7 @@ export function bindCatanPhasesAndCkEvents(
       const promotable = getLegalPromoteKnightVertices(
         state,
         actingPlayerId,
-        true
+        false
       );
       const vId = ctx.model.smithVertex1 ?? promotable[0];
       if (!vId) return;

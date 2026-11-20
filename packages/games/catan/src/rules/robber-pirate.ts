@@ -45,12 +45,14 @@ export function getLegalRobberHexes(state: CatanState, playerId: string): HexId[
     return allLandHexes;
   }
 
+  // Official Friendly Robber rule: protect players at starting VP (<= 2 in Base/Seafarers, <= 3 in C&K).
+  const safeVpLimit = state.config.enableCitiesAndKnights ? 3 : 2;
   const friendlyFiltered = allLandHexes.filter((hId) => {
     const hNode = state.topology.hexes[hId]!;
     return hNode.cornerVertexIds.every((vId) => {
       const b = state.buildings[vId];
       if (!b || b.ownerId === playerId) return true;
-      return computePlayerVictoryPoints(state, b.ownerId, true) > 2;
+      return computePlayerVictoryPoints(state, b.ownerId, true) > safeVpLimit;
     });
   });
 
@@ -72,6 +74,7 @@ export function getLegalPirateHexes(
   if (!state.config.enableFriendlyRobber || !playerId) {
     return allSeaHexes;
   }
+  const safeVpLimit = state.config.enableCitiesAndKnights ? 3 : 2;
   const friendlyFiltered = allSeaHexes.filter((hId) => {
     const hNode = state.topology.hexes[hId]!;
     return hNode.sideEdgeIds.every((eId) => {
@@ -79,7 +82,9 @@ export function getLegalPirateHexes(
       if (!route || route.type !== "ship" || route.ownerId === playerId) {
         return true;
       }
-      return computePlayerVictoryPoints(state, route.ownerId, true) > 2;
+      return (
+        computePlayerVictoryPoints(state, route.ownerId, true) > safeVpLimit
+      );
     });
   });
   return friendlyFiltered.length > 0 ? friendlyFiltered : allSeaHexes;

@@ -150,6 +150,9 @@ export function applyEndTurnPure(
   if (currentState.phase !== "MAIN_PHASE" || activePlayer.id !== playerId) {
     throw new Error("Cannot end turn now");
   }
+  if (currentState.activeTradeOffer) {
+    throw new Error("Resolve the active domestic trade offer first");
+  }
   const clearedOffer: CatanState = {
     ...currentState,
     activeTradeOffer: null,

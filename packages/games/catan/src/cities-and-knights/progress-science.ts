@@ -195,7 +195,7 @@ export function applyScienceProgressCardPure(
       }
       const promoted = uniqueTargets.reduce<CatanState>((acc, vId) => {
         const curPlayer = acc.players.find((p) => p.id === playerId)!;
-        if (!canPromoteKnightAtVertex(acc, curPlayer, vId, true)) {
+        if (!canPromoteKnightAtVertex(acc, curPlayer, vId, false)) {
           throw new Error(`Knight at ${vId} cannot be promoted with Smith`);
         }
         const k = acc.knights[vId]!;

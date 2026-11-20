@@ -36,29 +36,15 @@ export function getLegalProgressCardActions(
     );
     if (alchemistCards.length === 0) return [];
     const firstCard = alchemistCards[0]!;
-    // Canonical die1 + die2 pairs covering all totals 2..12 and red-die thresholds
-    const dicePairs: Array<[number, number]> = [
-      [1, 1],
-      [1, 2],
-      [2, 2],
-      [2, 3],
-      [3, 3],
-      [3, 4],
-      [4, 4],
-      [4, 5],
-      [5, 5],
-      [5, 6],
-      [6, 6],
-      [6, 1],
-      [5, 1],
-      [4, 2],
-      [5, 3],
-    ];
-    return dicePairs.map(([die1, die2]) => ({
-      type: "PLAY_PROGRESS_CARD" as const,
-      cardId: firstCard.id,
-      params: { die1, die2 },
-    }));
+    // All 36 legal (die1, die2) pairs in 1..6 x 1..6 (controlling both 2d6 total and red-die caliper threshold)
+    const faces = [1, 2, 3, 4, 5, 6] as const;
+    return faces.flatMap((die1) =>
+      faces.map((die2) => ({
+        type: "PLAY_PROGRESS_CARD" as const,
+        cardId: firstCard.id,
+        params: { die1, die2 },
+      }))
+    );
   }
 
   if (state.phase !== "MAIN_PHASE") {
@@ -122,7 +108,7 @@ export function getLegalProgressCardActions(
         const promotable = getLegalPromoteKnightVertices(
           state,
           player.id,
-          true
+          false
         );
         if (promotable.length === 0) return [];
         if (promotable.length === 1) {
