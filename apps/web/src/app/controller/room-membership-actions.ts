@@ -1,3 +1,4 @@
+import { t } from "../../i18n/index.ts";
 import { resolveClientRoomIdPure } from "../helpers/room-hash-and-links.ts";
 import {
   findActiveRoomPure,
@@ -66,7 +67,7 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
               const joinData = await joinRes.json();
               if (ctx.navEpoch !== capturedEpoch) return;
               if (!joinRes.ok) {
-                alert(joinData.error ?? "Unable to join room");
+                alert(joinData.error ?? t(ctx.model.locale, "alert.unableJoinRoom"));
                 clearActiveRoomIdFromStorage();
                 ctx.syncUrlRoomHash(null);
                 ctx.render();
@@ -159,7 +160,7 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
             }
             const joinData = await joinRes.json();
             if (!joinRes.ok) {
-              alert(joinData.error ?? "Unable to join room");
+              alert(joinData.error ?? t(ctx.model.locale, "alert.unableJoinRoom"));
               ctx.exitRoomToLobby();
               ctx.render();
               return;
@@ -216,7 +217,11 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
           ctx.render();
         } catch (err: any) {
           if (ctx.navEpoch !== capturedEpoch) return;
-          alert(`Unable to enter room: ${err?.message ?? String(err)}`);
+          alert(
+            t(ctx.model.locale, "alert.unableEnterRoomWithReason", {
+              reason: err?.message ?? String(err),
+            })
+          );
         }
       })();
       return;

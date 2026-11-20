@@ -21,13 +21,9 @@ import {
   hasCommodities,
   hasResources,
 } from "@gaming-platform/catan";
-import { escapeAttr } from "../helpers/html-and-dropdown.ts";
 import {
-  COMMODITY_META,
   type CatanMapViewport,
   DISCIPLINE_META,
-  RESOURCE_META,
-  TRADE_GOOD_META,
   clampCatanMapViewportPure,
   formatCatanZoomPercentPure,
   getCatanBoardViewBox,
@@ -41,13 +37,25 @@ import {
   renderRollDiceButtonGraphicSvg,
 } from "../../catan-graphics.ts";
 import { CATAN_MAP_VIEWPORT_CONFIG } from "../../config/app-config.ts";
+import {
+  type SupportedLocale,
+  getCatanCommodityTextLocalized,
+  getCatanDisciplineTextLocalized,
+  getCatanResourceTextLocalized,
+  getCatanTradeGoodLabelLocalized,
+  t,
+} from "../../i18n/index.ts";
+import { escapeAttr } from "../helpers/html-and-dropdown.ts";
 
-export function renderCostPipStripPure(cost: Partial<ResourceMap>): string {
+export function renderCostPipStripPure(
+  cost: Partial<ResourceMap>,
+  locale: SupportedLocale = "en"
+): string {
   const pips = RESOURCES.flatMap((r) =>
     Array.from(
       { length: cost[r] ?? 0 },
       () =>
-        `<span class="cost-pip res-${r}" title="${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r, 11)}</span>`
+        `<span class="cost-pip res-${r}" title="${escapeAttr(getCatanResourceTextLocalized(r, locale).label)}">${renderResourceGlyphSvg(r, 11)}</span>`
     )
   );
   return `<span class="cost-pip-strip">${pips.join("")}</span>`;
@@ -56,16 +64,17 @@ export function renderCostPipStripPure(cost: Partial<ResourceMap>): string {
 export function renderResourceColumnHeadersPure(
   playerResources?: ResourceMap,
   showBank?: ResourceMap,
-  tradeRatios?: Record<ResourceType, number>
+  tradeRatios?: Record<ResourceType, number>,
+  locale: SupportedLocale = "en"
 ): string {
   return `
-      <div class="ga-res-matrix__row-label">Resource</div>
+      <div class="ga-res-matrix__row-label">${escapeAttr(t(locale, "catan.colResource"))}</div>
       ${RESOURCES.map((r) => {
         const ratio = tradeRatios?.[r];
         return `
         <div class="ga-res-col-head">
           <div class="ga-res-col-head__top">
-            <span>${RESOURCE_META[r].label}</span>
+            <span>${escapeAttr(getCatanResourceTextLocalized(r, locale).label)}</span>
             ${
               playerResources
                 ? `<span class="ga-res-col-head__have">×${playerResources[r]}</span>`
@@ -80,7 +89,7 @@ export function renderResourceColumnHeadersPure(
               ratio !== undefined
                 ? `<span class="ga-res-col-head__rate ${
                     ratio < 4 ? "is-port" : ""
-                  }" title="${ratio}:1 harbor rate">${ratio}:1</span>`
+                  }" title="${escapeAttr(t(locale, "catan.harborRateTitle", { ratio }))}">${ratio}:1</span>`
                 : ""
             }
           </div>
@@ -93,19 +102,20 @@ export function renderResourceColumnHeadersPure(
 export function renderTradeGoodColumnHeadersPure(
   player?: Pick<CatanState["players"][number], "resources" | "commodities">,
   bankState?: Pick<CatanState, "bank" | "commodityBank">,
-  tradeRatios?: Record<TradeGoodType, number>
+  tradeRatios?: Record<TradeGoodType, number>,
+  locale: SupportedLocale = "en"
 ): string {
   return `
-      <div class="ga-res-matrix__row-label">Goods</div>
+      <div class="ga-res-matrix__row-label">${escapeAttr(t(locale, "catan.colGoods"))}</div>
       ${TRADE_GOODS.map((g) => {
-        const meta = TRADE_GOOD_META[g];
+        const label = getCatanTradeGoodLabelLocalized(g, locale);
         const ratio = tradeRatios?.[g];
         const haveVal = player ? getPlayerGoodCount(player, g) : undefined;
         const bankVal = bankState ? getBankGoodCount(bankState, g) : undefined;
         return `
         <div class="ga-res-col-head">
           <div class="ga-res-col-head__top">
-            <span>${meta.label}</span>
+            <span>${escapeAttr(label)}</span>
             ${
               haveVal !== undefined
                 ? `<span class="ga-res-col-head__have">×${haveVal}</span>`
@@ -120,7 +130,7 @@ export function renderTradeGoodColumnHeadersPure(
               ratio !== undefined
                 ? `<span class="ga-res-col-head__rate ${
                     ratio < 4 ? "is-port" : ""
-                  }" title="${ratio}:1 trade rate">${ratio}:1</span>`
+                  }" title="${escapeAttr(t(locale, "catan.tradeRateTitle", { ratio }))}">${ratio}:1</span>`
                 : ""
             }
           </div>
@@ -145,7 +155,8 @@ export function hasTradeGoodsForOfferPure(
 
 export function renderCatanBarbarianHudPure(
   state: CatanState,
-  viewerPlayer?: CatanState["players"][number] | null
+  viewerPlayer?: CatanState["players"][number] | null,
+  locale: SupportedLocale = "en"
 ): string {
   if (!state.config.enableCitiesAndKnights) {
     return "";
@@ -165,7 +176,7 @@ export function renderCatanBarbarianHudPure(
     if (!viewerPlayer || isSafe || barbStrength === 0) return "";
     const myVulnCities = getPlayerVulnerableCities(state, viewerPlayer.id);
     if (myVulnCities.length === 0) {
-      return `<span class="ga-chip ga-chip--ok" style="height: 18px; padding: 0 5px; font-size: 10px;" title="You have no unprotected cities on the island">Cities safe</span>`;
+      return `<span class="ga-chip ga-chip--ok" style="height: 18px; padding: 0 5px; font-size: 10px;" title="${escapeAttr(t(locale, "catan.citiesSafeNoneTitle"))}">${escapeAttr(t(locale, "catan.citiesSafe"))}</span>`;
     }
     const contenderStrengths = state.players
       .filter((p) => getPlayerVulnerableCities(state, p.id).length > 0)
@@ -173,60 +184,78 @@ export function renderCatanBarbarianHudPure(
     const minStr = Math.min(...contenderStrengths);
     const myStr = getPlayerActiveKnightStrength(state, viewerPlayer.id);
     if (myStr <= minStr) {
-      return `<span class="ga-chip ga-chip--danger" style="height: 18px; padding: 0 5px; font-size: 10px;" title="Your active knights (${myStr}) tie for lowest among unprotected city owners — activate a knight before step 7!">At risk</span>`;
+      return `<span class="ga-chip ga-chip--danger" style="height: 18px; padding: 0 5px; font-size: 10px;" title="${escapeAttr(t(locale, "catan.atRiskTitle", { myStr }))}">${escapeAttr(t(locale, "catan.atRisk"))}</span>`;
     }
-    return `<span class="ga-chip ga-chip--ok" style="height: 18px; padding: 0 5px; font-size: 10px;" title="Another player with an unprotected city has fewer active knights (${minStr} vs your ${myStr})">Cities safe</span>`;
+    return `<span class="ga-chip ga-chip--ok" style="height: 18px; padding: 0 5px; font-size: 10px;" title="${escapeAttr(t(locale, "catan.citiesSafeOtherTitle", { minStr, myStr }))}">${escapeAttr(t(locale, "catan.citiesSafe"))}</span>`;
   })();
 
   const metroPills = IMPROVEMENT_DISCIPLINES.map((disc) => {
     const m = state.metropolises[disc];
     const dMeta = DISCIPLINE_META[disc];
+    const dText = getCatanDisciplineTextLocalized(disc, locale);
     const owner = m.ownerId
       ? state.players.find((p) => p.id === m.ownerId)
       : undefined;
-    return `<span class="ck-metro-pill" style="--metro-accent: ${dMeta.accent};" title="${
-      dMeta.label
-    } Metropolis (+2 VP): ${
-      owner ? `${escapeAttr(owner.name)} (Lv ${m.level})` : "Unclaimed (reach Lv 4)"
-    }">
+    const holderText = owner
+      ? `${owner.name} (${t(locale, "catan.lvN", { lv: m.level })})`
+      : t(locale, "catan.metroUnclaimedHint");
+    return `<span class="ck-metro-pill" style="--metro-accent: ${dMeta.accent};" title="${escapeAttr(
+      t(locale, "catan.metroTooltip", {
+        discipline: dText.label,
+        holder: holderText,
+      })
+    )}">
       ${
         owner
           ? `<span class="player-dot" style="background: ${owner.color}; width: 6px; height: 6px;"></span>`
           : ""
       }
-      <span>${dMeta.shortCode}</span>
+      <span>${escapeAttr(dText.shortCode)}</span>
     </span>`;
   }).join("");
 
   return `
     <div class="map-barbarian-hud">
       <div class="map-barbarian-hud__top">
-        <span class="map-barbarian-hud__title">Fleet ${state.barbarianPosition}/${BARBARIAN_TRACK_STEPS}</span>
+        <span class="map-barbarian-hud__title">${escapeAttr(
+          t(locale, "catan.fleetTrack", {
+            pos: state.barbarianPosition,
+            max: BARBARIAN_TRACK_STEPS,
+          })
+        )}</span>
         <div style="display: inline-flex; align-items: center; gap: 4px;">
           ${personalRiskHtml}
           <span class="ga-chip ${
             isSafe ? "ga-chip--ok" : "ga-chip--danger"
-          } ga-num" style="height: 19px; padding: 0 6px; font-size: 10.5px;" title="Total active knight strength (${defStrength}) vs total island cities (${barbStrength})">
+          } ga-num" style="height: 19px; padding: 0 6px; font-size: 10.5px;" title="${escapeAttr(
+            t(locale, "catan.knightVsCityTitle", {
+              def: defStrength,
+              barb: barbStrength,
+            })
+          )}">
             ⚔ ${defStrength} vs 🏰 ${barbStrength}
           </span>
         </div>
       </div>
       <div class="barb-track-bar" aria-hidden="true">${stepDots}</div>
       <div class="map-barbarian-hud__metros">
-        <span class="t-label muted" style="font-size: 10.5px;">Metropolises</span>
+        <span class="t-label muted" style="font-size: 10.5px;">${escapeAttr(t(locale, "catan.metropolises"))}</span>
         <div style="display: inline-flex; gap: 4px;">${metroPills}</div>
       </div>
     </div>
   `;
 }
 
-export function renderCatanMapDiceHudPure(state: CatanState): string {
+export function renderCatanMapDiceHudPure(
+  state: CatanState,
+  locale: SupportedLocale = "en"
+): string {
   if (!state.lastRoll) {
     return `
         <div class="map-dice-hud">
           <div class="map-dice-hud__row">
             ${renderRollDiceButtonGraphicSvg(28)}
-            <span class="t-label muted">Roll dice to produce</span>
+            <span class="t-label muted">${escapeAttr(t(locale, "catan.rollDiceToProduce"))}</span>
           </div>
         </div>
       `;
@@ -292,15 +321,19 @@ export function renderCatanMapDiceHudPure(state: CatanState): string {
     : [];
   const sevenLabel =
     state.config.enableCitiesAndKnights && state.barbarianAttacksCount < 1
-      ? "7 rolled · robber dormant until 1st attack"
-      : "7 rolled · robber active";
+      ? t(locale, "catan.sevenRobberDormant")
+      : t(locale, "catan.sevenRobberActive");
   const yieldsHtml = isSeven
-    ? `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#ef4444", 18)} ${sevenLabel}</span>`
+    ? `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#ef4444", 18)} ${escapeAttr(sevenLabel)}</span>`
     : prodEntries.length > 0 || commEntries.length > 0 || rollStats.goldHexes > 0
       ? [
           ...prodEntries.map(
             (r) =>
-              `<span class="map-yield-chip" title="${RESOURCE_META[r].label} hex produced">${renderMiniResourceCardSvg(r, 36, 23)}${
+              `<span class="map-yield-chip" title="${escapeAttr(
+                t(locale, "catan.hexProducedTitle", {
+                  label: getCatanResourceTextLocalized(r, locale).label,
+                })
+              )}">${renderMiniResourceCardSvg(r, 36, 23)}${
                 (rollStats.producedByRes[r] ?? 0) > 1
                   ? ` ×${rollStats.producedByRes[r]}`
                   : ""
@@ -308,17 +341,21 @@ export function renderCatanMapDiceHudPure(state: CatanState): string {
           ),
           ...commEntries.map(
             (c) =>
-              `<span class="map-yield-chip" title="${COMMODITY_META[c].label} commodity produced">${renderMiniTradeGoodCardSvg(c, 36, 23)}</span>`
+              `<span class="map-yield-chip" title="${escapeAttr(
+                t(locale, "catan.commodityProducedTitle", {
+                  label: getCatanCommodityTextLocalized(c, locale).label,
+                })
+              )}">${renderMiniTradeGoodCardSvg(c, 36, 23)}</span>`
           ),
           rollStats.goldHexes > 0
-            ? `<span class="map-yield-chip">${renderActionPieceIconSvg("year_of_plenty", "#facc15", 18)} Gold ×${rollStats.goldHexes}</span>`
+            ? `<span class="map-yield-chip">${renderActionPieceIconSvg("year_of_plenty", "#facc15", 18)} ${escapeAttr(t(locale, "catan.goldCount", { count: rollStats.goldHexes }))}</span>`
             : "",
         ]
           .filter(Boolean)
           .join("")
       : rollStats.blockedHexes > 0
-        ? `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#f87171", 16)} Blocked by robber</span>`
-        : `<span class="t-label muted">No matching island hex</span>`;
+        ? `<span class="map-yield-chip">${renderActionPieceIconSvg("robber", "#f87171", 16)} ${escapeAttr(t(locale, "catan.blockedByRobber"))}</span>`
+        : `<span class="t-label muted">${escapeAttr(t(locale, "catan.noMatchingHex"))}</span>`;
 
   const eventDieHtml =
     state.config.enableCitiesAndKnights && eventFace
@@ -341,7 +378,8 @@ export function renderCatanMapDiceHudPure(state: CatanState): string {
 
 export function renderCatanMapZoomControlsPure(
   state: CatanState,
-  viewport: CatanMapViewport
+  viewport: CatanMapViewport,
+  locale: SupportedLocale = "en"
 ): string {
   const baseVb = getCatanBoardViewBox(state);
   const clamped = clampCatanMapViewportPure(viewport, baseVb);
@@ -353,14 +391,14 @@ export function renderCatanMapZoomControlsPure(
     : "";
 
   return `
-    <div class="map-zoom-controls ${belowClass}" role="group" aria-label="Map zoom and pan controls">
-      <button type="button" id="btn-map-zoom-out" class="map-zoom-btn" aria-label="Zoom out map" title="Zoom out (−)" ${
+    <div class="map-zoom-controls ${belowClass}" role="group" aria-label="${escapeAttr(t(locale, "catan.zoomControlsAria"))}">
+      <button type="button" id="btn-map-zoom-out" class="map-zoom-btn" aria-label="${escapeAttr(t(locale, "catan.zoomOutAria"))}" title="${escapeAttr(t(locale, "catan.zoomOutTitle"))}" ${
         atMin ? "disabled" : ""
       }>−</button>
-      <button type="button" id="btn-map-zoom-reset" class="map-zoom-btn map-zoom-btn--reset ga-num" aria-label="Reset map zoom and position" title="Reset map view (0) · Drag map to pan, scroll to zoom" ${
+      <button type="button" id="btn-map-zoom-reset" class="map-zoom-btn map-zoom-btn--reset ga-num" aria-label="${escapeAttr(t(locale, "catan.zoomResetAria"))}" title="${escapeAttr(t(locale, "catan.zoomResetTitle"))}" ${
         isDefault ? "disabled" : ""
       }>${formatCatanZoomPercentPure(clamped.zoom)}</button>
-      <button type="button" id="btn-map-zoom-in" class="map-zoom-btn" aria-label="Zoom in map" title="Zoom in (+)" ${
+      <button type="button" id="btn-map-zoom-in" class="map-zoom-btn" aria-label="${escapeAttr(t(locale, "catan.zoomInAria"))}" title="${escapeAttr(t(locale, "catan.zoomInTitle"))}" ${
         atMax ? "disabled" : ""
       }>+</button>
     </div>
@@ -369,13 +407,18 @@ export function renderCatanMapZoomControlsPure(
 
 export function renderMissingCostBadgePure(
   have: ResourceMap,
-  cost: ResourceMap
+  cost: ResourceMap,
+  locale: SupportedLocale = "en"
 ): string {
   const missing = RESOURCES.flatMap((r) =>
     Array.from(
       { length: Math.max(0, (cost[r] ?? 0) - (have[r] ?? 0)) },
       () =>
-        `<span class="cost-pip res-${r}" title="Need ${RESOURCE_META[r].label}">${renderResourceGlyphSvg(r, 11)}</span>`
+        `<span class="cost-pip res-${r}" title="${escapeAttr(
+          t(locale, "catan.needResourceTitle", {
+            label: getCatanResourceTextLocalized(r, locale).label,
+          })
+        )}">${renderResourceGlyphSvg(r, 11)}</span>`
     )
   );
   return `<span class="cost-pip-strip">${missing.join("")}</span>`;

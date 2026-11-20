@@ -8,6 +8,7 @@ import {
   isCommodityType,
 } from "@gaming-platform/catan";
 import { RESOURCE_META } from "../config/catan-palette-config.ts";
+import { getCatanResourceTextLocalized, t } from "../i18n/index.ts";
 import { renderTerrainIllustration } from "./defs-and-terrain.ts";
 import { type CatanBoardSvgOptions, getPolygonPoints } from "./geometry.ts";
 
@@ -104,6 +105,7 @@ export function buildHexAndHarborParts(
   clickableHexes: ReadonlySet<string>,
   options: CatanBoardSvgOptions
 ): readonly string[] {
+  const locale = options.locale ?? "en";
   const topo = state.topology;
   const hexSize = topo.hexSize;
   const parts: string[] = [];
@@ -232,14 +234,14 @@ export function buildHexAndHarborParts(
                    ${
                      producedRes
                        ? `<g transform="translate(-14, -1.5) scale(0.85)">${renderBoardHarborGlyph(producedRes)}</g>
-                          <text x="6" y="2.2" text-anchor="middle" font-family="Martian Mono, monospace" font-size="8.5" font-weight="700" fill="#fde047">YIELD</text>`
-                       : `<text x="0" y="2.2" text-anchor="middle" font-family="Martian Mono, monospace" font-size="8.5" font-weight="700" fill="#fde047">+GOLD</text>`
+                          <text x="6" y="2.2" text-anchor="middle" font-family="Martian Mono, monospace" font-size="8.5" font-weight="700" fill="#fde047">${t(locale, "catan.svg.yield")}</text>`
+                       : `<text x="0" y="2.2" text-anchor="middle" font-family="Martian Mono, monospace" font-size="8.5" font-weight="700" fill="#fde047">${t(locale, "catan.svg.plusGold")}</text>`
                    }
                  </g>`
               : rolledMatch && isRobbed
                 ? `<g transform="translate(${hNode.centerX}, ${hNode.centerY - 26})">
                      <rect x="-26" y="-9" width="52" height="16" rx="8" fill="#450a0a" stroke="#f87171" stroke-width="1.3" />
-                     <text x="0" y="2.2" text-anchor="middle" font-family="Martian Mono, monospace" font-size="8.2" font-weight="700" fill="#fecaca">BLOCKED</text>
+                     <text x="0" y="2.2" text-anchor="middle" font-family="Martian Mono, monospace" font-size="8.2" font-weight="700" fill="#fecaca">${t(locale, "catan.svg.blocked")}</text>
                    </g>`
                 : ""
           }
@@ -361,7 +363,9 @@ export function buildHexAndHarborParts(
     const isGeneric = harbor.type === "generic";
     const ratioText = isGeneric ? "3:1" : "2:1";
     const subLabel =
-      harbor.type === "generic" ? "Any" : RESOURCE_META[harbor.type].label;
+      harbor.type === "generic"
+        ? t(locale, "catan.svg.anyHarbor")
+        : getCatanResourceTextLocalized(harbor.type, locale).label;
     const strokeAccent =
       harbor.type === "generic" ? "#b45309" : RESOURCE_META[harbor.type].accent;
     const badgeW = isGeneric ? 46 : 58;

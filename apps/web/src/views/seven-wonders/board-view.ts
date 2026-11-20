@@ -6,6 +6,7 @@ import {
   getPlayerTradeRates,
   getRightNeighborIndex,
 } from "@gaming-platform/seven-wonders";
+import { type SupportedLocale, t } from "../../i18n/index.ts";
 import { renderHandOrResolutionHtml } from "./hand-and-tableau.ts";
 import {
   renderEmpireCardHtml,
@@ -18,7 +19,8 @@ export function renderSevenWondersBoardView(
   selectedCardId: string | null,
   legalActions: readonly SevenWondersAction[],
   inspectedPlayerId?: string | null,
-  hideHandForPassAndPlay = false
+  hideHandForPassAndPlay = false,
+  locale: SupportedLocale = "en"
 ): string {
   const viewerIdx = (() => {
     if (viewerPlayerId) {
@@ -49,10 +51,10 @@ export function renderSevenWondersBoardView(
 
   const passLabel =
     state.phase === "SEVENTH_CARD_PLAY"
-      ? "Bonus 7th card play — no hand pass"
+      ? t(locale, "sw.passSeventhCard")
       : state.passDirection === "clockwise"
-        ? "Pass clockwise (East → You → West)"
-        : "Pass counter-clockwise (West → You → East)";
+        ? t(locale, "sw.passClockwise")
+        : t(locale, "sw.passCounterClockwise");
   const ageRoman = state.age === 1 ? "I" : state.age === 2 ? "II" : "III";
 
   const handOrResolutionHtml = renderHandOrResolutionHtml(
@@ -64,7 +66,8 @@ export function renderSevenWondersBoardView(
     selectedCardId,
     legalActions,
     hideHandForPassAndPlay,
-    passLabel
+    passLabel,
+    locale
   );
 
   return `
@@ -75,18 +78,19 @@ export function renderSevenWondersBoardView(
           "left",
           myShields,
           rates.rawLeft,
-          rates.manufacturedLeft
+          rates.manufacturedLeft,
+          locale
         )}
 
         <div class="sw-age-banner">
           <div style="display:inline-flex;align-items:center;gap:8px;">
-            <span class="ga-chip ga-chip--accent ga-num">Age ${ageRoman}</span>
-            <span class="ga-chip ga-num">Draft ${state.draftRound}/6</span>
+            <span class="ga-chip ga-chip--accent ga-num">${t(locale, "sw.ageBanner", { roman: ageRoman })}</span>
+            <span class="ga-chip ga-num">${t(locale, "sw.draftBanner", { round: state.draftRound })}</span>
           </div>
           <div class="t-label muted" style="text-align:center;">${passLabel}</div>
-          <div class="t-label muted ga-num">Discards: ${
-            state.hiddenDiscardCount ?? state.discardPile.length
-          }</div>
+          <div class="t-label muted ga-num">${t(locale, "sw.discardsCount", {
+            count: state.hiddenDiscardCount ?? state.discardPile.length,
+          })}</div>
         </div>
 
         ${renderNeighborPanelHtml(
@@ -94,11 +98,12 @@ export function renderSevenWondersBoardView(
           "right",
           myShields,
           rates.rawRight,
-          rates.manufacturedRight
+          rates.manufacturedRight,
+          locale
         )}
       </div>
 
-      ${renderEmpireCardHtml(state, player, focusIdx, myShields)}
+      ${renderEmpireCardHtml(state, player, focusIdx, myShields, locale)}
 
       ${handOrResolutionHtml}
     </div>

@@ -1,3 +1,4 @@
+import type { SupportedLocale } from "../../i18n/index.ts";
 import {
   TUTORIAL_LESSONS,
   chooseRecommendedTutorialActionPure,
@@ -183,9 +184,18 @@ export function bindTutorialAndGuideEvents(ctx: AppRuntimeContext): void {
     });
 }
 
+export function bindLocaleSelectorEvents(ctx: AppRuntimeContext): void {
+  const { root } = ctx;
+  root.querySelector("#sel-locale")?.addEventListener("change", (e) => {
+    const nextLocale = (e.target as HTMLSelectElement).value as SupportedLocale;
+    ctx.setLocale(nextLocale);
+  });
+}
+
 export function bindCommonIdentityEvents(ctx: AppRuntimeContext): void {
   const { root } = ctx;
   bindDropdownEventsOnRoot(root);
+  bindLocaleSelectorEvents(ctx);
   bindTutorialAndGuideEvents(ctx);
 
   root.querySelectorAll('[role="button"][tabindex="0"]').forEach((el) => {
@@ -282,6 +292,8 @@ export function bindCommonIdentityEvents(ctx: AppRuntimeContext): void {
 
 export function bindLoginEvents(ctx: AppRuntimeContext): void {
   const { root } = ctx;
+  bindDropdownEventsOnRoot(root);
+  bindLocaleSelectorEvents(ctx);
 
   root.querySelector("#inp-guest-name")?.addEventListener("input", (e) => {
     ctx.model = {

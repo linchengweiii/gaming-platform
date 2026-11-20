@@ -5,7 +5,6 @@ import {
   type CatanState,
   type DevCardType,
   type ImprovementDiscipline,
-  PROGRESS_CARD_CATALOG,
   type ProgressCardType,
   RESOURCES,
   getPlayerSafeHandLimit,
@@ -19,6 +18,15 @@ import {
   DISCIPLINE_META,
   RESOURCE_META,
 } from "../config/catan-palette-config.ts";
+import {
+  type SupportedLocale,
+  getCatanCommodityTextLocalized,
+  getCatanDevCardTextLocalized,
+  getCatanDisciplineTextLocalized,
+  getCatanProgressCardTextLocalized,
+  getCatanResourceTextLocalized,
+  t,
+} from "../i18n/index.ts";
 import {
   renderCommodityCardIllustrationSvg,
   renderDevCardIllustrationSvg,
@@ -36,7 +44,8 @@ import {
 export function renderCatanVisualHandTray(
   state: CatanState,
   player: CatanPlayerState,
-  legalActions: CatanAction[]
+  legalActions: CatanAction[],
+  locale: SupportedLocale = "en"
 ): string {
   const safeLimit = getPlayerSafeHandLimit(state, player.id);
   const totalRes = totalResourceCount(player.resources);
@@ -80,21 +89,38 @@ export function renderCatanVisualHandTray(
         <div class="hand-tray-header">
           <div class="hand-tray-header__left">
             <span class="player-dot" style="background: ${player.color}"></span>
-            <strong style="font-size: var(--t-small); font-weight: 500;">${escapeHtml(player.name)} hand</strong>
+            <strong style="font-size: var(--t-small); font-weight: 500;">${escapeHtml(
+              t(locale, "catan.hand.title", { name: player.name })
+            )}</strong>
             <span class="ga-chip ${totalHandCards > safeLimit ? "ga-chip--danger" : "ga-chip--ok"} ga-num">
-              ${totalHandCards}/${safeLimit} cards (${totalRes}R · ${totalComm}C)
+              ${escapeHtml(
+                t(locale, "catan.hand.ckCardsChip", {
+                  total: totalHandCards,
+                  limit: safeLimit,
+                  res: totalRes,
+                  comm: totalComm,
+                })
+              )}
             </span>
             <span class="ga-chip ga-num">
-              ${player.progressCards.length}/4 progress
+              ${escapeHtml(
+                t(locale, "catan.hand.ckProgressChip", {
+                  count: player.progressCards.length,
+                })
+              )}
             </span>
             ${
               player.publicProgressVpCards.length > 0
-                ? `<span class="ga-chip ga-chip--warn ga-num">+${player.publicProgressVpCards.length} VP (${player.publicProgressVpCards.map((t) => PROGRESS_CARD_CATALOG[t].title).join(", ")})</span>`
+                ? `<span class="ga-chip ga-chip--warn ga-num">+${player.publicProgressVpCards.length} VP (${escapeHtml(
+                    player.publicProgressVpCards
+                      .map((pt) => getCatanProgressCardTextLocalized(pt, locale).title)
+                      .join(", ")
+                  )})</span>`
                 : ""
             }
           </div>
           <div class="hand-tray-header__hint muted">
-            Select a resource or commodity to trade, upgrade cities, or play a progress card
+            ${escapeHtml(t(locale, "catan.hand.ckHint"))}
           </div>
         </div>
 
@@ -103,6 +129,7 @@ export function renderCatanVisualHandTray(
             ${RESOURCES.map((res) => {
               const count = player.resources[res];
               const meta = RESOURCE_META[res];
+              const text = getCatanResourceTextLocalized(res, locale);
               const hasCards = count > 0;
               const stackAttr =
                 count >= 3 ? 'data-stack="3"' : count === 2 ? 'data-stack="2"' : "";
@@ -122,8 +149,8 @@ export function renderCatanVisualHandTray(
                     ${renderResourceCardIllustrationSvg(res)}
                   </div>
                   <div class="playing-card-footer">
-                    <div class="playing-card-title">${meta.label}</div>
-                    <div class="playing-card-sub">${meta.subtitle}</div>
+                    <div class="playing-card-title">${escapeHtml(text.label)}</div>
+                    <div class="playing-card-sub">${escapeHtml(text.subtitle)}</div>
                   </div>
                 </div>
               `;
@@ -131,6 +158,7 @@ export function renderCatanVisualHandTray(
             ${COMMODITIES.map((comm) => {
               const count = player.commodities[comm];
               const meta = COMMODITY_META[comm];
+              const text = getCatanCommodityTextLocalized(comm, locale);
               const hasCards = count > 0;
               const stackAttr =
                 count >= 3 ? 'data-stack="3"' : count === 2 ? 'data-stack="2"' : "";
@@ -150,8 +178,8 @@ export function renderCatanVisualHandTray(
                     ${renderCommodityCardIllustrationSvg(comm)}
                   </div>
                   <div class="playing-card-footer">
-                    <div class="playing-card-title">${meta.label}</div>
-                    <div class="playing-card-sub">${meta.subtitle}</div>
+                    <div class="playing-card-title">${escapeHtml(text.label)}</div>
+                    <div class="playing-card-sub">${escapeHtml(text.subtitle)}</div>
                   </div>
                 </div>
               `;
@@ -164,17 +192,20 @@ export function renderCatanVisualHandTray(
             ${
               progressGroups.size === 0
                 ? `<div class="empty-dev-placeholder">
-                     <strong style="color: var(--ink); font-weight: 500;">No progress cards</strong>
-                     <span>Upgrade Trade, Politics, or Science to earn cards on rolls</span>
+                     <strong style="color: var(--ink); font-weight: 500;">${escapeHtml(t(locale, "catan.hand.noProgressTitle"))}</strong>
+                     <span>${escapeHtml(t(locale, "catan.hand.noProgressHint"))}</span>
                    </div>`
                 : Array.from(progressGroups.entries())
                     .map(([cardType, info]) => {
-                      const cat = PROGRESS_CARD_CATALOG[cardType];
+                      const cat = getCatanProgressCardTextLocalized(cardType, locale);
                       const dMeta = DISCIPLINE_META[info.discipline];
+                      const dText = getCatanDisciplineTextLocalized(
+                        info.discipline,
+                        locale
+                      );
                       const canPlayThis = Boolean(info.playableCardId);
-                      const safeTooltip = `${cat.title}: ${cat.description}`.replace(
-                        /"/g,
-                        "&quot;"
+                      const safeTooltip = escapeHtml(
+                        `${cat.title}: ${cat.description}`
                       );
                       return `
                         <div class="playing-card dev-playing-card ${
@@ -183,25 +214,25 @@ export function renderCatanVisualHandTray(
                              title="${safeTooltip}"
                              style="--card-border: ${dMeta.border}; --card-accent: ${dMeta.accent};">
                           <div class="playing-card-top">
-                            <span class="ga-chip" style="height: 22px; padding: 0 8px;">${
-                              dMeta.label
-                            }</span>
+                            <span class="ga-chip" style="height: 22px; padding: 0 8px;">${escapeHtml(
+                              dText.label
+                            )}</span>
                             <span class="playing-card-count active">×${info.total}</span>
                           </div>
                           <div class="playing-card-art">
                             ${renderProgressCardIllustrationSvg(info.discipline)}
                           </div>
-                          <div class="dev-card-title" title="${safeTooltip}">${cat.title}</div>
-                          <div class="dev-card-rule" title="${safeTooltip}">${cat.description}</div>
+                          <div class="dev-card-title" title="${safeTooltip}">${escapeHtml(cat.title)}</div>
+                          <div class="dev-card-rule" title="${safeTooltip}">${escapeHtml(cat.description)}</div>
                           <div class="dev-card-action">
                             ${
                               canPlayThis
-                                ? `<button type="button" class="btn btn--primary btn--sm" data-play-progress-card="${info.playableCardId}" title="${safeTooltip}" style="width: 100%;">Play</button>`
-                                : `<span class="ga-chip" style="width: 100%; justify-content: center;">${
-                                    cat.phase === "PRE_ROLL"
-                                      ? "Play pre-roll"
-                                      : "Main phase"
-                                  }</span>`
+                                ? `<button type="button" class="btn btn--primary btn--sm" data-play-progress-card="${info.playableCardId}" title="${safeTooltip}" style="width: 100%;">${escapeHtml(t(locale, "common.play"))}</button>`
+                                : `<span class="ga-chip" style="width: 100%; justify-content: center;">${escapeHtml(
+                                    cardType === "alchemist"
+                                      ? t(locale, "catan.hand.playPreRoll")
+                                      : t(locale, "catan.hand.mainPhase")
+                                  )}</span>`
                             }
                           </div>
                         </div>
@@ -246,16 +277,29 @@ export function renderCatanVisualHandTray(
       <div class="hand-tray-header">
         <div class="hand-tray-header__left">
           <span class="player-dot" style="background: ${player.color}"></span>
-          <strong style="font-size: var(--t-small); font-weight: 500;">${escapeHtml(player.name)} hand</strong>
+          <strong style="font-size: var(--t-small); font-weight: 500;">${escapeHtml(
+            t(locale, "catan.hand.title", { name: player.name })
+          )}</strong>
           <span class="ga-chip ${totalRes > safeLimit ? "ga-chip--danger" : "ga-chip--ok"} ga-num">
-            ${totalRes}/${safeLimit} resources
+            ${escapeHtml(
+              t(locale, "catan.hand.resourcesChip", {
+                total: totalRes,
+                limit: safeLimit,
+              })
+            )}
           </span>
           <span class="ga-chip ga-num">
-            ${unplayedDevs.length} dev ${unplayedDevs.length === 1 ? "card" : "cards"}
+            ${escapeHtml(
+              unplayedDevs.length === 1
+                ? t(locale, "catan.hand.devCardsOne")
+                : t(locale, "catan.hand.devCardsMany", {
+                    count: unplayedDevs.length,
+                  })
+            )}
           </span>
         </div>
         <div class="hand-tray-header__hint muted">
-          Select a resource card to trade or discard, or play a development card
+          ${escapeHtml(t(locale, "catan.hand.baseHint"))}
         </div>
       </div>
 
@@ -264,6 +308,7 @@ export function renderCatanVisualHandTray(
           ${RESOURCES.map((res) => {
             const count = player.resources[res];
             const meta = RESOURCE_META[res];
+            const text = getCatanResourceTextLocalized(res, locale);
             const hasCards = count > 0;
             const stackAttr =
               count >= 3 ? 'data-stack="3"' : count === 2 ? 'data-stack="2"' : "";
@@ -283,8 +328,8 @@ export function renderCatanVisualHandTray(
                   ${renderResourceCardIllustrationSvg(res)}
                 </div>
                 <div class="playing-card-footer">
-                  <div class="playing-card-title">${meta.label}</div>
-                  <div class="playing-card-sub">${meta.subtitle}</div>
+                  <div class="playing-card-title">${escapeHtml(text.label)}</div>
+                  <div class="playing-card-sub">${escapeHtml(text.subtitle)}</div>
                 </div>
               </div>
             `;
@@ -297,12 +342,13 @@ export function renderCatanVisualHandTray(
           ${
             devGroups.size === 0
               ? `<div class="empty-dev-placeholder">
-                   <strong style="color: var(--ink); font-weight: 500;">No development cards</strong>
-                   <span>Cost: 1 wool, 1 grain, 1 ore</span>
+                   <strong style="color: var(--ink); font-weight: 500;">${escapeHtml(t(locale, "catan.hand.noDevTitle"))}</strong>
+                   <span>${escapeHtml(t(locale, "catan.hand.noDevCost"))}</span>
                  </div>`
               : Array.from(devGroups.entries())
                   .map(([devType, info]) => {
                     const meta = DEV_CARD_META[devType];
+                    const text = getCatanDevCardTextLocalized(devType, locale);
                     let canPlayThis = false;
                     let playBtnId = "";
                     if (devType === "knight" && canPlayKnight) {
@@ -322,10 +368,7 @@ export function renderCatanVisualHandTray(
                       playBtnId = "btn-hand-play-mono";
                     }
 
-                    const safeDevTip = `${meta.title}: ${meta.rule}`.replace(
-                      /"/g,
-                      "&quot;"
-                    );
+                    const safeDevTip = escapeHtml(`${text.title}: ${text.rule}`);
                     return `
                       <div class="playing-card dev-playing-card ${
                         canPlayThis ? "playable-dev-card" : ""
@@ -333,25 +376,25 @@ export function renderCatanVisualHandTray(
                            title="${safeDevTip}"
                            style="--card-border: ${meta.border}; --card-accent: ${meta.accent};">
                         <div class="playing-card-top">
-                          <span class="ga-chip" style="height: 22px; padding: 0 8px;">${
-                            meta.category
-                          }</span>
+                          <span class="ga-chip" style="height: 22px; padding: 0 8px;">${escapeHtml(
+                            text.category
+                          )}</span>
                           <span class="playing-card-count active">×${info.total}</span>
                         </div>
                         <div class="playing-card-art">
                           ${renderDevCardIllustrationSvg(devType)}
                         </div>
-                        <div class="dev-card-title" title="${safeDevTip}">${meta.title}</div>
-                        <div class="dev-card-rule" title="${safeDevTip}">${meta.rule}</div>
+                        <div class="dev-card-title" title="${safeDevTip}">${escapeHtml(text.title)}</div>
+                        <div class="dev-card-rule" title="${safeDevTip}">${escapeHtml(text.rule)}</div>
                         <div class="dev-card-action">
                           ${
                             devType === "victory_point"
-                              ? `<span class="ga-chip ga-chip--warn" style="width: 100%; justify-content: center;">+1 VP active</span>`
+                              ? `<span class="ga-chip ga-chip--warn" style="width: 100%; justify-content: center;">${escapeHtml(t(locale, "catan.hand.vpActive"))}</span>`
                               : canPlayThis
-                                ? `<button id="${playBtnId}" type="button" class="btn btn--primary btn--sm" title="${safeDevTip}" style="width: 100%;">Play</button>`
+                                ? `<button id="${playBtnId}" type="button" class="btn btn--primary btn--sm" title="${safeDevTip}" style="width: 100%;">${escapeHtml(t(locale, "common.play"))}</button>`
                                 : info.boughtThisTurn === info.total
-                                  ? `<span class="ga-chip" style="width: 100%; justify-content: center;">Bought this turn</span>`
-                                  : `<span class="ga-chip" style="width: 100%; justify-content: center;">Play on your turn</span>`
+                                  ? `<span class="ga-chip" style="width: 100%; justify-content: center;">${escapeHtml(t(locale, "catan.hand.boughtThisTurn"))}</span>`
+                                  : `<span class="ga-chip" style="width: 100%; justify-content: center;">${escapeHtml(t(locale, "catan.hand.playOnYourTurn"))}</span>`
                           }
                         </div>
                       </div>

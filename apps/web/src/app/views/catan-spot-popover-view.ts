@@ -8,12 +8,16 @@ import {
   hasResources,
 } from "@gaming-platform/catan";
 import {
-  RESOURCE_META,
   getBoardSpotPercentPosition,
   getBoardSpotSvgCoords,
   renderActionPieceIconSvg,
   renderMiniResourceCardSvg,
 } from "../../catan-graphics.ts";
+import {
+  getCatanResourceTextLocalized,
+  getCatanTerrainLabelLocalized,
+  t,
+} from "../../i18n/index.ts";
 import { escapeHtml } from "../helpers/html-and-dropdown.ts";
 import type { AppModel } from "../types.ts";
 import {
@@ -39,6 +43,7 @@ export function renderCatanSpotPopoverPure(
     return "";
   }
 
+  const locale = model.locale;
   const spot = model.selectedBoardSpot;
   const { xPct, yPct } = getBoardSpotPercentPosition(
     state,
@@ -60,16 +65,16 @@ export function renderCatanSpotPopoverPure(
         (hId) => state.hexes[hId]?.terrain === "sea"
       );
       const hasLand = eNode.adjacentHexIds.some((hId) => {
-        const t = state.hexes[hId]?.terrain;
-        return t && t !== "sea" && t !== "fog";
+        const tVal = state.hexes[hId]?.terrain;
+        return tVal && tVal !== "sea" && tVal !== "fog";
       });
       const spotKindLabel =
         hasSea && hasLand
-          ? "Coastal edge"
+          ? t(locale, "catan.spot.coastalEdge")
           : hasSea
-            ? "Sea lane"
-            : "Island path";
-      const titleHtml = `${renderActionPieceIconSvg(hasSea && !hasLand ? "ship" : "road", pColor, 18)} <span>${spotKindLabel}</span>`;
+            ? t(locale, "catan.spot.seaLane")
+            : t(locale, "catan.spot.islandPath");
+      const titleHtml = `${renderActionPieceIconSvg(hasSea && !hasLand ? "ship" : "road", pColor, 18)} <span>${escapeHtml(spotKindLabel)}</span>`;
 
       const canBuildRoadHere = legalActions.some(
         (a) => a.type === "BUILD_ROAD" && a.edgeId === spot.id
@@ -103,28 +108,28 @@ export function renderCatanSpotPopoverPure(
 
       const actionItems = [
         canSetupRoadHere
-          ? `<button type="button" data-spot-action="setup_road" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("road", pColor, 18)} <span>Place starting road</span></button>`
+          ? `<button type="button" data-spot-action="setup_road" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("road", pColor, 18)} <span>${escapeHtml(t(locale, "catan.spot.placeStartingRoad"))}</span></button>`
           : "",
         canSetupShipHere
-          ? `<button type="button" data-spot-action="setup_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("ship", pColor, 18)} <span>Place starting ship</span></button>`
+          ? `<button type="button" data-spot-action="setup_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("ship", pColor, 18)} <span>${escapeHtml(t(locale, "catan.spot.placeStartingShip"))}</span></button>`
           : "",
         canBuildRoadHere
           ? `<button type="button" data-spot-action="build_road" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("road", pColor, 18)} Build road</span>
-            ${state.phase === "ROAD_BUILDING_DEV" ? `<span class="ga-chip">Free</span>` : renderCostPipStripPure(BUILDING_COSTS.road)}
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("road", pColor, 18)} ${escapeHtml(t(locale, "catan.spot.buildRoad"))}</span>
+            ${state.phase === "ROAD_BUILDING_DEV" ? `<span class="ga-chip">${escapeHtml(t(locale, "common.free"))}</span>` : renderCostPipStripPure(BUILDING_COSTS.road, locale)}
           </button>`
           : "",
         canBuildShipHere
           ? `<button type="button" data-spot-action="build_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("ship", pColor, 18)} Build ship</span>
-            ${state.phase === "ROAD_BUILDING_DEV" ? `<span class="ga-chip">Free</span>` : renderCostPipStripPure(BUILDING_COSTS.ship)}
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("ship", pColor, 18)} ${escapeHtml(t(locale, "catan.spot.buildShip"))}</span>
+            ${state.phase === "ROAD_BUILDING_DEV" ? `<span class="ga-chip">${escapeHtml(t(locale, "common.free"))}</span>` : renderCostPipStripPure(BUILDING_COSTS.ship, locale)}
           </button>`
           : "",
         moveToHere
-          ? `<button type="button" data-spot-action="complete_move_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_ship", pColor, 18)} <span>Sail ship here</span></button>`
+          ? `<button type="button" data-spot-action="complete_move_ship" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_ship", pColor, 18)} <span>${escapeHtml(t(locale, "catan.spot.sailShipHere"))}</span></button>`
           : "",
         moveFromHere
-          ? `<button type="button" data-spot-action="start_move_ship" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_ship", pColor, 18)} <span>Move this ship</span></button>`
+          ? `<button type="button" data-spot-action="start_move_ship" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_ship", pColor, 18)} <span>${escapeHtml(t(locale, "catan.spot.moveThisShip"))}</span></button>`
           : "",
       ].filter(Boolean);
 
@@ -132,7 +137,16 @@ export function renderCatanSpotPopoverPure(
         if (actionItems.length > 0) return "";
         if (route) {
           const owner = state.players.find((p) => p.id === route.ownerId);
-          return `<div class="t-label muted" style="display: flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg(route.type, owner?.color ?? pColor, 18)} <span>${escapeHtml(owner?.name ?? "Player")} ${route.type}</span></div>`;
+          const pieceLabel =
+            route.type === "ship"
+              ? t(locale, "catan.phase.edgeShip")
+              : t(locale, "catan.phase.edgeRoad");
+          return `<div class="t-label muted" style="display: flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg(route.type, owner?.color ?? pColor, 18)} <span>${escapeHtml(
+            t(locale, "catan.spot.ownerPiece", {
+              owner: owner?.name ?? t(locale, "common.player"),
+              piece: pieceLabel,
+            })
+          )}</span></div>`;
         }
         const roadGeomOk = getLegalRoadEdges(
           state,
@@ -148,12 +162,12 @@ export function renderCatanSpotPopoverPure(
         ) {
           return `
               <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-                <span>Road needs</span>
-                ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.road)}
+                <span>${escapeHtml(t(locale, "catan.spot.roadNeeds"))}</span>
+                ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.road, locale)}
               </div>
               ${
                 state.phase === "MAIN_PHASE" && legalActions.length > 0
-                  ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
+                  ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>${escapeHtml(t(locale, "catan.spot.tradeForResources"))}</span></button>`
                   : ""
               }
             `;
@@ -164,17 +178,17 @@ export function renderCatanSpotPopoverPure(
         ) {
           return `
               <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-                <span>Ship needs</span>
-                ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.ship)}
+                <span>${escapeHtml(t(locale, "catan.spot.shipNeeds"))}</span>
+                ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.ship, locale)}
               </div>
               ${
                 state.phase === "MAIN_PHASE" && legalActions.length > 0
-                  ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
+                  ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>${escapeHtml(t(locale, "catan.spot.tradeForResources"))}</span></button>`
                   : ""
               }
             `;
         }
-        return `<div class="t-label muted">Connect a road or ship to build on this edge.</div>`;
+        return `<div class="t-label muted">${escapeHtml(t(locale, "catan.spot.connectEdgeHint"))}</div>`;
       })();
 
       return { valid: true, titleHtml, actionItems, hintHtml };
@@ -196,7 +210,9 @@ export function renderCatanSpotPopoverPure(
     }
     const res = TERRAIN_TO_RESOURCE[tile.terrain];
     const terrainName =
-      tile.terrain.charAt(0).toUpperCase() + tile.terrain.slice(1);
+      locale === "en"
+        ? tile.terrain.charAt(0).toUpperCase() + tile.terrain.slice(1)
+        : getCatanTerrainLabelLocalized(tile.terrain, locale);
     const titleHtml = `${
       res
         ? renderMiniResourceCardSvg(res, 32, 20)
@@ -205,7 +221,7 @@ export function renderCatanSpotPopoverPure(
             pColor,
             18
           )
-    } <span>${terrainName}${tile.numberToken ? ` · #${tile.numberToken}` : ""}</span>`;
+    } <span>${escapeHtml(terrainName)}${tile.numberToken ? ` · #${tile.numberToken}` : ""}</span>`;
 
     const canRobHere = legalActions.some(
       (a) => a.type === "MOVE_ROBBER" && a.hexId === spot.id
@@ -226,36 +242,53 @@ export function renderCatanSpotPopoverPure(
         )
       : undefined;
 
+    const chaseTargetLabel =
+      chaseCandidate?.targetKind === "pirate"
+        ? locale === "en"
+          ? "pirate"
+          : t(locale, "catan.phase.piecePirateShip")
+        : t(locale, "catan.phase.pieceRobber");
+
     const actionItems = [
       canRobHere
-        ? `<button type="button" data-spot-action="move_robber" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("robber", pColor, 18)} <span>Move robber here</span></button>`
+        ? `<button type="button" data-spot-action="move_robber" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("robber", pColor, 18)} <span>${escapeHtml(t(locale, "catan.spot.moveRobberHere"))}</span></button>`
         : "",
       canPirateHere
-        ? `<button type="button" data-spot-action="move_pirate" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("pirate", pColor, 18)} <span>Move pirate here</span></button>`
+        ? `<button type="button" data-spot-action="move_pirate" data-spot-id="${spot.id}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("pirate", pColor, 18)} <span>${escapeHtml(t(locale, "catan.spot.movePirateHere"))}</span></button>`
         : "",
       chaseCandidate
-        ? `<button type="button" data-spot-action="complete_chase_robber" data-spot-id="${spot.id}" data-chase-vertex="${chaseCandidate.vertexId}" data-chase-target="${chaseCandidate.targetKind ?? "robber"}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("chase_robber", pColor, 18)} <span>Chase ${chaseCandidate.targetKind ?? "robber"} here</span></button>`
+        ? `<button type="button" data-spot-action="complete_chase_robber" data-spot-id="${spot.id}" data-chase-vertex="${chaseCandidate.vertexId}" data-chase-target="${chaseCandidate.targetKind ?? "robber"}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("chase_robber", pColor, 18)} <span>${escapeHtml(
+            t(locale, "catan.spot.chaseTargetHere", { target: chaseTargetLabel })
+          )}</span></button>`
         : "",
       canPlayKnight &&
       ((tile.terrain !== "sea" && state.robberHexId !== spot.id) ||
         (tile.terrain === "sea" &&
           state.config.enableSeafarers &&
           state.pirateHexId !== spot.id))
-        ? `<button type="button" data-spot-action="play_knight" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("knight", pColor, 18)} <span>Play knight card</span></button>`
+        ? `<button type="button" data-spot-action="play_knight" data-spot-id="${spot.id}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("knight", pColor, 18)} <span>${escapeHtml(t(locale, "catan.spot.playKnightCard"))}</span></button>`
         : "",
     ].filter(Boolean);
 
+    const resLabel = res
+      ? locale === "en"
+        ? getCatanResourceTextLocalized(res, locale).label.toLowerCase()
+        : getCatanResourceTextLocalized(res, locale).label
+      : "";
     const hintHtml =
       actionItems.length === 0
-        ? `<div class="t-label muted">${
+        ? `<div class="t-label muted">${escapeHtml(
             state.robberHexId === spot.id
-              ? "Robber currently blocks this tile."
+              ? t(locale, "catan.spot.robberBlocks")
               : state.pirateHexId === spot.id
-                ? "Pirate ship currently blocks this sea."
+                ? t(locale, "catan.spot.pirateBlocks")
                 : res
-                  ? `Produces ${RESOURCE_META[res].label.toLowerCase()} on roll ${tile.numberToken}.`
-                  : "No resource yield on this tile."
-          }</div>`
+                  ? t(locale, "catan.spot.producesOnRoll", {
+                      resource: resLabel,
+                      num: tile.numberToken ?? "",
+                    })
+                  : t(locale, "catan.spot.noYield")
+          )}</div>`
         : "";
 
     return { valid: true, titleHtml, actionItems, hintHtml };
@@ -267,7 +300,7 @@ export function renderCatanSpotPopoverPure(
       <div class="map-spot-popover ${belowClass}" data-spot-svg-x="${svgX.toFixed(2)}" data-spot-svg-y="${svgY.toFixed(2)}" style="left: ${xPct.toFixed(1)}%; top: ${yPct.toFixed(1)}%;">
         <div class="map-spot-popover__head">
           <div class="map-spot-popover__title">${details.titleHtml}</div>
-          <button type="button" id="btn-close-spot-popover" class="map-spot-popover__close" aria-label="Close spot menu">×</button>
+          <button type="button" id="btn-close-spot-popover" class="map-spot-popover__close" aria-label="${escapeHtml(t(locale, "catan.spot.closeMenuAria"))}">×</button>
         </div>
         <div class="map-spot-popover__actions">
           ${details.actionItems.join("")}

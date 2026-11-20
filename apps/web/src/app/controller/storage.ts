@@ -5,8 +5,10 @@ import {
   DEVICE_GUESTS_STORAGE_KEY,
   GUEST_STORAGE_KEY,
   LAST_ACTIVE_GUEST_STORAGE_KEY,
+  LOCALE_STORAGE_KEY,
   clampBotMoveThrottleMsPure,
 } from "../../config/app-config.ts";
+import { type SupportedLocale, normalizeLocale } from "../../i18n/index.ts";
 import type { GuestSession } from "../types.ts";
 
 export function loadDeviceGuestsFromStorage(): GuestSession[] {
@@ -181,6 +183,25 @@ export function saveBotMoveThrottleMsToStorage(delayMs: number): void {
       BOT_MOVE_THROTTLE_STORAGE_KEY,
       String(clampBotMoveThrottleMsPure(delayMs))
     );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function loadSavedLocaleFromStorage(): SupportedLocale | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage?.getItem(LOCALE_STORAGE_KEY);
+    return normalizeLocale(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function saveLocaleToStorage(locale: SupportedLocale): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage?.setItem(LOCALE_STORAGE_KEY, locale);
   } catch {
     // Ignore storage errors
   }

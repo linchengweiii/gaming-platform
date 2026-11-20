@@ -6,6 +6,12 @@ import {
   WONDER_RESOURCES,
   type WonderResource,
 } from "@gaming-platform/seven-wonders";
+import {
+  type SupportedLocale,
+  getSevenWondersCardColorTextLocalized,
+  getSevenWondersResourceTextLocalized,
+  t,
+} from "../../i18n/index.ts";
 
 export const SW_RESOURCE_META: Readonly<
   Record<
@@ -181,38 +187,51 @@ export function renderSwCoinSvg(size = 14): string {
 export function renderSwResourceBadge(
   res: WonderResource,
   count = 1,
-  compact = false
+  compact = false,
+  locale: SupportedLocale = "en"
 ): string {
   const meta = SW_RESOURCE_META[res];
-  return `<span class="sw-res-pill ga-num" style="background:${meta.bg};border-color:${meta.border};color:${meta.ink};" title="${count} ${meta.label}">
+  const resText = getSevenWondersResourceTextLocalized(res, locale);
+  return `<span class="sw-res-pill ga-num" style="background:${meta.bg};border-color:${meta.border};color:${meta.ink};" title="${count} ${resText.label}">
     ${renderSwResourceIconSvg(res, compact ? 11 : 13)}
-    <span>${count > 1 ? `${count} ` : ""}${compact ? meta.short : meta.label}</span>
+    <span>${count > 1 ? `${count} ` : ""}${compact ? resText.short : resText.label}</span>
   </span>`;
 }
 
-export function formatChoiceShortLabel(opts: readonly WonderResource[]): string {
-  if (opts.length === 4) return "Any Raw";
-  if (opts.length === 3) return "Any Good";
-  return opts.map((o) => SW_RESOURCE_META[o].short).join("/");
+export function formatChoiceShortLabel(
+  opts: readonly WonderResource[],
+  locale: SupportedLocale = "en"
+): string {
+  if (opts.length === 4) return t(locale, "sw.anyRaw");
+  if (opts.length === 3) return t(locale, "sw.anyGood");
+  return opts
+    .map((o) => getSevenWondersResourceTextLocalized(o, locale).short)
+    .join("/");
 }
 
-export function summarizeCardEffectsHtml(card: SevenWondersCard): string {
+export function summarizeCardEffectsHtml(
+  card: SevenWondersCard,
+  locale: SupportedLocale = "en"
+): string {
   const parts: string[] = [];
   for (const ef of card.effects) {
-    parts.push(renderEffectTokenHtml(ef));
+    parts.push(renderEffectTokenHtml(ef, locale));
   }
   return parts.join(" ");
 }
 
-export function summarizeBuiltPillSuffix(card: SevenWondersCard): string {
+export function summarizeBuiltPillSuffix(
+  card: SevenWondersCard,
+  locale: SupportedLocale = "en"
+): string {
   const tags: string[] = [];
   for (const ef of card.effects) {
     if (ef.kind === "resources") {
       const cnt = ef.count ?? 1;
       tags.push(
         ef.options.length === 1
-          ? `${cnt > 1 ? cnt : ""}${SW_RESOURCE_META[ef.options[0]!].short}`
-          : formatChoiceShortLabel(ef.options)
+          ? `${cnt > 1 ? cnt : ""}${getSevenWondersResourceTextLocalized(ef.options[0]!, locale).short}`
+          : formatChoiceShortLabel(ef.options, locale)
       );
     } else if (ef.kind === "vp") {
       tags.push(`+${ef.points}VP`);
@@ -220,19 +239,23 @@ export function summarizeBuiltPillSuffix(card: SevenWondersCard): string {
       tags.push(`⚔${ef.shields}`);
     } else if (ef.kind === "science") {
       tags.push(
-        ef.symbol === "compass" ? "Cmp" : ef.symbol === "gear" ? "Gear" : "Tab"
+        ef.symbol === "compass"
+          ? t(locale, "sw.compassShort")
+          : ef.symbol === "gear"
+            ? t(locale, "sw.gearShort")
+            : t(locale, "sw.tabletShort")
       );
     } else if (ef.kind === "wildcard_science") {
-      tags.push("Sci*");
+      tags.push(t(locale, "sw.pillSciWild"));
     } else if (ef.kind === "trade_discount") {
       tags.push(
         ef.manufacturedBoth
-          ? "1c Good"
+          ? t(locale, "sw.pillDiscGood")
           : ef.rawLeft && ef.rawRight
-            ? "1c Raw"
+            ? t(locale, "sw.pillDiscRaw")
             : ef.rawLeft
-              ? "1c←W"
-              : "1c→E"
+              ? t(locale, "sw.pillDiscWest")
+              : t(locale, "sw.pillDiscEast")
       );
     } else if (ef.kind === "coins") {
       tags.push(`+${ef.coins}c`);
@@ -240,12 +263,16 @@ export function summarizeBuiltPillSuffix(card: SevenWondersCard): string {
       const parts: string[] = [];
       if (ef.coinsPerMatch > 0) parts.push(`+${ef.coinsPerMatch}c`);
       if (ef.vpPerMatch > 0) parts.push(`+${ef.vpPerMatch}VP`);
-      if (parts.length > 0) tags.push(`${parts.join("/")}/card`);
+      if (parts.length > 0) {
+        tags.push(t(locale, "sw.pillPerCard", { rewards: parts.join("/") }));
+      }
     } else if (ef.kind === "per_wonder_stage_reward") {
       const parts: string[] = [];
       if (ef.coinsPerStage > 0) parts.push(`+${ef.coinsPerStage}c`);
       if (ef.vpPerStage > 0) parts.push(`+${ef.vpPerStage}VP`);
-      if (parts.length > 0) tags.push(`${parts.join("/")}/stg`);
+      if (parts.length > 0) {
+        tags.push(t(locale, "sw.pillPerStage", { rewards: parts.join("/") }));
+      }
     } else if (ef.kind === "per_defeat_token_vp") {
       tags.push(`+${ef.vpPerToken}VP/-1⚔`);
     }
@@ -253,18 +280,24 @@ export function summarizeBuiltPillSuffix(card: SevenWondersCard): string {
   return tags.length > 0 ? ` · ${tags.join(" ")}` : "";
 }
 
-export function renderEffectTokenHtml(ef: CardEffect): string {
+export function renderEffectTokenHtml(
+  ef: CardEffect,
+  locale: SupportedLocale = "en"
+): string {
   if (ef.kind === "resources") {
     const count = ef.count ?? 1;
     if (ef.options.length === 1) {
-      return renderSwResourceBadge(ef.options[0]!, count, true);
+      return renderSwResourceBadge(ef.options[0]!, count, true, locale);
     }
-    return `<span class="sw-effect-chip" title="Produces 1 of ${ef.options.map((o) => SW_RESOURCE_META[o].label).join(" / ")}">
-      ${formatChoiceShortLabel(ef.options)}
+    const optionsLabel = ef.options
+      .map((o) => getSevenWondersResourceTextLocalized(o, locale).label)
+      .join(" / ");
+    return `<span class="sw-effect-chip" title="${t(locale, "sw.producesChoiceTitle", { options: optionsLabel })}">
+      ${formatChoiceShortLabel(ef.options, locale)}
     </span>`;
   }
   if (ef.kind === "vp") {
-    return `<span class="sw-vp-badge ga-num">+${ef.points} VP</span>`;
+    return `<span class="sw-vp-badge ga-num">+${ef.points} ${t(locale, "common.vpUnit")}</span>`;
   }
   if (ef.kind === "shields") {
     return `<span class="sw-shield-badge ga-num">${renderSwShieldSvg(13)} +${ef.shields}</span>`;
@@ -272,60 +305,68 @@ export function renderEffectTokenHtml(ef: CardEffect): string {
   if (ef.kind === "science") {
     const label =
       ef.symbol === "compass"
-        ? "Compass"
+        ? t(locale, "sw.compass")
         : ef.symbol === "gear"
-          ? "Gear"
-          : "Tablet";
-    return `<span class="sw-sci-badge" title="Science: ${label}">${renderSwScienceIconSvg(ef.symbol, 14)} ${label}</span>`;
+          ? t(locale, "sw.gear")
+          : t(locale, "sw.tablet");
+    return `<span class="sw-sci-badge" title="${t(locale, "sw.sciencePrefix", { label })}">${renderSwScienceIconSvg(ef.symbol, 14)} ${label}</span>`;
   }
   if (ef.kind === "wildcard_science") {
-    return `<span class="sw-sci-badge" title="Any 1 Science symbol">Compass / Gear / Tablet</span>`;
+    return `<span class="sw-sci-badge" title="${t(locale, "sw.anyScienceTitle")}">${t(locale, "sw.anyScienceLabel")}</span>`;
   }
   if (ef.kind === "coins") {
     return `<span class="sw-coin-badge ga-num">${renderSwCoinSvg(13)} +${ef.coins}</span>`;
   }
   if (ef.kind === "trade_discount") {
     const dir = ef.manufacturedBoth
-      ? "1c Goods L&R"
+      ? t(locale, "sw.discGoodsBoth")
       : ef.rawLeft && ef.rawRight
-        ? "1c Raw L&R"
+        ? t(locale, "sw.discRawBoth")
         : ef.rawLeft
-          ? "1c Raw ← West"
-          : "1c Raw East →";
+          ? t(locale, "sw.discRawWest")
+          : t(locale, "sw.discRawEast");
     return `<span class="sw-effect-chip">${dir}</span>`;
   }
   if (ef.kind === "per_card_reward") {
     const scope =
       ef.includeSelf && ef.includeNeighbors
-        ? "L+You+R"
+        ? t(locale, "sw.scopeAll")
         : ef.includeSelf
-          ? "own"
-          : "L+R";
-    const target = ef.targetColors.join("/");
+          ? t(locale, "sw.scopeOwn")
+          : t(locale, "sw.scopeNeighbors");
+    const target =
+      locale === "en"
+        ? ef.targetColors.join("/")
+        : ef.targetColors
+            .map((col) => getSevenWondersCardColorTextLocalized(col, locale).short)
+            .join("/");
     const rewards: string[] = [];
     if (ef.coinsPerMatch > 0) rewards.push(`+${ef.coinsPerMatch}c`);
     if (ef.vpPerMatch > 0) rewards.push(`+${ef.vpPerMatch}VP`);
     return `<span class="sw-effect-chip ga-num">${rewards.join(" ")} / ${scope} ${target}</span>`;
   }
   if (ef.kind === "per_wonder_stage_reward") {
-    const scope = ef.includeNeighbors ? "L+You+R" : "own";
+    const scope = ef.includeNeighbors
+      ? t(locale, "sw.scopeAll")
+      : t(locale, "sw.scopeOwn");
     const rewards: string[] = [];
     if (ef.coinsPerStage > 0) rewards.push(`+${ef.coinsPerStage}c`);
     if (ef.vpPerStage > 0) rewards.push(`+${ef.vpPerStage}VP`);
-    return `<span class="sw-effect-chip ga-num">${rewards.join(" ")} / ${scope} stage</span>`;
+    return `<span class="sw-effect-chip ga-num">${t(locale, "sw.perStage", { rewards: rewards.join(" "), scope })}</span>`;
   }
   if (ef.kind === "per_defeat_token_vp") {
-    return `<span class="sw-effect-chip ga-num">+${ef.vpPerToken}VP / L+R defeat</span>`;
+    return `<span class="sw-effect-chip ga-num">${t(locale, "sw.perDefeat", { vp: ef.vpPerToken })}</span>`;
   }
   if (ef.kind === "complete_wonder_vp") {
-    return `<span class="sw-vp-badge ga-num">+${ef.points} VP full wonder</span>`;
+    return `<span class="sw-vp-badge ga-num">${t(locale, "sw.fullWonderVp", { vp: ef.points })}</span>`;
   }
   return "";
 }
 
 export function renderCostStripHtml(
   resourceCost: Partial<Record<WonderResource, number>>,
-  coinCost = 0
+  coinCost = 0,
+  locale: SupportedLocale = "en"
 ): string {
   const chips: string[] = [];
   if (coinCost > 0) {
@@ -336,11 +377,11 @@ export function renderCostStripHtml(
   for (const res of WONDER_RESOURCES) {
     const amt = resourceCost[res] ?? 0;
     if (amt > 0) {
-      chips.push(renderSwResourceBadge(res, amt, true));
+      chips.push(renderSwResourceBadge(res, amt, true, locale));
     }
   }
   if (chips.length === 0) {
-    return `<span class="t-label muted">Free</span>`;
+    return `<span class="t-label muted">${t(locale, "common.free")}</span>`;
   }
   return chips.join(" ");
 }

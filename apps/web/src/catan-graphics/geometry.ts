@@ -1,5 +1,6 @@
 import { axialNeighbors, hexId, hexToPixel } from "@gaming-platform/core";
 import type { CatanState } from "@gaming-platform/catan";
+import type { SupportedLocale } from "../i18n/types.ts";
 import {
   type CatanMapViewport,
   computeCatanCameraViewBoxPure,
@@ -17,6 +18,7 @@ export interface CatanBoardSvgOptions {
   progressTargetEdgeIds?: readonly string[];
   selectedSpot?: { kind: "edge" | "vertex" | "hex"; id: string } | null;
   viewport?: CatanMapViewport | null;
+  locale?: SupportedLocale;
 }
 
 export interface OuterOceanHexNode {

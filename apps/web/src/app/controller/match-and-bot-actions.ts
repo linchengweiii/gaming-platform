@@ -8,6 +8,7 @@ import {
   SPECIAL_BUILD_AUTO_END_DELAY_MS,
   clampBotMoveThrottleMsPure,
 } from "../../config/app-config.ts";
+import { t } from "../../i18n/index.ts";
 import {
   canControlPlayerOnDevicePure,
   findActiveRoomPure,
@@ -131,7 +132,7 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
           }
           const data = await res.json();
           if (!res.ok) {
-            alert(data.error ?? "Cannot start match");
+            alert(data.error ?? t(ctx.model.locale, "alert.cannotStartMatch"));
             return;
           }
           const upserted = upsertRoomFromSummaryPure(
@@ -156,7 +157,11 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
           ctx.render();
         } catch (err: any) {
           if (ctx.navEpoch !== capturedEpoch) return;
-          alert(`Unable to start match: ${err?.message ?? String(err)}`);
+          alert(
+            t(ctx.model.locale, "alert.unableStartMatchWithReason", {
+              reason: err?.message ?? String(err),
+            })
+          );
         } finally {
           startingRoomIds.delete(roomId);
         }
@@ -200,7 +205,12 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
           }
           const data = await res.json();
           if (!res.ok) {
-            alert(`Action error: ${data.error ?? "Illegal action"}`);
+            alert(
+              t(ctx.model.locale, "alert.actionError", {
+                reason:
+                  data.error ?? t(ctx.model.locale, "alert.illegalAction"),
+              })
+            );
             return;
           }
           ctx.model = resetSubModesPure(
@@ -213,7 +223,11 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
           );
           ctx.render();
         } catch (err: any) {
-          alert(`Action error: ${err?.message ?? String(err)}`);
+          alert(
+            t(ctx.model.locale, "alert.actionError", {
+              reason: err?.message ?? String(err),
+            })
+          );
         }
       })();
       return;
@@ -236,7 +250,11 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
       ctx.render();
       scheduleBotAutoResponseIfNeeded();
     } catch (err: any) {
-      alert(`Action error: ${err?.message ?? String(err)}`);
+      alert(
+        t(ctx.model.locale, "alert.actionError", {
+          reason: err?.message ?? String(err),
+        })
+      );
     }
   };
 

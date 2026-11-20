@@ -16,8 +16,16 @@ import {
   hasDuplicateCardName,
 } from "@gaming-platform/seven-wonders";
 import {
+  type SupportedLocale,
+  getSevenWondersCardColorTextLocalized,
+  getSevenWondersCardNameLocalized,
+  getSevenWondersResourceTextLocalized,
+  getSevenWondersStageSummaryLocalized,
+  getSevenWondersWonderNameLocalized,
+  t,
+} from "../../i18n/index.ts";
+import {
   SW_CARD_COLOR_META,
-  SW_RESOURCE_META,
   escapeSwHtml as escapeHtml,
   formatChoiceShortLabel,
   renderCostStripHtml,
@@ -30,7 +38,8 @@ import {
 export function computeImmediateCardPreviewHtml(
   state: SevenWondersState,
   playerIndex: number,
-  card: SevenWondersCard
+  card: SevenWondersCard,
+  locale: SupportedLocale = "en"
 ): string {
   const players = state.players;
   const player = players[playerIndex]!;
@@ -85,13 +94,16 @@ export function computeImmediateCardPreviewHtml(
   if (shieldEf && shieldEf.kind === "shields") {
     const myNow = getPlayerShields(player);
     const myNext = myNow + shieldEf.shields;
+    const winLabel = t(locale, "sw.warWin");
+    const loseLabel = t(locale, "sw.warLose");
+    const tieLabel = t(locale, "sw.warTie");
     const fmtFlip = (oppSh: number, tag: string): string | null => {
-      const prev = myNow > oppSh ? "Win" : myNow < oppSh ? "Lose" : "Tie";
-      const next = myNext > oppSh ? "Win" : myNext < oppSh ? "Lose" : "Tie";
+      const prev = myNow > oppSh ? winLabel : myNow < oppSh ? loseLabel : tieLabel;
+      const next = myNext > oppSh ? winLabel : myNext < oppSh ? loseLabel : tieLabel;
       return prev !== next ? `${tag}: ${prev}→${next}` : null;
     };
-    const wFlip = fmtFlip(getPlayerShields(left), "W");
-    const eFlip = fmtFlip(getPlayerShields(right), "E");
+    const wFlip = fmtFlip(getPlayerShields(left), t(locale, "sw.dirW"));
+    const eFlip = fmtFlip(getPlayerShields(right), t(locale, "sw.dirE"));
     const flips = [wFlip, eFlip].filter(Boolean).join(" · ");
     if (flips) {
       return `<div class="t-label ga-num" style="color:#fca5a5;">${escapeHtml(flips)}</div>`;
@@ -109,17 +121,20 @@ export function computeImmediateCardPreviewHtml(
       after.scienceCounts.gear,
       after.scienceCounts.tablet
     );
-    return `<div class="t-label ga-num" style="color:#86efac;">Now: +${sciDelta} sci VP${
-      setsAfter > setsBefore ? " (completes set!)" : ""
-    }</div>`;
+    return `<div class="t-label ga-num" style="color:#86efac;">${t(locale, "sw.nowSciVp", {
+      vp: sciDelta,
+      set: setsAfter > setsBefore ? t(locale, "sw.completesSet") : "",
+    })}</div>`;
   }
 
   if (card.color === "yellow" || card.color === "purple") {
     if (nonCoinVpDelta > 0 || coinsNow > 0) {
       const bits: string[] = [];
       if (coinsNow > 0) bits.push(`+${coinsNow}c`);
-      if (nonCoinVpDelta > 0) bits.push(`+${nonCoinVpDelta} VP`);
-      return `<div class="t-label ga-num" style="color:#fde047;">Now: ${bits.join(", ")}</div>`;
+      if (nonCoinVpDelta > 0) {
+        bits.push(`+${nonCoinVpDelta} ${t(locale, "common.vpUnit")}`);
+      }
+      return `<div class="t-label ga-num" style="color:#fde047;">${t(locale, "sw.nowBits", { bits: bits.join(", ") })}</div>`;
     }
     const isScalingVpCard = card.effects.some(
       (ef) =>
@@ -128,7 +143,7 @@ export function computeImmediateCardPreviewHtml(
         ef.kind === "per_defeat_token_vp"
     );
     if (isScalingVpCard) {
-      return `<div class="t-label ga-num muted">Now: +0 VP</div>`;
+      return `<div class="t-label ga-num muted">${t(locale, "sw.nowZeroVp")}</div>`;
     }
   }
 
@@ -140,30 +155,37 @@ export function renderNeighborPanelHtml(
   direction: "left" | "right",
   myShields: number,
   rawRate: 1 | 2,
-  mfgRate: 1 | 2
+  mfgRate: 1 | 2,
+  locale: SupportedLocale = "en"
 ): string {
   const oppShields = getPlayerShields(neighbor);
   const warDiff = myShields - oppShields;
   const warChip =
     warDiff > 0
-      ? `<span class="ga-chip ga-chip--ok ga-num">War +${warDiff}</span>`
+      ? `<span class="ga-chip ga-chip--ok ga-num">${t(locale, "sw.warPlus", { diff: warDiff })}</span>`
       : warDiff < 0
-        ? `<span class="ga-chip ga-chip--danger ga-num">War ${warDiff}</span>`
-        : `<span class="ga-chip ga-num">War tied</span>`;
+        ? `<span class="ga-chip ga-chip--danger ga-num">${t(locale, "sw.warMinus", { diff: warDiff })}</span>`
+        : `<span class="ga-chip ga-num">${t(locale, "sw.warTied")}</span>`;
 
   const board = getWonderBoardDefinition(neighbor.wonderId, neighbor.wonderSide);
-  const defeatCount = neighbor.militaryTokens.filter((t) => t.points < 0).length;
+  const wonderCompactName = getSevenWondersWonderNameLocalized(
+    neighbor.wonderId,
+    neighbor.wonderSide,
+    locale,
+    true
+  );
+  const defeatCount = neighbor.militaryTokens.filter((tk) => tk.points < 0).length;
 
   const tradable = getNeighborTradableProfile(neighbor);
   const tradableBadges: string[] = [];
   for (const r of [...RAW_RESOURCES, ...MANUFACTURED_GOODS]) {
     if (tradable.fixed[r] > 0) {
-      tradableBadges.push(renderSwResourceBadge(r, tradable.fixed[r], true));
+      tradableBadges.push(renderSwResourceBadge(r, tradable.fixed[r], true, locale));
     }
   }
   for (const ch of tradable.choices) {
     tradableBadges.push(
-      `<span class="sw-effect-chip">${formatChoiceShortLabel(ch)}</span>`
+      `<span class="sw-effect-chip">${formatChoiceShortLabel(ch, locale)}</span>`
     );
   }
 
@@ -172,30 +194,32 @@ export function renderNeighborPanelHtml(
   )
     .map((col) => {
       const cnt = neighbor.tableau.filter((c) => c.color === col).length;
-      return cnt > 0 ? `${SW_CARD_COLOR_META[col].short}:${cnt}` : "";
+      return cnt > 0
+        ? `${getSevenWondersCardColorTextLocalized(col, locale).short}:${cnt}`
+        : "";
     })
     .filter(Boolean)
     .join(" · ");
 
   return `
-    <div class="sw-neighbor-card clickable-target" data-sw-inspect-player="${escapeHtml(neighbor.id)}" title="Click to inspect ${escapeHtml(neighbor.name)}'s full city &amp; wonder">
+    <div class="sw-neighbor-card clickable-target" data-sw-inspect-player="${escapeHtml(neighbor.id)}" title="${t(locale, "sw.inspectNeighborTitle", { name: escapeHtml(neighbor.name) })}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
         <div style="display:inline-flex;align-items:center;gap:6px;min-width:0;">
-          <span class="t-label muted">${direction === "left" ? "← West" : "East →"}</span>
+          <span class="t-label muted">${direction === "left" ? t(locale, "sw.westLabel") : t(locale, "sw.eastLabel")}</span>
           <span class="player-dot" style="background:${neighbor.color}"></span>
           <strong style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(neighbor.name)}</strong>
         </div>
         ${warChip}
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px;">
-        <span class="muted">${escapeHtml(board.name.replace(/^The /, ""))} (${neighbor.wonderSide}) · Stages ${neighbor.builtWonderStages}/${board.stages.length}</span>
-        ${defeatCount > 0 ? `<span class="ga-num" style="color:#fca5a5;">-${defeatCount} defeat</span>` : ""}
+        <span class="muted">${escapeHtml(wonderCompactName)} (${neighbor.wonderSide}) · ${t(locale, "sw.stagesCount", { built: neighbor.builtWonderStages, total: board.stages.length })}</span>
+        ${defeatCount > 0 ? `<span class="ga-num" style="color:#fca5a5;">${t(locale, "sw.defeatCount", { count: defeatCount })}</span>` : ""}
       </div>
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;font-size:12px;">
         <span class="ga-chip ga-num">${renderSwCoinSvg(12)} ${neighbor.coins}</span>
         <span class="ga-chip ga-num">${renderSwShieldSvg(12)} ${oppShields}</span>
-        <span class="ga-chip ga-num">${neighbor.scoreBreakdown.totalVp} VP</span>
-        <span class="t-label muted ga-num">Rate: ${rawRate}c raw · ${mfgRate}c good</span>
+        <span class="ga-chip ga-num">${neighbor.scoreBreakdown.totalVp} ${t(locale, "common.vpUnit")}</span>
+        <span class="t-label muted ga-num">${t(locale, "sw.tradeRate", { raw: rawRate, mfg: mfgRate })}</span>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
         ${tradableBadges.join("")}
@@ -209,33 +233,40 @@ export function renderEmpireCardHtml(
   state: SevenWondersState,
   player: SevenWondersPlayerState,
   focusIdx: number,
-  myShields: number
+  myShields: number,
+  locale: SupportedLocale = "en"
 ): string {
   const boardDef = getWonderBoardDefinition(player.wonderId, player.wonderSide);
+  const wonderFullName = getSevenWondersWonderNameLocalized(
+    player.wonderId,
+    player.wonderSide,
+    locale,
+    false
+  );
   const ownProfile = getOwnResourceProfile(player);
   const sci = player.scoreBreakdown.scienceCounts;
 
   const tableauGroups: { label: string; cards: SevenWondersCard[] }[] = [
     {
-      label: "Resources & Goods",
+      label: t(locale, "sw.groupResources"),
       cards: player.tableau.filter(
         (c) => c.color === "brown" || c.color === "gray"
       ),
     },
     {
-      label: "Commerce",
+      label: t(locale, "sw.groupCommerce"),
       cards: player.tableau.filter((c) => c.color === "yellow"),
     },
     {
-      label: "Military",
+      label: t(locale, "sw.groupMilitary"),
       cards: player.tableau.filter((c) => c.color === "red"),
     },
     {
-      label: "Science",
+      label: t(locale, "sw.groupScience"),
       cards: player.tableau.filter((c) => c.color === "green"),
     },
     {
-      label: "Civilian & Guilds",
+      label: t(locale, "sw.groupCivilianGuilds"),
       cards: player.tableau.filter(
         (c) => c.color === "blue" || c.color === "purple"
       ),
@@ -257,12 +288,12 @@ export function renderEmpireCardHtml(
       return `
         <div class="sw-wonder-stage ${isBuilt ? "is-built" : isNext ? "is-next" : ""}">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
-            <span class="t-label ${isBuilt ? "" : "muted"}">Stage ${st.stageNumber}</span>
+            <span class="t-label ${isBuilt ? "" : "muted"}">${t(locale, "sw.stageN", { num: st.stageNumber })}</span>
             ${
               isBuilt
-                ? `<span class="ga-chip ga-chip--ok" style="height:20px;padding:0 6px;">Built</span>`
+                ? `<span class="ga-chip ga-chip--ok" style="height:20px;padding:0 6px;">${t(locale, "sw.built")}</span>`
                 : isNext && nextPayments.length > 0
-                  ? `<span class="ga-chip ga-chip--warn ga-num" style="height:20px;padding:0 6px;">Ready${
+                  ? `<span class="ga-chip ga-chip--warn ga-num" style="height:20px;padding:0 6px;">${t(locale, "common.ready")}${
                       nextPayments[0]!.leftCoins + nextPayments[0]!.rightCoins > 0
                         ? ` (${nextPayments[0]!.leftCoins + nextPayments[0]!.rightCoins}c${nextPayments.length > 1 ? " ▾" : ""})`
                         : ""
@@ -270,9 +301,9 @@ export function renderEmpireCardHtml(
                   : ""
             }
           </div>
-          <div style="font-size:12px;font-weight:500;color:var(--ink);">${escapeHtml(st.summary)}</div>
+          <div style="font-size:12px;font-weight:500;color:var(--ink);">${escapeHtml(getSevenWondersStageSummaryLocalized(st.summary, locale))}</div>
           <div style="display:flex;flex-wrap:wrap;gap:3px;">
-            ${renderCostStripHtml(st.resourceCost, 0)}
+            ${renderCostStripHtml(st.resourceCost, 0, locale)}
           </div>
         </div>
       `;
@@ -280,13 +311,15 @@ export function renderEmpireCardHtml(
     .join("");
 
   const ownFixedBadges = WONDER_RESOURCES.filter((r) => ownProfile.fixed[r] > 0)
-    .map((r) => renderSwResourceBadge(r, ownProfile.fixed[r], true))
+    .map((r) => renderSwResourceBadge(r, ownProfile.fixed[r], true, locale))
     .join("");
   const ownChoiceBadges = ownProfile.choices
-    .map(
-      (opts) =>
-        `<span class="sw-effect-chip" title="Produces 1 of ${opts.map((o) => SW_RESOURCE_META[o].label).join(" / ")}">${formatChoiceShortLabel(opts)}</span>`
-    )
+    .map((opts) => {
+      const optionsLabel = opts
+        .map((o) => getSevenWondersResourceTextLocalized(o, locale).label)
+        .join(" / ");
+      return `<span class="sw-effect-chip" title="${t(locale, "sw.producesChoiceTitle", { options: optionsLabel })}">${formatChoiceShortLabel(opts, locale)}</span>`;
+    })
     .join("");
 
   const empireTabsHtml =
@@ -310,9 +343,9 @@ export function renderEmpireCardHtml(
         <div class="sw-empire-header">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="player-dot" style="background:${player.color}"></span>
-            <strong style="font-size:14px;font-weight:500;">${escapeHtml(boardDef.name)}</strong>
-            <span class="ga-chip">Side ${player.wonderSide}</span>
-            <span class="t-label muted">Output:</span>
+            <strong style="font-size:14px;font-weight:500;">${escapeHtml(wonderFullName)}</strong>
+            <span class="ga-chip">${t(locale, "sw.sideLabel", { side: player.wonderSide })}</span>
+            <span class="t-label muted">${t(locale, "sw.outputLabel")}</span>
             ${ownFixedBadges}
             ${ownChoiceBadges}
           </div>
@@ -320,8 +353,8 @@ export function renderEmpireCardHtml(
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
             <span class="ga-chip ga-num">${renderSwCoinSvg(13)} ${player.coins}c</span>
             <span class="ga-chip ga-num">${renderSwShieldSvg(13)} ${myShields}</span>
-            <span class="ga-chip ga-num" title="Science symbols (Compass / Gear / Tablet)">Sci ${sci.compass}/${sci.gear}/${sci.tablet}</span>
-            <span class="ga-chip ga-chip--warn ga-num">${player.scoreBreakdown.totalVp} VP</span>
+            <span class="ga-chip ga-num" title="${t(locale, "sw.sciTooltip")}">${t(locale, "sw.sciShort", { c: sci.compass, g: sci.gear, t: sci.tablet })}</span>
+            <span class="ga-chip ga-chip--warn ga-num">${player.scoreBreakdown.totalVp} ${t(locale, "common.vpUnit")}</span>
             ${empireTabsHtml}
           </div>
         </div>
@@ -343,9 +376,13 @@ export function renderEmpireCardHtml(
                       : grp.cards
                           .map((c) => {
                             const cm = SW_CARD_COLOR_META[c.color];
-                            const suffix = summarizeBuiltPillSuffix(c);
-                            return `<span class="sw-built-pill" style="border-color:${cm.border};background:${cm.headerBg};" title="${escapeHtml(c.name)}${escapeHtml(suffix)}">
-                              <span>${escapeHtml(c.name)}${escapeHtml(suffix)}</span>
+                            const suffix = summarizeBuiltPillSuffix(c, locale);
+                            const cardName = getSevenWondersCardNameLocalized(
+                              c.name,
+                              locale
+                            );
+                            return `<span class="sw-built-pill" style="border-color:${cm.border};background:${cm.headerBg};" title="${escapeHtml(cardName)}${escapeHtml(suffix)}">
+                              <span>${escapeHtml(cardName)}${escapeHtml(suffix)}</span>
                             </span>`;
                           })
                           .join("")

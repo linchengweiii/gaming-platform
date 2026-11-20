@@ -1,3 +1,4 @@
+import { getLocaleMeta, t } from "../../i18n/index.ts";
 import {
   findActiveRoomPure,
   getActiveRoomPure,
@@ -230,8 +231,16 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
       ctx.model.isAuthenticated &&
       ctx.model.viewMode === "in_game" &&
       Boolean(activeRoom && getRoomStatePure(ctx.model, activeRoom));
-    if (typeof document !== "undefined" && document.body?.classList) {
-      document.body.classList.toggle("ga-body--in-game", inActiveGame);
+    if (typeof document !== "undefined") {
+      if (document.documentElement) {
+        document.documentElement.lang = getLocaleMeta(ctx.model.locale).htmlLang;
+      }
+      if (typeof document.title === "string") {
+        document.title = t(ctx.model.locale, "app.pageTitle");
+      }
+      if (document.body?.classList) {
+        document.body.classList.toggle("ga-body--in-game", inActiveGame);
+      }
     }
 
     const nextViewKey = `${ctx.model.isAuthenticated ? ctx.model.viewMode : "login"}:${ctx.model.activeRoomId}`;

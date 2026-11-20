@@ -3,7 +3,6 @@ import {
   type CatanAction,
   type CatanState,
   IMPROVEMENT_DISCIPLINES,
-  PROGRESS_CARD_CATALOG,
   RESOURCES,
   TERRAIN_TO_RESOURCE,
   TRADE_GOODS,
@@ -12,15 +11,21 @@ import {
   getPlayerVulnerableCities,
 } from "@gaming-platform/catan";
 import {
-  COMMODITY_META,
   DISCIPLINE_META,
-  RESOURCE_META,
-  TRADE_GOOD_META,
   renderActionPieceIconSvg,
   renderCommodityGlyphSvg,
   renderMiniResourceCardSvg,
   renderMiniTradeGoodCardSvg,
 } from "../../../catan-graphics.ts";
+import {
+  getCatanCommodityTextLocalized,
+  getCatanDisciplineTextLocalized,
+  getCatanProgressCardTextLocalized,
+  getCatanResourceTextLocalized,
+  getCatanTerrainLabelLocalized,
+  getCatanTradeGoodLabelLocalized,
+  t,
+} from "../../../i18n/index.ts";
 import { escapeAttr } from "../../helpers/html-and-dropdown.ts";
 import type { AppModel } from "../../types.ts";
 import { renderCkInteractionDockPure } from "./ck-interaction-modal.ts";
@@ -38,18 +43,29 @@ export function renderCkPhaseDockPure(
   if (interactionHtml !== null) {
     return interactionHtml;
   }
+  const locale = model.locale;
   const pColor = actingPlayer.color;
 
   if (state.phase === "BARBARIAN_PILLAGE_SELECTION") {
     if (model.autoPlayBots) {
-      return `<div class="action-buttons"><span class="action-prompt"><strong>Barbarian raid:</strong> Resolving city downgrade...</span></div>`;
+      return `<div class="action-buttons"><span class="action-prompt">${t(
+        locale,
+        "catan.ck.raidResolving",
+        { prefix: `<strong>${escapeAttr(t(locale, "catan.ck.raidPrefix"))}</strong>` }
+      )}</span></div>`;
     }
     const vulnerableCities = getPlayerVulnerableCities(state, actingPlayer.id);
     return `
         <div class="sub-modal sub-modal--trade">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Barbarians breached Catan · ${escapeAttr(actingPlayer.name)}:</strong> Choose 1 city to downgrade to a settlement</span>
-            <span class="ga-chip ga-chip--danger ga-num">${vulnerableCities.length} vulnerable</span>
+            <span class="action-prompt">${t(locale, "catan.ck.breachedHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.breachedPrefix", { name: actingPlayer.name }))}</strong>`,
+            })}</span>
+            <span class="ga-chip ga-chip--danger ga-num">${escapeAttr(
+              t(locale, "catan.ck.vulnerableCount", {
+                count: vulnerableCities.length,
+              })
+            )}</span>
           </div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px;">
             ${vulnerableCities
@@ -57,17 +73,17 @@ export function renderCkPhaseDockPure(
                 const vNode = state.topology.vertices[vId];
                 const adjRes = (vNode?.adjacentHexIds ?? [])
                   .map((hId) => {
-                    const t = state.hexes[hId];
-                    const r = t ? TERRAIN_TO_RESOURCE[t.terrain] : null;
-                    return r && t?.numberToken
-                      ? `${RESOURCE_META[r].label} #${t.numberToken}`
+                    const tile = state.hexes[hId];
+                    const r = tile ? TERRAIN_TO_RESOURCE[tile.terrain] : null;
+                    return r && tile?.numberToken
+                      ? `${getCatanResourceTextLocalized(r, locale).label} #${tile.numberToken}`
                       : null;
                   })
                   .filter(Boolean)
                   .join(" · ");
                 return `<button type="button" data-pillage-city="${vId}" class="btn btn--secondary btn--sm action-btn-graphic">
                   ${renderActionPieceIconSvg("city", "#ef4444", 16)}
-                  <span>City #${idx + 1}${adjRes ? ` (${adjRes})` : ""}</span>
+                  <span>${escapeAttr(t(locale, "catan.ck.cityNum", { num: idx + 1 }))}${adjRes ? ` (${escapeAttr(adjRes)})` : ""}</span>
                 </button>`;
               })
               .join("")}
@@ -75,13 +91,19 @@ export function renderCkPhaseDockPure(
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("robber", "#ef4444", 20)}
-          <span class="action-prompt"><strong>Barbarian raid:</strong> Click a pulsing city on the map or pick below.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.raidPrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.raidPrefix"))}</strong>`,
+          })}</span>
         </div>`;
   }
 
   if (state.phase === "PROGRESS_CARD_SELECTION") {
     if (model.autoPlayBots) {
-      return `<div class="action-buttons"><span class="action-prompt"><strong>Progress cards:</strong> Resolving selection...</span></div>`;
+      return `<div class="action-buttons"><span class="action-prompt">${t(
+        locale,
+        "catan.ck.progressResolving",
+        { prefix: `<strong>${escapeAttr(t(locale, "catan.ck.progressPrefix"))}</strong>` }
+      )}</span></div>`;
     }
     const isDefenderPick = state.pendingDefenderDeckPicks.includes(
       actingPlayer.id
@@ -90,44 +112,55 @@ export function renderCkPhaseDockPure(
       return `
         <div class="sub-modal sub-modal--trade">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Tied Defender of Catan · ${escapeAttr(actingPlayer.name)}:</strong> Draw 1 free Progress Card</span>
+            <span class="action-prompt">${t(locale, "catan.ck.tiedDefenderHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.tiedDefenderPrefix", { name: actingPlayer.name }))}</strong>`,
+            })}</span>
           </div>
           <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
             ${IMPROVEMENT_DISCIPLINES.map((disc) => {
               const dMeta = DISCIPLINE_META[disc];
+              const dText = getCatanDisciplineTextLocalized(disc, locale);
               const left = state.progressDecks[disc].length;
               return `<button type="button" data-select-progress-deck="${disc}" class="btn btn--secondary btn--sm action-btn-graphic" style="justify-content: space-between;" ${
                 left <= 0 ? "disabled" : ""
               }>
                 <span style="display: inline-flex; align-items: center; gap: 6px;">
                   ${renderActionPieceIconSvg("progress_card", dMeta.accent, 16)}
-                  <span>${dMeta.label}</span>
+                  <span>${escapeAttr(dText.label)}</span>
                 </span>
-                <span class="ga-chip ga-num">${left} left</span>
+                <span class="ga-chip ga-num">${escapeAttr(t(locale, "catan.phase.leftCount", { rem: left }))}</span>
               </button>`;
             }).join("")}
           </div>
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("progress_card", pColor, 20)}
-          <span class="action-prompt"><strong>Defender reward:</strong> Choose Trade, Politics, or Science deck below.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.defenderPrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.defenderPrefix"))}</strong>`,
+          })}</span>
         </div>`;
     }
 
     return `
       <div class="sub-modal sub-modal--trade">
         <div class="ga-trade-head">
-          <span class="action-prompt"><strong>Progress hand limit (max 4) · ${escapeAttr(actingPlayer.name)}:</strong> Discard 1 Progress Card</span>
-          <span class="ga-chip ga-chip--warn ga-num">${actingPlayer.progressCards.length}/4 held</span>
+          <span class="action-prompt">${t(locale, "catan.ck.handLimitHead", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.handLimitPrefix", { name: actingPlayer.name }))}</strong>`,
+          })}</span>
+          <span class="ga-chip ga-chip--warn ga-num">${escapeAttr(
+            t(locale, "catan.ck.heldOf4", {
+              count: actingPlayer.progressCards.length,
+            })
+          )}</span>
         </div>
         <div style="display: flex; flex-wrap: wrap; gap: 6px;">
           ${actingPlayer.progressCards
             .map((card) => {
-              const cat = PROGRESS_CARD_CATALOG[card.type];
+              const cat = getCatanProgressCardTextLocalized(card.type, locale);
               const dMeta = DISCIPLINE_META[card.discipline];
               return `<button type="button" data-discard-progress-card="${card.id}" class="btn btn--secondary btn--sm action-btn-graphic">
                 ${renderActionPieceIconSvg("progress_card", dMeta.accent, 16)}
-                <span>Discard ${cat.title}</span>
+                <span>${escapeAttr(t(locale, "catan.ck.discardCardBtn", { title: cat.title }))}</span>
               </button>`;
             })
             .join("")}
@@ -135,7 +168,9 @@ export function renderCkPhaseDockPure(
       </div>
       <div class="action-buttons">
         ${renderActionPieceIconSvg("progress_card", pColor, 20)}
-        <span class="action-prompt"><strong>Hand limit:</strong> Choose 1 Progress Card to return to the bottom of its deck.</span>
+        <span class="action-prompt">${t(locale, "catan.ck.handLimitPrompt", {
+          prefix: `<strong>${escapeAttr(t(locale, "catan.ck.handLimitShortPrefix"))}</strong>`,
+        })}</span>
       </div>`;
   }
 
@@ -147,40 +182,47 @@ export function renderCityUpgradesSubModalPure(
   state: CatanState,
   actingPlayer: CatanState["players"][number]
 ): string {
+  const locale = model.locale;
   return `<div class="sub-modal sub-modal--trade">
         <div class="ga-trade-head">
           <div style="display: inline-flex; align-items: center; gap: 7px;">
             ${renderActionPieceIconSvg("city_upgrade", "#fbbf24", 18)}
-            <strong style="font-size: var(--t-small); font-weight: 500;">City improvements${
+            <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(
+              t(locale, "catan.ck.cityImprovementsTitle")
+            )}${
               actingPlayer.activeTurnDiscounts.crane
-                ? " · Crane discount (−1 commodity)"
+                ? escapeAttr(t(locale, "catan.ck.craneDiscountSuffix"))
                 : ""
             }</strong>
           </div>
-          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
         </div>
         <div class="ck-upgrades-grid">
           ${IMPROVEMENT_DISCIPLINES.map((disc) => {
             const dMeta = DISCIPLINE_META[disc];
+            const dText = getCatanDisciplineTextLocalized(disc, locale);
             const cur = actingPlayer.cityImprovements[disc];
             const check = canPlayerUpgradeDiscipline(state, actingPlayer, disc);
             const perkLabel =
               disc === "trade"
-                ? "Lv 3 Trading House: 2:1 all commodities"
+                ? t(locale, "catan.ck.perkTrade")
                 : disc === "politics"
-                  ? "Lv 3 Fortress: promote Lv 3 Mighty Knights"
-                  : "Lv 3 Aqueduct: +1 free card on dry non-7 roll";
+                  ? t(locale, "catan.ck.perkPolitics")
+                  : t(locale, "catan.ck.perkScience");
             const metro = state.metropolises[disc];
             const metroHolder = metro.ownerId
               ? state.players.find((p) => p.id === metro.ownerId)?.name
               : null;
             const metroHint = metroHolder
               ? metro.ownerId === actingPlayer.id
-                ? `You hold Metropolis (Lv ${metro.level})`
+                ? t(locale, "catan.ck.youHoldMetro", { lv: metro.level })
                 : metro.level < 5
-                  ? `Held by ${escapeAttr(metroHolder)} (snipe at Lv ${metro.level + 1})`
-                  : `Locked by ${escapeAttr(metroHolder)} (Lv 5)`
-              : "Unclaimed +2 VP Metropolis at Lv 4";
+                  ? t(locale, "catan.ck.heldBySnipe", {
+                      name: metroHolder,
+                      nextLv: metro.level + 1,
+                    })
+                  : t(locale, "catan.ck.lockedByLv5", { name: metroHolder })
+              : t(locale, "catan.ck.unclaimedMetroLv4");
             const selectedMetroVId =
               model.selectedMetropolisVertexId &&
               check.eligibleMetropolisVertices.includes(
@@ -191,12 +233,12 @@ export function renderCityUpgradesSubModalPure(
 
             return `<div class="ck-upgrade-col" style="--disc-accent: ${dMeta.accent}; --disc-border: ${dMeta.border};">
               <div class="ck-upgrade-col__top">
-                <strong style="color: ${dMeta.accent}; font-size: 12px;">${dMeta.label}</strong>
+                <strong style="color: ${dMeta.accent}; font-size: 12px;">${escapeAttr(dText.label)}</strong>
                 <span class="ga-chip ga-num">Lv ${cur}/5</span>
               </div>
               <div class="ck-upgrade-col__perk ${cur >= 3 ? "is-unlocked" : ""}">
-                <div>${perkLabel}</div>
-                <div class="muted" style="font-size: 10.5px; margin-top: 2px;">${metroHint}</div>
+                <div>${escapeAttr(perkLabel)}</div>
+                <div class="muted" style="font-size: 10.5px; margin-top: 2px;">${escapeAttr(metroHint)}</div>
               </div>
               ${
                 check.claimsMetropolis &&
@@ -207,7 +249,7 @@ export function renderCityUpgradesSubModalPure(
                           (vId, idx) =>
                             `<button type="button" data-select-metro-city="${vId}" class="ga-chip ${
                               selectedMetroVId === vId ? "ga-chip--warn" : ""
-                            }" style="cursor: pointer;">City #${idx + 1}</button>`
+                            }" style="cursor: pointer;">${escapeAttr(t(locale, "catan.ck.cityNum", { num: idx + 1 }))}</button>`
                         )
                         .join("")}
                     </div>`
@@ -216,7 +258,7 @@ export function renderCityUpgradesSubModalPure(
               <div class="ck-upgrade-col__foot">
                 ${
                   cur >= 5
-                    ? `<span class="ga-chip ga-chip--ok" style="width: 100%; justify-content: center;">Max level 5</span>`
+                    ? `<span class="ga-chip ga-chip--ok" style="width: 100%; justify-content: center;">${escapeAttr(t(locale, "catan.ck.maxLevel5"))}</span>`
                     : `<span class="t-label ga-num" style="display: inline-flex; align-items: center; gap: 4px;">
                         ${renderCommodityGlyphSvg(check.costCommodity, 13)}
                         ${actingPlayer.commodities[check.costCommodity]}/${check.costAmount}
@@ -224,11 +266,11 @@ export function renderCityUpgradesSubModalPure(
                       <button type="button" data-upgrade-discipline="${disc}" data-metro-vertex="${selectedMetroVId ?? ""}" class="btn btn--primary btn--sm" ${
                         !check.allowed ? "disabled" : ""
                       }>
-                        ${
+                        ${escapeAttr(
                           check.claimsMetropolis
-                            ? `Crown Lv ${check.nextLevel}`
-                            : `Lv ${check.nextLevel}`
-                        }
+                            ? t(locale, "catan.ck.crownLv", { lv: check.nextLevel })
+                            : t(locale, "catan.lvN", { lv: check.nextLevel })
+                        )}
                       </button>`
                 }
               </div>
@@ -244,11 +286,12 @@ export function renderProgressCardSubModalPure(
   actingPlayer: CatanState["players"][number],
   legalActions: readonly CatanAction[]
 ): string {
+  const locale = model.locale;
   const card = actingPlayer.progressCards.find(
     (c) => c.id === model.selectedProgressCardId
   );
   if (!card) return "";
-  const cat = PROGRESS_CARD_CATALOG[card.type];
+  const cat = getCatanProgressCardTextLocalized(card.type, locale);
   const dMeta = DISCIPLINE_META[card.discipline];
   const matchingActions = legalActions.filter(
     (a): a is Extract<CatanAction, { type: "PLAY_PROGRESS_CARD" }> =>
@@ -266,7 +309,7 @@ export function renderProgressCardSubModalPure(
                   (r) =>
                     `<button type="button" data-prog-res="${r}" class="btn btn--secondary btn--sm action-btn-graphic">
                       ${renderMiniResourceCardSvg(r, 32, 20)}
-                      <span>${RESOURCE_META[r].label}</span>
+                      <span>${escapeAttr(getCatanResourceTextLocalized(r, locale).label)}</span>
                     </button>`
                 )
                 .join("")}
@@ -278,7 +321,7 @@ export function renderProgressCardSubModalPure(
                 (c) =>
                   `<button type="button" data-prog-comm="${c}" class="btn btn--secondary btn--sm action-btn-graphic">
                     ${renderMiniTradeGoodCardSvg(c, 32, 20)}
-                    <span>${COMMODITY_META[c].label}</span>
+                    <span>${escapeAttr(getCatanCommodityTextLocalized(c, locale).label)}</span>
                   </button>`
               ).join("")}
             </div>`;
@@ -289,7 +332,7 @@ export function renderProgressCardSubModalPure(
                 (g) =>
                   `<button type="button" data-prog-good="${g}" class="btn btn--secondary btn--sm action-btn-graphic">
                     ${renderMiniTradeGoodCardSvg(g, 30, 19)}
-                    <span>2:1 ${TRADE_GOOD_META[g].label}</span>
+                    <span>2:1 ${escapeAttr(getCatanTradeGoodLabelLocalized(g, locale))}</span>
                   </button>`
               ).join("")}
             </div>`;
@@ -304,8 +347,10 @@ export function renderProgressCardSubModalPure(
           (o) => o.id === model.deserterTargetPlayerId
         );
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                <span class="t-small muted">Target <strong>${escapeAttr(targetOpp?.name ?? "opponent")}</strong> selected — click any highlighted open intersection on your road network to place the deserted knight:</span>
-                <button type="button" data-deserter-reset="true" class="btn btn--secondary btn--sm">Change target</button>
+                <span class="t-small muted">${t(locale, "catan.ck.deserterTargetSelected", {
+                  name: `<strong>${escapeAttr(targetOpp?.name ?? t(locale, "common.playerFallback"))}</strong>`,
+                })}</span>
+                <button type="button" data-deserter-reset="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "catan.ck.changeTarget"))}</button>
               </div>`;
       }
       const opps = state.players.filter((opp) =>
@@ -317,7 +362,7 @@ export function renderProgressCardSubModalPure(
                   (opp) =>
                     `<button type="button" data-prog-opp="${opp.id}" class="btn btn--secondary btn--sm action-btn-graphic">
                       <span class="player-dot" style="background: ${opp.color}"></span>
-                      <span>Target ${escapeAttr(opp.name)}</span>
+                      <span>${escapeAttr(t(locale, "catan.ck.targetOpp", { name: opp.name }))}</span>
                     </button>`
                 )
                 .join("")}
@@ -327,8 +372,10 @@ export function renderProgressCardSubModalPure(
       return `<div class="t-small muted">
               ${
                 model.inventorHex1
-                  ? `1st tile selected (<strong>#${state.hexes[model.inventorHex1]?.numberToken}</strong>) — now click a 2nd highlighted tile on the map to swap numbers.`
-                  : "Click any 2 highlighted number tiles on the map above (excluding 2, 6, 8, 12) to swap their tokens."
+                  ? t(locale, "catan.ck.inventorFirstSelected", {
+                      token: `<strong>#${state.hexes[model.inventorHex1]?.numberToken}</strong>`,
+                    })
+                  : escapeAttr(t(locale, "catan.ck.inventorPrompt"))
               }
             </div>`;
     }
@@ -339,30 +386,33 @@ export function renderProgressCardSubModalPure(
         false
       );
       return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-              <span class="t-small muted">${
+              <span class="t-small muted">${escapeAttr(
                 model.smithVertex1
-                  ? "1st knight selected — click a 2nd knight on the map or confirm 1 promotion:"
-                  : "Click up to 2 highlighted knights on the map to promote for free."
-              }</span>
+                  ? t(locale, "catan.ck.smithFirstSelected")
+                  : t(locale, "catan.ck.smithPrompt")
+              )}</span>
               ${
                 model.smithVertex1 || promotable.length === 1
-                  ? `<button type="button" id="btn-exec-smith-single" class="btn btn--primary btn--sm">Promote selected knight</button>`
+                  ? `<button type="button" id="btn-exec-smith-single" class="btn btn--primary btn--sm">${escapeAttr(t(locale, "catan.ck.promoteSelectedKnight"))}</button>`
                   : ""
               }
             </div>`;
     }
     return `<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
-            <span class="t-small muted">Click a highlighted target on the map above, or choose directly:</span>
+            <span class="t-small muted">${escapeAttr(t(locale, "catan.ck.pickHighlightedOrBelow"))}</span>
             ${matchingActions
               .slice(0, 6)
               .map((act, idx) => {
+                const hexTile = act.params?.hexId
+                  ? state.hexes[act.params.hexId]
+                  : undefined;
                 const label = act.params?.hexId
-                  ? `${state.hexes[act.params.hexId]?.terrain ?? "Hex"} #${state.hexes[act.params.hexId]?.numberToken ?? ""}`
+                  ? `${hexTile ? (locale === "en" ? hexTile.terrain : getCatanTerrainLabelLocalized(hexTile.terrain, locale)) : "Hex"} #${hexTile?.numberToken ?? ""}`
                   : act.params?.vertexId
-                    ? `Spot #${idx + 1}`
+                    ? t(locale, "catan.ck.spotNum", { num: idx + 1 })
                     : act.params?.edgeId
-                      ? `Road #${idx + 1}`
-                      : `Option #${idx + 1}`;
+                      ? t(locale, "catan.ck.roadNum", { num: idx + 1 })
+                      : t(locale, "catan.ck.optionNum", { num: idx + 1 });
                 return `<button type="button" data-prog-action-idx="${idx}" class="btn btn--secondary btn--sm">${escapeAttr(label.trim())}</button>`;
               })
               .join("")}
@@ -373,9 +423,9 @@ export function renderProgressCardSubModalPure(
           <div class="ga-trade-head">
             <div style="display: inline-flex; align-items: center; gap: 7px;">
               ${renderActionPieceIconSvg("progress_card", dMeta.accent, 18)}
-              <strong style="font-size: var(--t-small); font-weight: 500;">${cat.title} — ${escapeAttr(cat.description)}</strong>
+              <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(cat.title)} — ${escapeAttr(cat.description)}</strong>
             </div>
-            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
           </div>
           ${controlsHtml}
         </div>`;

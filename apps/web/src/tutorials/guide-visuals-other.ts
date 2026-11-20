@@ -1,4 +1,5 @@
 import { renderAzulTile } from "../azul-view.ts";
+import { type SupportedLocale, t } from "../i18n/index.ts";
 import {
   renderSwCoinSvg,
   renderSwResourceBadge,
@@ -8,55 +9,64 @@ import {
 import { renderSplendorGemToken } from "../splendor-view.ts";
 import type { TutorialGameId } from "./types.ts";
 
+function esc(raw: string): string {
+  return raw
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 export function renderOtherGameVisualReferenceHtml(
-  gameId: Exclude<TutorialGameId, "catan">
+  gameId: Exclude<TutorialGameId, "catan">,
+  locale: SupportedLocale = "en"
 ): string {
   if (gameId === "splendor") {
     return `
       <div class="ga-guide-visual">
-        <div class="ga-guide-section-label">On your turn — choose 1 of 4 actions</div>
+        <div class="ga-guide-section-label">${esc(t(locale, "guideVis.sp.turnHeading"))}</div>
         <div class="ga-guide-flow">
           <div class="ga-guide-flow__step">
-            <span class="ga-guide-flow__icon">${renderSplendorGemToken("emerald", 1, 24)}${renderSplendorGemToken("sapphire", 1, 24)}${renderSplendorGemToken("ruby", 1, 24)}</span>
+            <span class="ga-guide-flow__icon">${renderSplendorGemToken("emerald", 1, 24, "", 0, undefined, locale)}${renderSplendorGemToken("sapphire", 1, 24, "", 0, undefined, locale)}${renderSplendorGemToken("ruby", 1, 24, "", 0, undefined, locale)}</span>
             <div class="ga-guide-flow__copy">
-              <strong>Take 3 distinct</strong>
-              <span>1 each of 3 non-Gold colors</span>
+              <strong>${esc(t(locale, "guideVis.sp.step1Title"))}</strong>
+              <span>${esc(t(locale, "guideVis.sp.step1Desc"))}</span>
             </div>
           </div>
           <div class="ga-guide-flow__step">
-            <span class="ga-guide-flow__icon">${renderSplendorGemToken("diamond", 2, 26)}</span>
+            <span class="ga-guide-flow__icon">${renderSplendorGemToken("diamond", 2, 26, "", 0, undefined, locale)}</span>
             <div class="ga-guide-flow__copy">
-              <strong>OR Take 2 same</strong>
-              <span>Requires ≥4 in that stack</span>
+              <strong>${esc(t(locale, "guideVis.sp.step2Title"))}</strong>
+              <span>${esc(t(locale, "guideVis.sp.step2Desc"))}</span>
             </div>
           </div>
           <div class="ga-guide-flow__step">
-            <span class="ga-guide-flow__icon">${renderSplendorGemToken("gold", 1, 26)}</span>
+            <span class="ga-guide-flow__icon">${renderSplendorGemToken("gold", 1, 26, "", 0, undefined, locale)}</span>
             <div class="ga-guide-flow__copy">
-              <strong>OR Hold 1 card</strong>
-              <span>Market or blind deck (≤3) + 1 Gold</span>
+              <strong>${esc(t(locale, "guideVis.sp.step3Title"))}</strong>
+              <span>${esc(t(locale, "guideVis.sp.step3Desc"))}</span>
             </div>
           </div>
           <div class="ga-guide-flow__step">
             <span class="ga-guide-flow__icon"><span class="ga-chip ga-chip--accent ga-num">+VP</span></span>
             <div class="ga-guide-flow__copy">
-              <strong>OR Buy 1 card</strong>
-              <span>Permanent -1 gem cost bonus</span>
+              <strong>${esc(t(locale, "guideVis.sp.step4Title"))}</strong>
+              <span>${esc(t(locale, "guideVis.sp.step4Desc"))}</span>
             </div>
           </div>
         </div>
         <div class="ga-guide-recipes">
           <div class="ga-guide-recipe">
-            <strong style="font-size:12px;">Gem stacks by players</strong>
-            <span class="t-label ga-num">2P: 4 · 3P: 5 · 4P: 7 (+5 Gold)</span>
+            <strong style="font-size:12px;">${esc(t(locale, "guideVis.sp.stacksLabel"))}</strong>
+            <span class="t-label ga-num">${esc(t(locale, "guideVis.sp.stacksVal"))}</span>
           </div>
           <div class="ga-guide-recipe">
-            <strong style="font-size:12px;">End-of-turn limits</strong>
-            <span class="t-label ga-num">≤10 tokens · ≤3 held cards</span>
+            <strong style="font-size:12px;">${esc(t(locale, "guideVis.sp.limitsLabel"))}</strong>
+            <span class="t-label ga-num">${esc(t(locale, "guideVis.sp.limitsVal"))}</span>
           </div>
           <div class="ga-guide-recipe">
-            <strong style="font-size:12px;">Nobles &amp; Finish</strong>
-            <span class="ga-chip ga-chip--warn ga-num">+3 VP auto · 15+ VP end</span>
+            <strong style="font-size:12px;">${esc(t(locale, "guideVis.sp.noblesLabel"))}</strong>
+            <span class="ga-chip ga-chip--warn ga-num">${esc(t(locale, "guideVis.sp.noblesVal"))}</span>
           </div>
         </div>
       </div>
@@ -66,42 +76,42 @@ export function renderOtherGameVisualReferenceHtml(
   if (gameId === "azul") {
     return `
       <div class="ga-guide-visual">
-        <div class="ga-guide-section-label">Round phases</div>
+        <div class="ga-guide-section-label">${esc(t(locale, "guideVis.az.phasesHeading"))}</div>
         <div class="ga-guide-flow">
           <div class="ga-guide-flow__step">
-            <span class="ga-guide-flow__icon">${renderAzulTile("blue", 22)}${renderAzulTile("blue", 22)}${renderAzulTile("yellow", 22, false, true)}</span>
+            <span class="ga-guide-flow__icon">${renderAzulTile("blue", 22, false, false, "", false, locale)}${renderAzulTile("blue", 22, false, false, "", false, locale)}${renderAzulTile("yellow", 22, false, true, "", false, locale)}</span>
             <div class="ga-guide-flow__copy">
-              <strong>1. Pick 1 color</strong>
-              <span>Take all matching; rest → Center</span>
+              <strong>${esc(t(locale, "guideVis.az.step1Title"))}</strong>
+              <span>${esc(t(locale, "guideVis.az.step1Desc"))}</span>
             </div>
           </div>
           <div class="ga-guide-flow__step">
-            <span class="ga-guide-flow__icon">${renderAzulTile("red", 22)}${renderAzulTile("red", 22)}${renderAzulTile("red", 22, false, false, "", true)}</span>
+            <span class="ga-guide-flow__icon">${renderAzulTile("red", 22, false, false, "", false, locale)}${renderAzulTile("red", 22, false, false, "", false, locale)}${renderAzulTile("red", 22, false, false, "", true, locale)}</span>
             <div class="ga-guide-flow__copy">
-              <strong>2. Fill 1 row (1–5)</strong>
-              <span>1 color/row · excess → Floor</span>
+              <strong>${esc(t(locale, "guideVis.az.step2Title"))}</strong>
+              <span>${esc(t(locale, "guideVis.az.step2Desc"))}</span>
             </div>
           </div>
           <div class="ga-guide-flow__step">
-            <span class="ga-guide-flow__icon">${renderAzulTile("teal", 22)}${renderAzulTile("black", 22)}</span>
+            <span class="ga-guide-flow__icon">${renderAzulTile("teal", 22, false, false, "", false, locale)}${renderAzulTile("black", 22, false, false, "", false, locale)}</span>
             <div class="ga-guide-flow__copy">
-              <strong>3. Tile Wall chains</strong>
-              <span>Full rows move 1 tile &amp; score H+V</span>
+              <strong>${esc(t(locale, "guideVis.az.step3Title"))}</strong>
+              <span>${esc(t(locale, "guideVis.az.step3Desc"))}</span>
             </div>
           </div>
         </div>
         <div class="ga-guide-recipes">
           <div class="ga-guide-recipe">
-            <strong style="font-size:12px;">Factories &amp; Floor</strong>
-            <span class="t-label ga-num">2P:5 3P:7 4P:9 · -1,-1,-2,-2,-2,-3,-3</span>
+            <strong style="font-size:12px;">${esc(t(locale, "guideVis.az.factoriesLabel"))}</strong>
+            <span class="t-label ga-num">${esc(t(locale, "guideVis.az.factoriesVal"))}</span>
           </div>
           <div class="ga-guide-recipe">
-            <strong style="font-size:12px;">Row / Column bonus</strong>
-            <span class="ga-chip ga-chip--ok ga-num">+2 Row (ends) · +7 Col</span>
+            <strong style="font-size:12px;">${esc(t(locale, "guideVis.az.rowColLabel"))}</strong>
+            <span class="ga-chip ga-chip--ok ga-num">${esc(t(locale, "guideVis.az.rowColVal"))}</span>
           </div>
           <div class="ga-guide-recipe">
-            <strong style="font-size:12px;">All 5 of 1 Color</strong>
-            <span class="ga-chip ga-chip--warn ga-num">+10 pts</span>
+            <strong style="font-size:12px;">${esc(t(locale, "guideVis.az.colorLabel"))}</strong>
+            <span class="ga-chip ga-chip--warn ga-num">${esc(t(locale, "guideVis.az.colorVal"))}</span>
           </div>
         </div>
       </div>
@@ -110,42 +120,42 @@ export function renderOtherGameVisualReferenceHtml(
 
   return `
     <div class="ga-guide-visual">
-      <div class="ga-guide-section-label">Simultaneous turn — pick 1 card, then pass hand (↻ Age I/III · ↺ Age II)</div>
+      <div class="ga-guide-section-label">${esc(t(locale, "guideVis.sw.turnHeading"))}</div>
       <div class="ga-guide-flow">
         <div class="ga-guide-flow__step">
-          <span class="ga-guide-flow__icon">${renderSwResourceBadge("wood", 1, true)}${renderSwResourceBadge("glass", 1, true)}</span>
+          <span class="ga-guide-flow__icon">${renderSwResourceBadge("wood", 1, true, locale)}${renderSwResourceBadge("glass", 1, true, locale)}</span>
           <div class="ga-guide-flow__copy">
-            <strong>1. Build structure</strong>
-            <span>Own goods, Chain →, or neighbor 2c/1c</span>
+            <strong>${esc(t(locale, "guideVis.sw.step1Title"))}</strong>
+            <span>${esc(t(locale, "guideVis.sw.step1Desc"))}</span>
           </div>
         </div>
         <div class="ga-guide-flow__step">
-          <span class="ga-guide-flow__icon"><span class="ga-chip ga-chip--warn">▲ Stage</span></span>
+          <span class="ga-guide-flow__icon"><span class="ga-chip ga-chip--warn">${esc(t(locale, "guideVis.sw.step2Chip"))}</span></span>
           <div class="ga-guide-flow__copy">
-            <strong>2. Build Wonder</strong>
-            <span>Pay stage cost; tuck card face-down</span>
+            <strong>${esc(t(locale, "guideVis.sw.step2Title"))}</strong>
+            <span>${esc(t(locale, "guideVis.sw.step2Desc"))}</span>
           </div>
         </div>
         <div class="ga-guide-flow__step">
           <span class="ga-guide-flow__icon">${renderSwCoinSvg(20)}<span class="t-label ga-num" style="color:#fde047;">+3c</span></span>
           <div class="ga-guide-flow__copy">
-            <strong>3. Sell card</strong>
-            <span>Discard any card for 3 coins</span>
+            <strong>${esc(t(locale, "guideVis.sw.step3Title"))}</strong>
+            <span>${esc(t(locale, "guideVis.sw.step3Desc"))}</span>
           </div>
         </div>
       </div>
       <div class="ga-guide-recipes">
         <div class="ga-guide-recipe">
-          <span class="ga-guide-recipe__left">${renderSwShieldSvg(18)}<strong style="font-size:12px;">Military (Age I/II/III)</strong></span>
-          <span class="t-label ga-num">+1/+3/+5 win · -1 loss</span>
+          <span class="ga-guide-recipe__left">${renderSwShieldSvg(18)}<strong style="font-size:12px;">${esc(t(locale, "guideVis.sw.militaryLabel"))}</strong></span>
+          <span class="t-label ga-num">${esc(t(locale, "guideVis.sw.militaryVal"))}</span>
         </div>
         <div class="ga-guide-recipe">
           <span class="ga-guide-recipe__left">${renderSwScienceIconSvg("compass", 16)}${renderSwScienceIconSvg("gear", 16)}${renderSwScienceIconSvg("tablet", 16)}</span>
-          <span class="t-label ga-num">C²+G²+T² + 7×sets</span>
+          <span class="t-label ga-num">${esc(t(locale, "guideVis.sw.scienceVal"))}</span>
         </div>
         <div class="ga-guide-recipe">
-          <span class="ga-guide-recipe__left">${renderSwCoinSvg(17)}<strong style="font-size:12px;">7 VP Categories</strong></span>
-          <span class="t-label ga-num">3c=+1 · Blue · Yellow · Guilds</span>
+          <span class="ga-guide-recipe__left">${renderSwCoinSvg(17)}<strong style="font-size:12px;">${esc(t(locale, "guideVis.sw.vpCategoriesLabel"))}</strong></span>
+          <span class="t-label ga-num">${esc(t(locale, "guideVis.sw.vpCategoriesVal"))}</span>
         </div>
       </div>
     </div>

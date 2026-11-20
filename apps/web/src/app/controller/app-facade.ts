@@ -2,6 +2,7 @@ import type { ResourceMap, ResourceType } from "@gaming-platform/catan";
 import type { GemColor } from "@gaming-platform/splendor";
 import type { AzulDraftSource, AzulTileColor } from "@gaming-platform/azul";
 import type { CatanMapViewport } from "../../catan-graphics/viewport.ts";
+import type { SupportedLocale } from "../../i18n/index.ts";
 import {
   canControlPlayerOnDevicePure,
   getRoomBoundsPure,
@@ -24,6 +25,12 @@ export function buildMultiGamePlatformAppFacade(
   return {
     get root() {
       return ctx.root;
+    },
+    get locale() {
+      return ctx.model.locale;
+    },
+    set locale(v: SupportedLocale) {
+      ctx.setLocale(v);
     },
     get viewMode() {
       return ctx.model.viewMode;
@@ -331,6 +338,7 @@ export function buildMultiGamePlatformAppFacade(
       ctx.model = { ...ctx.model, botMoveThrottleMs: v };
     },
     render: () => ctx.render(),
+    setLocale: (nextLocale) => ctx.setLocale(nextLocale),
     signInAsGuest: (rawName, existingGuestId) =>
       ctx.signInAsGuest(rawName, existingGuestId),
     startSoloGameFromLogin: (rawName) => ctx.startSoloGameFromLogin(rawName),

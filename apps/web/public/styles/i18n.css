@@ -1,0 +1,52 @@
+/* ============================================================================
+ * Internationalization (i18n) — Language Switcher & CJK Typography Polish
+ * ========================================================================== */
+
+.ga-locale-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.ga-locale-picker__icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ga-locale-picker .ga-dropdown__trigger,
+.ga-game-canvas .ga-nav--room .ga-locale-picker .ga-dropdown--inline .ga-dropdown__trigger {
+  min-width: 0;
+  max-width: none;
+  padding: 0 9px 0 28px;
+  gap: 6px;
+}
+
+.ga-locale-picker .ga-dropdown__label-group .ga-dropdown__meta {
+  display: none;
+}
+
+.ga-locale-picker .ga-dropdown__menu {
+  min-width: 152px;
+}
+
+/* Relax negative display tracking for Traditional Chinese (CJK) legibility */
+:root:lang(zh-TW),
+:root:lang(zh-Hant) {
+  --font-display: "Sora", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif;
+  --font-text: "Figtree", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Heiti TC", system-ui, sans-serif;
+  --display-tracking: 0em;
+  --display-tracking-xl: -0.01em;
+}
+
+:root:lang(zh-TW) .ga-brand,
+:root:lang(zh-Hant) .ga-brand,
+:root:lang(zh-TW) .ga-lobby-hero__title,
+:root:lang(zh-Hant) .ga-lobby-hero__title {
+  letter-spacing: 0;
+}

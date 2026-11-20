@@ -183,12 +183,13 @@ export function computeInGameOverlayHtmlPure(
           model.activeTutorial.stepIndex,
           Boolean(isMyTurn && actingPlayerId && state.phase !== "GAME_OVER"),
           state,
-          hasBottomMapHud
+          hasBottomMapHud,
+          model.locale
         )
       : "";
 
   const guideModalHtml = model.guideModalGameId
-    ? renderReferenceGuideModalPure(model.guideModalGameId, true)
+    ? renderReferenceGuideModalPure(model.guideModalGameId, true, model.locale)
     : "";
 
   return {

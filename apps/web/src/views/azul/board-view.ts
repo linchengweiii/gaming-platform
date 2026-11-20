@@ -3,6 +3,7 @@ import type {
   AzulState,
   AzulTileColor,
 } from "@gaming-platform/azul";
+import type { SupportedLocale } from "../../i18n/index.ts";
 import { renderAzulPalaceCardHtml } from "./player-board.ts";
 import {
   renderAzulCenterPoolHtml,
@@ -13,7 +14,8 @@ export function renderAzulBoardView(
   state: AzulState,
   selectedDraft: { source: AzulDraftSource; color: AzulTileColor } | null,
   viewerPlayerId?: string | null,
-  isViewerTurn = true
+  isViewerTurn = true,
+  locale: SupportedLocale = "en"
 ): string {
   const activePlayer = state.players[state.activePlayerIndex]!;
   const fallbackFocus =
@@ -44,12 +46,14 @@ export function renderAzulBoardView(
   const factoriesHtml = renderAzulFactoriesHtml(
     state,
     selectedDraft,
-    isViewerTurn
+    isViewerTurn,
+    locale
   );
   const centerPoolHtml = renderAzulCenterPoolHtml(
     state,
     selectedDraft,
-    isViewerTurn
+    isViewerTurn,
+    locale
   );
   const palaceCardHtml = renderAzulPalaceCardHtml(
     state,
@@ -57,7 +61,8 @@ export function renderAzulBoardView(
     selectedDraft,
     canViewerActNow,
     draftedCount,
-    takesFirstMarker
+    takesFirstMarker,
+    locale
   );
 
   return `

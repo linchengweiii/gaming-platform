@@ -6,6 +6,11 @@ import {
   type TokenColor,
   computeCardPurchasePayment,
 } from "@gaming-platform/splendor";
+import {
+  type SupportedLocale,
+  getSplendorGemTextLocalized,
+  t,
+} from "../../i18n/index.ts";
 
 export const GEM_STYLES: Record<
   TokenColor,
@@ -69,9 +74,17 @@ export function renderSplendorGemToken(
   size = 44,
   dataAttr = "",
   selectedCount = 0,
-  locationHint = "in bank"
+  locationHint = "in bank",
+  locale: SupportedLocale = "en"
 ): string {
   const st = GEM_STYLES[color];
+  const gemText = getSplendorGemTextLocalized(color, locale);
+  const localizedLocation =
+    locationHint === "in bank"
+      ? t(locale, "sp.inBank")
+      : locationHint === "in hand"
+        ? t(locale, "sp.inHand")
+        : locationHint;
   const isPicked = selectedCount > 0;
   const a11yAttr = dataAttr ? `role="button" tabindex="0"` : "";
   return `
@@ -98,7 +111,7 @@ export function renderSplendorGemToken(
       };
       opacity: ${count <= 0 && !isPicked ? "0.32" : "1"};
       user-select: none;
-    " title="${st.label} (${count} ${locationHint}${isPicked ? `, +${selectedCount} selected` : ""})">
+    " title="${gemText.label} (${count} ${localizedLocation}${isPicked ? t(locale, "sp.selectedSuffix", { count: selectedCount }) : ""})">
       <span>${count}</span>
       ${
         isPicked
@@ -130,7 +143,8 @@ export function renderSplendorCardItem(
   focusPlayer: SplendorPlayerState,
   canViewerActNow: boolean,
   card: SplendorCard,
-  canReserve: boolean
+  canReserve: boolean,
+  locale: SupportedLocale = "en"
 ): string {
   const { affordable, payment } = computeCardPurchasePayment(
     focusPlayer,
@@ -138,6 +152,7 @@ export function renderSplendorCardItem(
   );
   const goldUsed = payment.gold ?? 0;
   const bonusStyle = GEM_STYLES[card.bonus];
+  const bonusText = getSplendorGemTextLocalized(card.bonus, locale);
 
   const tierBg: Record<1 | 2 | 3, string> = {
     1: "linear-gradient(155deg, #0d3b2e 0%, #18191b 88%)",
@@ -151,6 +166,7 @@ export function renderSplendorCardItem(
   const costsHtml = GEM_COLORS.filter((c) => card.cost[c] > 0)
     .map((c) => {
       const st = GEM_STYLES[c];
+      const cText = getSplendorGemTextLocalized(c, locale);
       const raw = card.cost[c];
       const bonus = focusPlayer.bonuses[c];
       const net = Math.max(0, raw - bonus);
@@ -162,8 +178,13 @@ export function renderSplendorCardItem(
       const discounted = bonus > 0 && net > 0;
       const labelTitle =
         bonus > 0
-          ? `${st.label}: ${net} net (${raw} cost − ${bonus} bonus)`
-          : `${st.label}: ${raw}`;
+          ? t(locale, "sp.costDiscountTitle", {
+              label: cText.label,
+              net,
+              raw,
+              bonus,
+            })
+          : `${cText.label}: ${raw}`;
 
       return `
         <span class="ga-num" title="${labelTitle}" style="
@@ -193,15 +214,17 @@ export function renderSplendorCardItem(
 
   const readinessChip =
     totalNetTokensNeeded === 0
-      ? `<span class="ga-chip ga-chip--ok ga-num" style="height:18px;padding:0 5px;font-size:10px;">Free</span>`
+      ? `<span class="ga-chip ga-chip--ok ga-num" style="height:18px;padding:0 5px;font-size:10px;">${t(locale, "common.free")}</span>`
       : affordable
         ? goldUsed > 0
-          ? `<span class="ga-chip ga-chip--warn ga-num" style="height:18px;padding:0 5px;font-size:10px;" title="Spends ${goldUsed} Gold joker token(s)">${goldUsed} Gold</span>`
-          : `<span class="ga-chip ga-chip--ok ga-num" style="height:18px;padding:0 5px;font-size:10px;">Ready</span>`
-        : `<span class="ga-chip ga-num" style="height:18px;padding:0 5px;font-size:10px;">Need ${netMissingAfterGold}</span>`;
+          ? `<span class="ga-chip ga-chip--warn ga-num" style="height:18px;padding:0 5px;font-size:10px;" title="${t(locale, "sp.spendsGoldTitle", { count: goldUsed })}">${t(locale, "sp.goldChip", { count: goldUsed })}</span>`
+          : `<span class="ga-chip ga-chip--ok ga-num" style="height:18px;padding:0 5px;font-size:10px;">${t(locale, "common.ready")}</span>`
+        : `<span class="ga-chip ga-num" style="height:18px;padding:0 5px;font-size:10px;">${t(locale, "sp.needCount", { count: netMissingAfterGold })}</span>`;
 
   const buyLabel =
-    affordable && goldUsed > 0 ? `Buy (${goldUsed}G)` : "Buy";
+    affordable && goldUsed > 0
+      ? t(locale, "sp.buyWithGold", { count: goldUsed })
+      : t(locale, "sp.buy");
 
   return `
     <div class="sp-dev-card ${affordable ? "is-affordable" : ""}" style="background: ${tierBg[card.tier]};">
@@ -222,11 +245,11 @@ export function renderSplendorCardItem(
           display: inline-flex;
           align-items: center;
           justify-content: center;
-        " title="Permanent discount: +1 ${bonusStyle.label}">${bonusStyle.short[0]}</div>
+        " title="${t(locale, "sp.permanentDiscountTitle", { label: bonusText.label })}">${bonusText.short[0]}</div>
       </div>
 
       <div class="muted" style="font-size: var(--t-label);">
-        Tier ${card.tier} ${"·".repeat(card.tier)}
+        ${t(locale, "sp.tierN", { tier: card.tier })} ${"·".repeat(card.tier)}
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -249,7 +272,7 @@ export function renderSplendorCardItem(
                   state.phase !== "MAIN_ACTION"
                     ? "disabled"
                     : ""
-                } title="Reserve card and take 1 gold">Hold</button>`
+                } title="${t(locale, "sp.holdTitle")}">${t(locale, "sp.hold")}</button>`
               : ""
           }
         </div>

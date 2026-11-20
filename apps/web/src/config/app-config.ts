@@ -19,6 +19,7 @@ export const LAST_ACTIVE_GUEST_STORAGE_KEY = "ga_last_active_guest_id";
 export const ACTIVE_ROOM_STORAGE_KEY = "ga_active_room_id";
 export const BOT_FEED_VISIBLE_STORAGE_KEY = "ga_bot_move_feed_enabled";
 export const BOT_MOVE_THROTTLE_STORAGE_KEY = "ga_bot_move_throttle_ms";
+export const LOCALE_STORAGE_KEY = "ga_locale";
 
 export const DEFAULT_AUTOPLAY_SPEED_MS = 150;
 export const BOT_RESPONSE_DELAY_MS = 140;

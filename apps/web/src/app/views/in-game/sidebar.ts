@@ -8,12 +8,16 @@ import type { SplendorState } from "@gaming-platform/splendor";
 import type { AzulState } from "@gaming-platform/azul";
 import type { SevenWondersState } from "@gaming-platform/seven-wonders";
 import {
-  COMMODITY_META,
-  DISCIPLINE_META,
-  RESOURCE_META,
   renderCommodityGlyphSvg,
   renderResourceGlyphSvg,
 } from "../../../catan-graphics.ts";
+import {
+  getCatanCommodityTextLocalized,
+  getCatanDisciplineTextLocalized,
+  getCatanResourceTextLocalized,
+  localizeEventLogMessage,
+  t,
+} from "../../../i18n/index.ts";
 import { renderSplendorPlayerCard } from "../../../splendor-view.ts";
 import { renderAzulPlayerCard } from "../../../azul-view.ts";
 import { renderSevenWondersPlayerCard } from "../../../seven-wonders-view.ts";
@@ -28,20 +32,25 @@ export function renderInGameSidebarPure(
   ctx: InGameComputedContext
 ): string {
   const { actingPlayerId, state, model, summaryInfo, isOwner } = ctx;
+  const locale = model.locale;
 
   return `          <aside class="ga-sidebar">
             <div class="ga-standings-section">
               <div class="ga-sidebar__head">
-                <span>Standings (${state.players.length})</span>
-                <span class="ga-num">${
+                <span>${escapeAttr(t(locale, "inGame.standings", { count: state.players.length }))}</span>
+                <span class="ga-num">${escapeAttr(
                   room.gameId === "catan"
-                    ? `Target ${state.config.targetVictoryPoints} VP`
+                    ? t(locale, "inGame.targetVp", {
+                        target: state.config.targetVictoryPoints,
+                      })
                     : room.gameId === "splendor"
-                      ? `Target ${state.config.targetPoints} VP`
+                      ? t(locale, "inGame.targetVp", {
+                          target: state.config.targetPoints,
+                        })
                       : room.gameId === "seven_wonders"
-                        ? `Age ${state.age}/3 · VP`
-                        : `5×5 wall`
-                }</span>
+                        ? t(locale, "inGame.ageVp", { age: state.age })
+                        : t(locale, "inGame.wall5x5")
+                )}</span>
               </div>
               ${
                 (room.offlinePlayerIds ?? []).length > 0
@@ -50,7 +59,11 @@ export function renderInGameSidebarPure(
                         .map((offId) => {
                           const offP = state.players.find((sp: any) => sp.id === offId);
                           return offP
-                            ? `<span class="ga-chip ga-chip--warn" title="Temporarily disconnected — waiting to reconnect">${escapeAttr(offP.name)}: Offline</span>`
+                            ? `<span class="ga-chip ga-chip--warn" title="${escapeAttr(t(locale, "common.offlineTooltip"))}">${escapeAttr(
+                                t(locale, "inGame.playerOfflineChip", {
+                                  name: offP.name,
+                                })
+                              )}</span>`
                             : "";
                         })
                         .join("")}
@@ -66,24 +79,28 @@ export function renderInGameSidebarPure(
                           state as CatanState,
                           p,
                           p.id === actingPlayerId,
-                          Boolean(room.offlinePlayerIds?.includes(p.id))
+                          Boolean(room.offlinePlayerIds?.includes(p.id)),
+                          locale
                         )
                       : room.gameId === "splendor"
                         ? renderSplendorPlayerCard(
                             state as SplendorState,
                             p,
-                            p.id === actingPlayerId
+                            p.id === actingPlayerId,
+                            locale
                           )
                         : room.gameId === "seven_wonders"
-                           ? renderSevenWondersPlayerCard(
+                          ? renderSevenWondersPlayerCard(
                               state as SevenWondersState,
                               p,
-                              p.id === actingPlayerId
+                              p.id === actingPlayerId,
+                              locale
                             )
                           : renderAzulPlayerCard(
                               state as AzulState,
                               p,
-                              p.id === actingPlayerId
+                              p.id === actingPlayerId,
+                              locale
                             )
                   )
                   .join("")}
@@ -100,9 +117,9 @@ export function renderInGameSidebarPure(
                   class="ga-settings-fold__btn"
                   aria-expanded="${model.sidebarSettingsExpanded ? "true" : "false"}"
                 >
-                  <span class="ga-settings-fold__title">Game settings</span>
+                  <span class="ga-settings-fold__title">${escapeAttr(t(locale, "inGame.gameSettings"))}</span>
                   <span class="ga-settings-fold__meta ga-num">
-                    <span>${summaryInfo.seatsLabel} · T${state.turn}</span>
+                    <span>${escapeAttr(summaryInfo.seatsLabel)} · T${state.turn}</span>
                     <svg class="ga-settings-fold__chev" viewBox="0 0 12 12" aria-hidden="true">
                       <path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
@@ -113,8 +130,8 @@ export function renderInGameSidebarPure(
                     ? `
                       <div class="ga-settings-fold__body">
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                          <strong style="font-size: var(--t-label); font-weight: 500; color: var(--ink);">${summaryInfo.formatTitle}</strong>
-                          <span class="t-label muted ga-num">${summaryInfo.targetLabel}</span>
+                          <strong style="font-size: var(--t-label); font-weight: 500; color: var(--ink);">${escapeAttr(summaryInfo.formatTitle)}</strong>
+                          <span class="t-label muted ga-num">${escapeAttr(summaryInfo.targetLabel)}</span>
                         </div>
                         <div class="ga-inline-summary__chips">
                           ${summaryInfo.ruleChips
@@ -127,7 +144,7 @@ export function renderInGameSidebarPure(
                 }
                 ${
                   room.status === "finished" && isOwner
-                    ? `<div style="padding: 0 12px 10px;"><button type="button" id="btn-sidebar-edit-setup" class="btn btn--secondary btn--sm" style="width: 100%;">Edit setup for next game</button></div>`
+                    ? `<div style="padding: 0 12px 10px;"><button type="button" id="btn-sidebar-edit-setup" class="btn btn--secondary btn--sm" style="width: 100%;">${escapeAttr(t(locale, "inGame.editSetupNextGame"))}</button></div>`
                     : ""
                 }
               </div>
@@ -138,21 +155,31 @@ export function renderInGameSidebarPure(
                     ? `
                 <div class="ga-bank-section">
                   <div class="ga-sidebar__head">
-                    <span>Bank & progress decks</span>
-                    <span class="ga-num">T${state.progressDecks.trade.length}·P${state.progressDecks.politics.length}·S${state.progressDecks.science.length}</span>
+                    <span>${escapeAttr(t(locale, "catan.bankAndProgressDecks"))}</span>
+                    <span class="ga-num">${getCatanDisciplineTextLocalized("trade", locale).shortCode}${state.progressDecks.trade.length}·${getCatanDisciplineTextLocalized("politics", locale).shortCode}${state.progressDecks.politics.length}·${getCatanDisciplineTextLocalized("science", locale).shortCode}${state.progressDecks.science.length}</span>
                   </div>
                   <div class="res-pills res-pills--bank" data-bank-mode="ck">
                     ${RESOURCES.map(
                       (r) =>
-                        `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}: ${state.bank[r]} in bank">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
+                        `<span class="res-pill res-${r}" title="${escapeAttr(
+                          t(locale, "catan.inBankTooltip", {
+                            label: getCatanResourceTextLocalized(r, locale).label,
+                            count: state.bank[r],
+                          })
+                        )}">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
                     ).join("")}${COMMODITIES.map(
                       (c) =>
-                        `<span class="res-pill res-${c}" title="${COMMODITY_META[c].label}: ${state.commodityBank[c]} in bank">${renderCommodityGlyphSvg(c)} ${state.commodityBank[c]}</span>`
+                        `<span class="res-pill res-${c}" title="${escapeAttr(
+                          t(locale, "catan.inBankTooltip", {
+                            label: getCatanCommodityTextLocalized(c, locale).label,
+                            count: state.commodityBank[c],
+                          })
+                        )}">${renderCommodityGlyphSvg(c)} ${state.commodityBank[c]}</span>`
                     ).join("")}
                   </div>
                   <div class="ga-stat-list ga-stat-list--compact">
                     <div class="ga-stat-row">
-                      <span>Longest route (+2 VP)</span>
+                      <span>${escapeAttr(t(locale, "catan.longestRouteAward"))}</span>
                       <strong class="ga-num">${
                         state.longestRoadOwnerId
                           ? `${escapeAttr(
@@ -160,26 +187,26 @@ export function renderInGameSidebarPure(
                                 (p: any) => p.id === state.longestRoadOwnerId
                               )?.name ?? ""
                             )} (${state.longestRoadLength})`
-                          : "Unclaimed (5+)"
+                          : escapeAttr(t(locale, "catan.unclaimed5Plus"))
                       }</strong>
                     </div>
                     ${IMPROVEMENT_DISCIPLINES.map((disc) => {
                       const m = state.metropolises[disc];
-                      const dMeta = DISCIPLINE_META[disc];
+                      const dText = getCatanDisciplineTextLocalized(disc, locale);
                       return `<div class="ga-stat-row">
-                        <span>${dMeta.label} Metro (+2 VP)</span>
+                        <span>${escapeAttr(t(locale, "catan.metroAward", { discipline: dText.label }))}</span>
                         <strong class="ga-num">${
                           m.ownerId
                             ? `${escapeAttr(
                                 state.players.find((p: any) => p.id === m.ownerId)
                                   ?.name ?? ""
-                              )} (Lv ${m.level})`
-                            : "Unclaimed (Lv 4)"
+                              )} (${escapeAttr(t(locale, "catan.lvN", { lv: m.level }))})`
+                            : escapeAttr(t(locale, "catan.unclaimedLv4"))
                         }</strong>
                       </div>`;
                     }).join("")}
                     <div class="ga-stat-row">
-                      <span>Merchant (+1 VP)</span>
+                      <span>${escapeAttr(t(locale, "catan.merchantAward"))}</span>
                       <strong class="ga-num">${
                         state.merchantOwnerId
                           ? `${escapeAttr(
@@ -187,13 +214,13 @@ export function renderInGameSidebarPure(
                                 (p: any) => p.id === state.merchantOwnerId
                               )?.name ?? ""
                             )}`
-                          : "Unclaimed"
+                          : escapeAttr(t(locale, "catan.unclaimed"))
                       }</strong>
                     </div>
                     ${
                       state.config.enableHarbormaster
                         ? `<div class="ga-stat-row">
-                            <span>Harbormaster (+2 VP)</span>
+                            <span>${escapeAttr(t(locale, "catan.harbormasterAward"))}</span>
                             <strong class="ga-num">${
                               state.harbormasterOwnerId
                                 ? `${escapeAttr(
@@ -201,7 +228,7 @@ export function renderInGameSidebarPure(
                                       (p: any) => p.id === state.harbormasterOwnerId
                                     )?.name ?? ""
                                   )} (${state.harbormasterPoints})`
-                                : "Unclaimed (3+)"
+                                : escapeAttr(t(locale, "catan.unclaimed3Plus"))
                             }</strong>
                           </div>`
                         : ""
@@ -212,18 +239,23 @@ export function renderInGameSidebarPure(
                     : `
                 <div class="ga-bank-section">
                   <div class="ga-sidebar__head">
-                    <span>Bank supply and awards</span>
-                    <span class="ga-num">Dev deck: ${state.devCardDeck.length}</span>
+                    <span>${escapeAttr(t(locale, "catan.bankSupplyAndAwards"))}</span>
+                    <span class="ga-num">${escapeAttr(t(locale, "catan.devDeckCount", { count: state.devCardDeck.length }))}</span>
                   </div>
                   <div class="res-pills res-pills--bank">
                     ${RESOURCES.map(
                       (r) =>
-                        `<span class="res-pill res-${r}" title="${RESOURCE_META[r].label}: ${state.bank[r]} in bank">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
+                        `<span class="res-pill res-${r}" title="${escapeAttr(
+                          t(locale, "catan.inBankTooltip", {
+                            label: getCatanResourceTextLocalized(r, locale).label,
+                            count: state.bank[r],
+                          })
+                        )}">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
                     ).join("")}
                   </div>
                   <div class="ga-stat-list ga-stat-list--compact">
                     <div class="ga-stat-row">
-                      <span>Longest route (+2 VP)</span>
+                      <span>${escapeAttr(t(locale, "catan.longestRouteAward"))}</span>
                       <strong class="ga-num">${
                         state.longestRoadOwnerId
                           ? `${escapeAttr(
@@ -231,11 +263,11 @@ export function renderInGameSidebarPure(
                                 (p: any) => p.id === state.longestRoadOwnerId
                               )?.name ?? ""
                             )} (${state.longestRoadLength})`
-                          : "Unclaimed (5+)"
+                          : escapeAttr(t(locale, "catan.unclaimed5Plus"))
                       }</strong>
                     </div>
                     <div class="ga-stat-row">
-                      <span>Largest army (+2 VP)</span>
+                      <span>${escapeAttr(t(locale, "catan.largestArmyAward"))}</span>
                       <strong class="ga-num">${
                         state.largestArmyOwnerId
                           ? `${escapeAttr(
@@ -243,13 +275,13 @@ export function renderInGameSidebarPure(
                                 (p: any) => p.id === state.largestArmyOwnerId
                               )?.name ?? ""
                             )} (${state.largestArmySize})`
-                          : "Unclaimed (3+)"
+                          : escapeAttr(t(locale, "catan.unclaimed3Plus"))
                       }</strong>
                     </div>
                     ${
                       state.config.enableHarbormaster
                         ? `<div class="ga-stat-row">
-                            <span>Harbormaster (+2 VP)</span>
+                            <span>${escapeAttr(t(locale, "catan.harbormasterAward"))}</span>
                             <strong class="ga-num">${
                               state.harbormasterOwnerId
                                 ? `${escapeAttr(
@@ -257,7 +289,7 @@ export function renderInGameSidebarPure(
                                       (p: any) => p.id === state.harbormasterOwnerId
                                     )?.name ?? ""
                                   )} (${state.harbormasterPoints})`
-                                : "Unclaimed (3+)"
+                                : escapeAttr(t(locale, "catan.unclaimed3Plus"))
                             }</strong>
                           </div>`
                         : ""
@@ -270,7 +302,7 @@ export function renderInGameSidebarPure(
 
               <div class="ga-log-section">
                 <div class="ga-sidebar__head">
-                  <span>Match log</span>
+                  <span>${escapeAttr(t(locale, "inGame.matchLog"))}</span>
                   <span class="ga-num">${state.eventLog.length}</span>
                 </div>
                 <div class="event-log">
@@ -300,7 +332,9 @@ export function renderInGameSidebarPure(
                         const styleAttr = bot?.color
                           ? ` style="--bot-accent: ${escapeAttr(bot.color)};"`
                           : "";
-                        return `<div class="${cls}"${styleAttr}><strong>T${evt.turn}</strong> ${escapeAttr(evt.message)}</div>`;
+                        return `<div class="${cls}"${styleAttr}><strong>T${evt.turn}</strong> ${escapeAttr(
+                          localizeEventLogMessage(evt.message, locale)
+                        )}</div>`;
                       })
                       .join("");
                   })()}

@@ -11,13 +11,17 @@ import {
 } from "@gaming-platform/catan";
 import {
   DISCIPLINE_META,
-  RESOURCE_META,
-  TRADE_GOOD_META,
   renderActionPieceIconSvg,
   renderMiniResourceCardSvg,
   renderMiniTradeGoodCardSvg,
   renderRollDiceButtonGraphicSvg,
 } from "../../catan-graphics.ts";
+import {
+  type SupportedLocale,
+  getCatanResourceTextLocalized,
+  getCatanTradeGoodLabelLocalized,
+  t,
+} from "../../i18n/index.ts";
 import { DRAWN_ARROW_SVG, escapeAttr } from "../helpers/html-and-dropdown.ts";
 import { canControlPlayerOnDevicePure } from "../helpers/room-queries.ts";
 import type { AppModel, ClientRoom } from "../types.ts";
@@ -28,17 +32,21 @@ function renderTradeOfferChipPure(
   good: TradeGoodType,
   amount: number,
   sign: "+" | "−",
+  locale: SupportedLocale,
   ownedCount?: number
 ): string {
   const cardSvg = isCk
     ? renderMiniTradeGoodCardSvg(good, 30, 19)
     : renderMiniResourceCardSvg(good as (typeof RESOURCES)[number], 32, 20);
   const label = isCk
-    ? TRADE_GOOD_META[good].label
-    : RESOURCE_META[good as (typeof RESOURCES)[number]].label;
+    ? getCatanTradeGoodLabelLocalized(good, locale)
+    : getCatanResourceTextLocalized(good as (typeof RESOURCES)[number], locale)
+        .label;
   const haveBadge =
     ownedCount !== undefined
-      ? ` <span class="ga-trade-offer-have ${ownedCount < amount ? "is-short" : ""} ga-num">(have ${ownedCount})</span>`
+      ? ` <span class="ga-trade-offer-have ${ownedCount < amount ? "is-short" : ""} ga-num">${escapeAttr(
+          t(locale, "catan.trade.haveCount", { count: ownedCount })
+        )}</span>`
       : "";
   return `<span class="map-yield-chip" title="${escapeAttr(label)}">${sign}${amount} ${cardSvg}<span>${escapeAttr(label)}</span>${haveBadge}</span>`;
 }
@@ -50,6 +58,7 @@ export function renderActiveTradeOfferCardPure(
   actingPlayer: CatanState["players"][number],
   canManageMyTrade = false
 ): string {
+  const locale = model.locale;
   const offer = state.activeTradeOffer!;
   const fromP = state.players.find((p) => p.id === offer.fromPlayerId)!;
   const isResponder = actingPlayer.id !== offer.fromPlayerId;
@@ -72,12 +81,12 @@ export function renderActiveTradeOfferCardPure(
   );
 
   const statusLabel = canRespond
-    ? `${escapeAttr(actingPlayer.name)} responding`
+    ? t(locale, "catan.trade.responding", { name: actingPlayer.name })
     : acceptedPartners.length > 0
       ? pendingResponders.length > 0
-        ? "Select partner now or wait for others"
-        : "Select partner to complete trade"
-      : "Awaiting player response";
+        ? t(locale, "catan.trade.selectOrWait")
+        : t(locale, "catan.trade.selectToComplete")
+      : t(locale, "catan.trade.awaitingResponse");
 
   const responderChipsHtml = canManage
     ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px;">
@@ -91,13 +100,13 @@ export function renderActiveTradeOfferCardPure(
                   ? "ga-chip"
                   : "ga-chip ga-chip--warn";
               const stateText = didAccept
-                ? "Accepted"
+                ? t(locale, "catan.trade.accepted")
                 : didDecline
-                  ? "Declined"
-                  : "Responding...";
+                  ? t(locale, "catan.trade.declined")
+                  : t(locale, "catan.trade.respondingEllipsis");
               return `<span class="${chipCls}" style="display: inline-flex; align-items: center; gap: 5px;">
                 <span class="player-dot" style="background: ${op.color}; width: 7px; height: 7px;"></span>
-                ${escapeAttr(op.name)} · ${stateText}
+                ${escapeAttr(op.name)} · ${escapeAttr(stateText)}
               </span>`;
             })
             .join("")}
@@ -122,18 +131,18 @@ export function renderActiveTradeOfferCardPure(
     ? `
         <div class="ga-trade-offer-side ga-trade-offer-side--gain">
           <span class="ga-trade-offer-side__label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>You get
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.youGet"))}
           </span>
           ${giveEntries
             .map(({ good, amount }) =>
-              renderTradeOfferChipPure(isCk, good, amount, "+")
+              renderTradeOfferChipPure(isCk, good, amount, "+", locale)
             )
             .join("")}
         </div>
         ${DRAWN_ARROW_SVG}
         <div class="ga-trade-offer-side ga-trade-offer-side--cost">
           <span class="ga-trade-offer-side__label">
-            <span class="ga-res-row-dot ga-res-row-dot--give"></span>You give
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.youGive"))}
           </span>
           ${wantEntries
             .map(({ good, amount }) =>
@@ -142,6 +151,7 @@ export function renderActiveTradeOfferCardPure(
                 good,
                 amount,
                 "−",
+                locale,
                 getPlayerGoodCount(actingPlayer, good)
               )
             )
@@ -152,22 +162,22 @@ export function renderActiveTradeOfferCardPure(
       ? `
         <div class="ga-trade-offer-side ga-trade-offer-side--cost">
           <span class="ga-trade-offer-side__label">
-            <span class="ga-res-row-dot ga-res-row-dot--give"></span>You give
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.youGive"))}
           </span>
           ${giveEntries
             .map(({ good, amount }) =>
-              renderTradeOfferChipPure(isCk, good, amount, "−")
+              renderTradeOfferChipPure(isCk, good, amount, "−", locale)
             )
             .join("")}
         </div>
         ${DRAWN_ARROW_SVG}
         <div class="ga-trade-offer-side ga-trade-offer-side--gain">
           <span class="ga-trade-offer-side__label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>You get
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.youGet"))}
           </span>
           ${wantEntries
             .map(({ good, amount }) =>
-              renderTradeOfferChipPure(isCk, good, amount, "+")
+              renderTradeOfferChipPure(isCk, good, amount, "+", locale)
             )
             .join("")}
         </div>
@@ -175,22 +185,22 @@ export function renderActiveTradeOfferCardPure(
       : `
         <div class="ga-trade-offer-side ga-trade-offer-side--cost">
           <span class="ga-trade-offer-side__label">
-            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Gives
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.gives"))}
           </span>
           ${giveEntries
             .map(({ good, amount }) =>
-              renderTradeOfferChipPure(isCk, good, amount, "+")
+              renderTradeOfferChipPure(isCk, good, amount, "+", locale)
             )
             .join("")}
         </div>
         ${DRAWN_ARROW_SVG}
         <div class="ga-trade-offer-side ga-trade-offer-side--gain">
           <span class="ga-trade-offer-side__label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Wants
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.wants"))}
           </span>
           ${wantEntries
             .map(({ good, amount }) =>
-              renderTradeOfferChipPure(isCk, good, amount, "−")
+              renderTradeOfferChipPure(isCk, good, amount, "−", locale)
             )
             .join("")}
         </div>
@@ -204,10 +214,12 @@ export function renderActiveTradeOfferCardPure(
       <div class="ga-trade-head">
         <div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">
           <span class="player-dot" style="background: ${fromP.color}"></span>
-          <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(fromP.name)} trade offer</strong>
+          <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(
+            t(locale, "catan.trade.offerTitle", { name: fromP.name })
+          )}</strong>
           ${responderChipsHtml}
         </div>
-        <span class="t-label muted">${statusLabel}</span>
+        <span class="t-label muted">${escapeAttr(statusLabel)}</span>
       </div>
 
       <div class="ga-trade-offer-bar">
@@ -218,12 +230,10 @@ export function renderActiveTradeOfferCardPure(
           ${
             canRespond
               ? `
-                <button type="button" data-decline-trade="${actingPlayer.id}" class="btn btn--secondary btn--sm">Decline</button>
+                <button type="button" data-decline-trade="${actingPlayer.id}" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "catan.trade.decline"))}</button>
                 <button type="button" data-accept-trade="${actingPlayer.id}" class="btn btn--primary btn--sm action-btn-graphic" ${
-                  !canAffordOfferWant
-                    ? "disabled"
-                    : ""
-                }>${renderActionPieceIconSvg("domestic_trade", actingPlayer.color, 16)} <span>Accept</span></button>
+                  !canAffordOfferWant ? "disabled" : ""
+                }>${renderActionPieceIconSvg("domestic_trade", actingPlayer.color, 16)} <span>${escapeAttr(t(locale, "catan.trade.accept"))}</span></button>
               `
               : ""
           }
@@ -235,12 +245,12 @@ export function renderActiveTradeOfferCardPure(
                     (partner) => `
                       <button type="button" data-confirm-trade="${escapeAttr(partner.id)}" class="btn btn--primary btn--sm action-btn-graphic">
                         <span class="player-dot" style="background: ${partner.color}"></span>
-                        <span>Trade with ${escapeAttr(partner.name)}</span>
+                        <span>${escapeAttr(t(locale, "catan.trade.tradeWith", { name: partner.name }))}</span>
                       </button>
                     `
                   )
                   .join("")}
-                <button type="button" id="btn-cancel-domestic" class="btn btn--secondary btn--sm">Cancel offer</button>
+                <button type="button" id="btn-cancel-domestic" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "catan.trade.cancelOffer"))}</button>
               `
               : ""
           }
@@ -258,6 +268,7 @@ export function renderCatanMapDecisionPopupPure(
   if (!actingPlayer || state.phase === "GAME_OVER" || model.autoPlayBots) {
     return "";
   }
+  const locale = model.locale;
 
   if (state.phase === "PRE_ROLL") {
     const canKnight = legalActions.some((a) => a.type === "PLAY_KNIGHT");
@@ -268,20 +279,20 @@ export function renderCatanMapDecisionPopupPure(
         <div class="map-decision-popup map-decision-popup--compact">
           <button type="button" id="btn-roll-dice" class="btn btn--primary btn-roll-graphic">
             <span class="roll-dice-btn-graphic" style="display: inline-flex; align-items: center;">${renderRollDiceButtonGraphicSvg(32)}</span>
-            <span>Roll dice</span>
+            <span>${escapeAttr(t(locale, "catan.decision.rollDice"))}</span>
           </button>
           ${
             canKnight
               ? `<button type="button" id="btn-play-knight" class="btn btn--secondary action-btn-graphic">
                    ${renderActionPieceIconSvg("knight", actingPlayer.color, 18)}
-                   <span>Play knight</span>
+                   <span>${escapeAttr(t(locale, "catan.decision.playKnight"))}</span>
                  </button>`
               : ""
           }${
             alchemistCard
               ? `<button type="button" data-play-progress-card="${alchemistCard.id}" class="btn btn--secondary action-btn-graphic">
                    ${renderActionPieceIconSvg("progress_card", DISCIPLINE_META.science.accent, 18)}
-                   <span>Alchemist</span>
+                   <span>${escapeAttr(t(locale, "catan.decision.alchemist"))}</span>
                  </button>`
               : ""
           }
@@ -292,7 +303,7 @@ export function renderCatanMapDecisionPopupPure(
   if (state.phase === "STEAL_RESOURCE") {
     return `
         <div class="map-decision-popup map-decision-popup--compact">
-          <span class="action-prompt"><strong>Steal 1 card:</strong></span>
+          <span class="action-prompt"><strong>${escapeAttr(t(locale, "catan.decision.stealPrompt"))}</strong></span>
           ${state.stealCandidates
             .map((vId) => {
               const victim = state.players.find((p) => p.id === vId)!;

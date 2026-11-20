@@ -3,12 +3,15 @@ import {
   SCENARIO_CATALOG,
   toBaseMapScenarioId,
 } from "@gaming-platform/catan";
+import { getBotMoveThrottlePresetPure } from "../../config/app-config.ts";
 import {
-  BOT_DIFFICULTY_META,
-  SETUP_GAME_DROPDOWN_OPTIONS,
-  getBotMoveThrottlePresetPure,
-  getCatanScenarioDropdownOptions,
-} from "../../config/app-config.ts";
+  type SupportedLocale,
+  getBotDifficultyMetaLocalized,
+  getCatanScenarioDropdownOptionsLocalized,
+  getCatanScenarioTextLocalized,
+  getSetupGameDropdownOptionsLocalized,
+  t,
+} from "../../i18n/index.ts";
 import { escapeAttr, renderDropdown } from "../helpers/html-and-dropdown.ts";
 import { formatRoomHashLabelPure } from "../helpers/room-hash-and-links.ts";
 import type { ClientRoom, DropdownOption } from "../types.ts";
@@ -20,29 +23,34 @@ export function renderRoomSetupControlsCardPure(
   humanCount: number,
   botCountOptions: DropdownOption[],
   effectiveStartingValue: string,
-  startingPlayerOptions: DropdownOption[]
+  startingPlayerOptions: DropdownOption[],
+  locale: SupportedLocale = "en"
 ): string {
   return `
       <div class="ga-surface-card">
         <div class="ga-section-bar">
-          <h2>Match configuration</h2>
+          <h2>${escapeAttr(t(locale, "setup.heading"))}</h2>
           <div style="display: inline-flex; align-items: center; gap: 6px;">
-            <span class="ga-chip ga-num">Room ${escapeAttr(formatRoomHashLabelPure(room.roomId))}</span>
-            <span class="ga-chip ga-chip--ok">Owner editable</span>
+            <span class="ga-chip ga-num">${escapeAttr(
+              t(locale, "lobby.roomTitle", {
+                hash: formatRoomHashLabelPure(room.roomId),
+              })
+            )}</span>
+            <span class="ga-chip ga-chip--ok">${escapeAttr(t(locale, "setup.ownerEditable"))}</span>
           </div>
         </div>
 
         ${
           room.status === "finished"
             ? `<div class="ga-notice ga-notice--accent">
-                 The previous match has finished. Adjust any rules below and start the next game.
+                 ${escapeAttr(t(locale, "setup.finishedNotice"))}
                </div>`
             : ""
         }
 
         <div class="ga-field">
-          <label>Room visibility</label>
-          <div class="ga-seg-switch" role="group" aria-label="Room visibility">
+          <label>${escapeAttr(t(locale, "setup.visibilityLabel"))}</label>
+          <div class="ga-seg-switch" role="group" aria-label="${escapeAttr(t(locale, "setup.visibilityLabel"))}">
             <button
               type="button"
               id="setup-vis-public"
@@ -50,8 +58,8 @@ export function renderRoomSetupControlsCardPure(
               class="ga-seg-switch__btn ${!room.isPrivate ? "is-active" : ""}"
               aria-pressed="${!room.isPrivate ? "true" : "false"}"
             >
-              <span class="ga-seg-switch__title">Public</span>
-              <span class="ga-seg-switch__meta">Shown in Open rooms</span>
+              <span class="ga-seg-switch__title">${escapeAttr(t(locale, "common.public"))}</span>
+              <span class="ga-seg-switch__meta">${escapeAttr(t(locale, "setup.publicMeta"))}</span>
             </button>
             <button
               type="button"
@@ -60,23 +68,23 @@ export function renderRoomSetupControlsCardPure(
               class="ga-seg-switch__btn ${room.isPrivate ? "is-active" : ""}"
               aria-pressed="${room.isPrivate ? "true" : "false"}"
             >
-              <span class="ga-seg-switch__title">Private</span>
-              <span class="ga-seg-switch__meta">Invite link only</span>
+              <span class="ga-seg-switch__title">${escapeAttr(t(locale, "common.private"))}</span>
+              <span class="ga-seg-switch__meta">${escapeAttr(t(locale, "setup.privateMeta"))}</span>
             </button>
           </div>
-          <p class="t-small muted">${
+          <p class="t-small muted">${escapeAttr(
             room.isPrivate
-              ? "Hidden from Open rooms — other players can only join through your direct room link."
-              : "Visible to everyone in Open rooms, or joinable directly via room link."
-          }</p>
+              ? t(locale, "setup.privateHint")
+              : t(locale, "setup.publicHint")
+          )}</p>
         </div>
 
         <div class="ga-field">
-          <label for="setup-sel-game-btn">Board game</label>
+          <label for="setup-sel-game-btn">${escapeAttr(t(locale, "setup.boardGameLabel"))}</label>
           ${renderDropdown({
             id: "setup-sel-game",
             value: room.gameId,
-            options: [...SETUP_GAME_DROPDOWN_OPTIONS],
+            options: getSetupGameDropdownOptionsLocalized(locale),
           })}
         </div>
 
@@ -84,29 +92,29 @@ export function renderRoomSetupControlsCardPure(
           room.gameId === "seven_wonders"
             ? `
           <div class="ga-field">
-            <label for="setup-sel-wonderside-btn">Wonder boards</label>
+            <label for="setup-sel-wonderside-btn">${escapeAttr(t(locale, "setup.wonderBoardsLabel"))}</label>
             ${renderDropdown({
               id: "setup-sel-wonderside",
               value: room.config.wonderSideMode ?? "random",
               options: [
                 {
                   value: "random",
-                  label: "Random Day (A) or Night (B)",
-                  meta: "Official mix",
+                  label: t(locale, "setup.wonderRandomLabel"),
+                  meta: t(locale, "setup.wonderRandomMeta"),
                 },
                 {
                   value: "day",
-                  label: "Day side (A) — balanced classic",
-                  meta: "3 stages",
+                  label: t(locale, "setup.wonderDayLabel"),
+                  meta: t(locale, "setup.wonderDayMeta"),
                 },
                 {
                   value: "night",
-                  label: "Night side (B) — asymmetric powers",
-                  meta: "2–4 stages",
+                  label: t(locale, "setup.wonderNightLabel"),
+                  meta: t(locale, "setup.wonderNightMeta"),
                 },
               ],
             })}
-            <p class="t-small muted">Choose symmetric 3-stage Day boards, asymmetric Night powers, or a random flip per seat.</p>
+            <p class="t-small muted">${escapeAttr(t(locale, "setup.wonderHint"))}</p>
           </div>
         `
             : ""
@@ -118,17 +126,17 @@ export function renderRoomSetupControlsCardPure(
                 const mapScenarioId = toBaseMapScenarioId(room.config.scenarioId);
                 return `
           <div class="ga-field">
-            <label for="setup-sel-scenario-btn">Catan scenario</label>
+            <label for="setup-sel-scenario-btn">${escapeAttr(t(locale, "setup.catanScenarioLabel"))}</label>
             ${renderDropdown({
               id: "setup-sel-scenario",
               value: mapScenarioId,
-              options: getCatanScenarioDropdownOptions(),
+              options: getCatanScenarioDropdownOptionsLocalized(locale),
             })}
-            <p class="t-small muted">${
-              SCENARIO_CATALOG[mapScenarioId].description
-            }${
+            <p class="t-small muted">${escapeAttr(
+              getCatanScenarioTextLocalized(mapScenarioId, locale).description
+            )}${
               room.players.length >= 5
-                ? " (5–6 Player Extension active automatically.)"
+                ? escapeAttr(t(locale, "setup.catan56Auto"))
                 : ""
             }</p>
           </div>
@@ -138,7 +146,7 @@ export function renderRoomSetupControlsCardPure(
         }
 
         <div class="ga-field">
-          <label for="setup-sel-bots-btn">Bots to add</label>
+          <label for="setup-sel-bots-btn">${escapeAttr(t(locale, "setup.botsToAddLabel"))}</label>
           ${renderDropdown({
             id: "setup-sel-bots",
             value: String(room.botCount),
@@ -147,14 +155,42 @@ export function renderRoomSetupControlsCardPure(
           <p class="t-small muted">
             ${
               room.allBots
-                ? `${room.botCount} bots seated (${bounds.minPlayers}–${bounds.maxPlayers} players required).`
-                : `${humanCount} ${humanCount === 1 ? "human" : "humans"} + ${room.botCount} ${room.botCount === 1 ? "bot" : "bots"} = <strong>${room.players.length} total ${room.players.length === 1 ? "player" : "players"}</strong> (${bounds.minPlayers}–${bounds.maxPlayers} required).`
+                ? escapeAttr(
+                    t(locale, "setup.botsAllSeatedHint", {
+                      bots: room.botCount,
+                      min: bounds.minPlayers,
+                      max: bounds.maxPlayers,
+                    })
+                  )
+                : t(locale, "setup.botsMixHint", {
+                    humans: humanCount,
+                    humansWord:
+                      humanCount === 1
+                        ? t(locale, "lobby.wordHumanOne")
+                        : t(locale, "lobby.wordHumanMany"),
+                    bots: room.botCount,
+                    botsWord:
+                      room.botCount === 1
+                        ? t(locale, "lobby.wordBotOne")
+                        : t(locale, "lobby.wordBotMany"),
+                    totalStrong: `<strong>${escapeAttr(
+                      t(locale, "setup.totalPlayersStrong", {
+                        total: room.players.length,
+                        playersWord:
+                          room.players.length === 1
+                            ? t(locale, "lobby.wordPlayerOne")
+                            : t(locale, "lobby.wordPlayerMany"),
+                      })
+                    )}</strong>`,
+                    min: bounds.minPlayers,
+                    max: bounds.maxPlayers,
+                  })
             }
           </p>
         </div>
 
         <div class="ga-field">
-          <label for="setup-sel-starting-player-btn">Starting player</label>
+          <label for="setup-sel-starting-player-btn">${escapeAttr(t(locale, "setup.startingPlayerLabel"))}</label>
           ${renderDropdown({
             id: "setup-sel-starting-player",
             value: startingPlayerOptions.some(
@@ -164,23 +200,28 @@ export function renderRoomSetupControlsCardPure(
               : "random",
             options: startingPlayerOptions,
           })}
-          <p class="t-small muted">Any seated guest, local friend, or bot can take the opening turn.</p>
+          <p class="t-small muted">${escapeAttr(t(locale, "setup.startingPlayerHint"))}</p>
         </div>
 
         <div class="ga-field">
-          <label for="setup-sel-bot-difficulty-btn">Bot strength</label>
+          <label for="setup-sel-bot-difficulty-btn">${escapeAttr(t(locale, "setup.botStrengthLabel"))}</label>
           ${renderDropdown({
             id: "setup-sel-bot-difficulty",
             value: room.botDifficulty,
             options: (
               ["easy", "normal", "smart", "master"] as BotDifficulty[]
-            ).map((d) => ({
-              value: d,
-              label: BOT_DIFFICULTY_META[d].label,
-              meta: BOT_DIFFICULTY_META[d].badge,
-            })),
+            ).map((d) => {
+              const meta = getBotDifficultyMetaLocalized(d, locale);
+              return {
+                value: d,
+                label: meta.label,
+                meta: meta.badge,
+              };
+            }),
           })}
-          <p class="t-small muted">${BOT_DIFFICULTY_META[room.botDifficulty].desc}</p>
+          <p class="t-small muted">${escapeAttr(
+            getBotDifficultyMetaLocalized(room.botDifficulty, locale).desc
+          )}</p>
         </div>
 
         ${
@@ -191,13 +232,13 @@ export function renderRoomSetupControlsCardPure(
                 );
                 return `
         <div class="ga-field">
-          <label for="setup-sel-bot-pace-btn">Bot move pace</label>
+          <label for="setup-sel-bot-pace-btn">${escapeAttr(t(locale, "botFeed.paceLabel"))}</label>
           ${renderDropdown({
             id: "setup-sel-bot-pace",
             value: String(pacePreset.delayMs),
-            options: getBotPaceDropdownOptionsPure(),
+            options: getBotPaceDropdownOptionsPure(locale),
           })}
-          <p class="t-small muted">${pacePreset.description}</p>
+          <p class="t-small muted">${escapeAttr(t(locale, `botFeed.presetDesc.${pacePreset.id}`))}</p>
         </div>`;
               })()
             : ""
@@ -215,25 +256,25 @@ export function renderRoomSetupControlsCardPure(
                 return `
         <div>
           <label class="ga-check-row" for="setup-chk-citiesknights">
-            <span>Cities &amp; Knights (commodities, knights, metropolises &amp; progress cards)</span>
+            <span>${escapeAttr(t(locale, "setup.chkCk"))}</span>
             <input type="checkbox" id="setup-chk-citiesknights" ${
               ckChecked ? "checked" : ""
             } />
           </label>
           <label class="ga-check-row" for="setup-chk-harbormaster">
-            <span>Harbormaster (+2 VP at 3 harbor points)</span>
+            <span>${escapeAttr(t(locale, "setup.chkHarbormaster"))}</span>
             <input type="checkbox" id="setup-chk-harbormaster" ${
               room.config.enableHarbormaster ? "checked" : ""
             } />
           </label>
           <label class="ga-check-row" for="setup-chk-citywalls">
-            <span>City walls (+2 safe hand limit on 7)</span>
+            <span>${escapeAttr(t(locale, "setup.chkCityWalls"))}</span>
             <input type="checkbox" id="setup-chk-citywalls" ${
               room.config.enableCityWalls || ckChecked ? "checked" : ""
             } ${ckChecked ? "disabled" : ""} />
           </label>
           <label class="ga-check-row" for="setup-chk-friendlyrobber">
-            <span>Friendly robber (protects players at 2 VP or below)</span>
+            <span>${escapeAttr(t(locale, "setup.chkFriendlyRobber"))}</span>
             <input type="checkbox" id="setup-chk-friendlyrobber" ${
               room.config.enableFriendlyRobber ? "checked" : ""
             } />

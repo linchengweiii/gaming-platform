@@ -2,7 +2,13 @@ import {
   SCENARIO_CATALOG,
   isExpanded56Scenario,
 } from "@gaming-platform/catan";
-import { BOT_DIFFICULTY_META } from "../../config/app-config.ts";
+import {
+  type SupportedLocale,
+  getBotDifficultyMetaLocalized,
+  getCatanScenarioTextLocalized,
+  getGameTitleLocalized,
+  t,
+} from "../../i18n/index.ts";
 import { BRAND_MARK_SVG, escapeAttr } from "../helpers/html-and-dropdown.ts";
 import { formatRoomHashLabelPure } from "../helpers/room-hash-and-links.ts";
 import { getRoomStatePure } from "../helpers/room-queries.ts";
@@ -14,15 +20,16 @@ export function renderRoomHeaderPure(
   room: ClientRoom,
   activeTab: "setup" | "game"
 ): string {
+  const locale = model.locale;
   const hasMatchState = Boolean(getRoomStatePure(model, room));
   const hashLabel = formatRoomHashLabelPure(room.roomId);
   const isCopied = model.copiedRoomLinkId === room.roomId;
   const statusChip =
     room.status === "in_progress"
-      ? `<span class="ga-chip ga-chip--warn">In progress</span>`
+      ? `<span class="ga-chip ga-chip--warn">${escapeAttr(t(locale, "common.inProgress"))}</span>`
       : room.status === "finished"
-        ? `<span class="ga-chip ga-chip--ok">Finished</span>`
-        : `<span class="ga-chip">Pre-game</span>`;
+        ? `<span class="ga-chip ga-chip--ok">${escapeAttr(t(locale, "common.finished"))}</span>`
+        : `<span class="ga-chip">${escapeAttr(t(locale, "common.preGame"))}</span>`;
 
   return `
       <header class="ga-nav ga-nav--room">
@@ -31,36 +38,48 @@ export function renderRoomHeaderPure(
             <button type="button" id="btn-back-lobby" class="ga-brand">
               ${BRAND_MARK_SVG}
               <div class="ga-brand__meta">
-                <span class="ga-num">Room ${escapeAttr(hashLabel)}</span>
-                <span class="ga-brand__sub">Host: ${escapeAttr(room.ownerName || "Host")} · Back to lobby</span>
+                <span class="ga-num">${escapeAttr(t(locale, "lobby.roomTitle", { hash: hashLabel }))}</span>
+                <span class="ga-brand__sub">${escapeAttr(
+                  t(locale, "room.backToLobbySub", {
+                    host: room.ownerName || t(locale, "common.host"),
+                  })
+                )}</span>
               </div>
             </button>
 
-            <div class="ga-tabs" role="navigation" aria-label="Room pages">
+            <div class="ga-tabs" role="navigation" aria-label="${escapeAttr(t(locale, "room.pagesAria"))}">
               <button type="button" id="tab-setup-page" class="ga-tab ${
                 activeTab === "setup" ? "is-active" : ""
-              }">Setup</button>
+              }">${escapeAttr(t(locale, "room.tabSetup"))}</button>
               <button type="button" id="tab-game-page" class="ga-tab ${
                 activeTab === "game" ? "is-active" : ""
-              }" ${!hasMatchState ? "disabled" : ""}>Game</button>
+              }" ${!hasMatchState ? "disabled" : ""}>${escapeAttr(t(locale, "room.tabGame"))}</button>
             </div>
 
             ${statusChip}
             ${
               room.isOfflineLocal
-                ? `<span class="ga-chip ga-chip--ok">Offline local</span>${
+                ? `<span class="ga-chip ga-chip--ok">${escapeAttr(t(locale, "common.offlineLocal"))}</span>${
                     room.isPrivate
-                      ? `<span class="ga-chip ga-chip--warn">Private</span>`
+                      ? `<span class="ga-chip ga-chip--warn">${escapeAttr(t(locale, "common.private"))}</span>`
                       : ""
                   }`
                 : `<span class="ga-chip ${
                     room.isPrivate ? "ga-chip--warn" : ""
-                  }">${room.isPrivate ? "Private" : "Public"}</span>
+                  }">${escapeAttr(
+                    room.isPrivate
+                      ? t(locale, "common.private")
+                      : t(locale, "common.public")
+                  )}</span>
                    <button type="button" id="btn-copy-room-link" data-copy-room-link="${escapeAttr(
                      room.roomId
-                   )}" class="btn btn--secondary btn--sm ga-num" title="Copy shareable invite link (${escapeAttr(
-                     hashLabel
-                   )})">${isCopied ? "Copied ✓" : "Share link"}</button>`
+                   )}" class="btn btn--secondary btn--sm ga-num" title="${escapeAttr(
+                     t(locale, "room.shareLinkTitle", { hash: hashLabel })
+                   )}">${escapeAttr(
+                     isCopied
+                       ? t(locale, "common.copied")
+                       : t(locale, "common.shareLink")
+                   )}</button>`
             }
           </div>
 
@@ -74,22 +93,29 @@ export function renderRoomHeaderPure(
 
 export function getStartingPlayerSummaryLabelPure(
   room: ClientRoom,
-  state: any
+  state: any,
+  locale: SupportedLocale = "en"
 ): string {
   if (state && typeof state.startingPlayerIndex === "number") {
     const starter = state.players?.[state.startingPlayerIndex];
     if (starter) {
-      return `First turn: ${starter.name}`;
+      return t(locale, "room.firstTurn", { name: starter.name });
     }
   }
   if (room.startingPlayerMode === "random") {
-    return "First turn: Random player";
+    return t(locale, "room.firstTurn", {
+      name: t(locale, "room.randomPlayer"),
+    });
   }
   if (room.startingPlayerMode === "first") {
-    return `First turn: ${room.players[0]?.name ?? "Seat 1"}`;
+    return t(locale, "room.firstTurn", {
+      name: room.players[0]?.name ?? t(locale, "room.seatN", { num: 1 }),
+    });
   }
   const chosen = room.players.find((p) => p.id === room.startingPlayerMode);
-  return `First turn: ${chosen?.name ?? "Random player"}`;
+  return t(locale, "room.firstTurn", {
+    name: chosen?.name ?? t(locale, "room.randomPlayer"),
+  });
 }
 
 export function getRoomSetupSummaryDataPure(
@@ -104,54 +130,70 @@ export function getRoomSetupSummaryDataPure(
   seatsSubLabel: string;
   ruleChips: string[];
 } {
+  const locale = model.locale;
   const state = getRoomStatePure(model, room);
   const humanCount = room.players.filter((p) => !p.isBot).length;
   const botCount = room.players.length - humanCount;
-  const diffLabel = BOT_DIFFICULTY_META[room.botDifficulty].label.toLowerCase();
-  const seatsLabel = `${room.players.length} ${room.players.length === 1 ? "player" : "players"}`;
+  const diffMeta = getBotDifficultyMetaLocalized(room.botDifficulty, locale);
+  const diffLabel =
+    locale === "en" ? diffMeta.label.toLowerCase() : diffMeta.label;
+  const seatsLabel =
+    locale === "en"
+      ? `${room.players.length} ${room.players.length === 1 ? "player" : "players"}`
+      : `${room.players.length} 位玩家`;
   const seatsSubLabel = room.allBots
-    ? `All-bot simulation (${diffLabel})`
-    : `${humanCount} ${humanCount === 1 ? "human" : "humans"}, ${botCount} ${diffLabel} ${botCount === 1 ? "bot" : "bots"}`;
-  const firstTurnChip = getStartingPlayerSummaryLabelPure(room, state);
+    ? t(locale, "room.allBotSim", { diff: diffLabel })
+    : t(locale, "room.seatsControlSub", {
+        humans: humanCount,
+        humansWord:
+          humanCount === 1
+            ? t(locale, "lobby.wordHumanOne")
+            : t(locale, "lobby.wordHumanMany"),
+        bots: botCount,
+        diff: diffLabel,
+        botsWord:
+          botCount === 1
+            ? t(locale, "lobby.wordBotOne")
+            : t(locale, "lobby.wordBotMany"),
+      });
+  const firstTurnChip = getStartingPlayerSummaryLabelPure(room, state, locale);
   const modeLabel = room.isOfflineLocal
-    ? "Offline pass and play"
+    ? t(locale, "room.modeOfflinePassAndPlay")
     : room.isPrivate
-      ? "Online · Private (link only)"
-      : "Online · Public room";
+      ? t(locale, "room.modeOnlinePrivate")
+      : t(locale, "room.modeOnlinePublic");
 
   if (room.gameId === "splendor") {
     const pts = state?.config?.targetPoints ?? 15;
     return {
-      gameTitle: "Splendor",
-      formatTitle: "Renaissance gem market",
-      formatDescription:
-        "Draft gem tokens, purchase tier 1–3 development cards, and attract noble patrons.",
-      targetLabel: `${pts} prestige points`,
+      gameTitle: getGameTitleLocalized("splendor", locale),
+      formatTitle: t(locale, "format.splendorTitle"),
+      formatDescription: t(locale, "format.splendorDesc"),
+      targetLabel: t(locale, "format.splendorTarget", { pts }),
       seatsLabel,
       seatsSubLabel,
       ruleChips: [
         modeLabel,
         firstTurnChip,
-        "90 development cards",
-        "10-token limit",
+        t(locale, "format.splendorChipCards"),
+        t(locale, "format.splendorChipLimit"),
       ],
     };
   }
 
   if (room.gameId === "azul") {
     return {
-      gameTitle: "Azul",
-      formatTitle: "Evora palace mosaic",
-      formatDescription:
-        "Draft ceramic tiles from factory displays onto pattern lines to tile a 5×5 wall.",
-      targetLabel: "Complete 1 horizontal row",
+      gameTitle: getGameTitleLocalized("azul", locale),
+      formatTitle: t(locale, "format.azulTitle"),
+      formatDescription: t(locale, "format.azulDesc"),
+      targetLabel: t(locale, "format.azulTarget"),
       seatsLabel,
       seatsSubLabel,
       ruleChips: [
         modeLabel,
         firstTurnChip,
-        "100 ceramic tiles",
-        "5×5 mosaic wall",
+        t(locale, "format.azulChipTiles"),
+        t(locale, "format.azulChipWall"),
       ],
     };
   }
@@ -160,34 +202,33 @@ export function getRoomSetupSummaryDataPure(
     const sideMode = room.config.wonderSideMode ?? "random";
     const wonderChip =
       sideMode === "day"
-        ? "Wonder Side A (Day)"
+        ? t(locale, "format.swChipDay")
         : sideMode === "night"
-          ? "Wonder Side B (Night)"
-          : "Random Day/Night Wonders";
+          ? t(locale, "format.swChipNight")
+          : t(locale, "format.swChipRandom");
     return {
-      gameTitle: "7 Wonders",
-      formatTitle: "Ancient world drafting",
-      formatDescription:
-        "Draft cards simultaneously across three Ages, trade with West and East neighbors, wage military conflicts, and raise your Wonder.",
-      targetLabel: "Highest VP after Age III",
+      gameTitle: getGameTitleLocalized("seven_wonders", locale),
+      formatTitle: t(locale, "format.swTitle"),
+      formatDescription: t(locale, "format.swDesc"),
+      targetLabel: t(locale, "format.swTarget"),
       seatsLabel,
       seatsSubLabel,
       ruleChips: [
         modeLabel,
-        "Simultaneous drafting",
+        t(locale, "format.swChipSimul"),
         wonderChip,
-        "3 Ages · 6 picks/Age",
+        t(locale, "format.swChipAges"),
       ],
     };
   }
 
   const sc = SCENARIO_CATALOG[room.config.scenarioId];
+  const scText = getCatanScenarioTextLocalized(room.config.scenarioId, locale);
   const isCk = Boolean(
     sc.enableCitiesAndKnights || room.config.enableCitiesAndKnights
   );
   const is56Active = Boolean(
-    room.players.length >= 5 ||
-      isExpanded56Scenario(room.config.scenarioId)
+    room.players.length >= 5 || isExpanded56Scenario(room.config.scenarioId)
   );
   const targetVp =
     state?.config?.targetVictoryPoints ??
@@ -195,29 +236,35 @@ export function getRoomSetupSummaryDataPure(
       ? Math.max(13, sc.defaultTargetVp + (sc.enableSeafarers ? 2 : 3))
       : sc.defaultTargetVp);
   const expansionChips = [
-    is56Active ? "5–6P Extension (expanded map & bank)" : "",
-    isCk
-      ? "Cities & Knights (Metropolises, Knights & Progress)"
+    is56Active ? t(locale, "format.catanChip56") : "",
+    isCk ? t(locale, "format.catanChipCk") : "",
+    sc.enableSeafarers ? t(locale, "format.catanChipSeafarers") : "",
+    sc.enableSpecialBuildingPhase || is56Active
+      ? t(locale, "format.catanChipSpecialBuild")
       : "",
-    sc.enableSeafarers ? "Seafarers ships and islands" : "",
-    sc.enableSpecialBuildingPhase || is56Active ? "Special building phase" : "",
-    room.config.enableHarbormaster ? "Harbormaster (+2 VP)" : "",
+    room.config.enableHarbormaster
+      ? t(locale, "format.catanChipHarbormaster")
+      : "",
     room.config.enableCityWalls || isCk
-      ? "City walls (+2 safe hand)"
+      ? t(locale, "format.catanChipCityWalls")
       : "",
-    room.config.enableFriendlyRobber ? "Friendly robber" : "",
+    room.config.enableFriendlyRobber
+      ? t(locale, "format.catanChipFriendlyRobber")
+      : "",
   ].filter(Boolean);
   const ruleChips: string[] = [
     modeLabel,
     firstTurnChip,
-    ...(expansionChips.length > 0 ? expansionChips : ["Standard island rules"]),
+    ...(expansionChips.length > 0
+      ? expansionChips
+      : [t(locale, "format.catanChipStandard")]),
   ];
 
   return {
-    gameTitle: "Settlers of Catan",
-    formatTitle: sc.name,
-    formatDescription: sc.description,
-    targetLabel: `${targetVp} victory points`,
+    gameTitle: getGameTitleLocalized("catan", locale),
+    formatTitle: scText.name,
+    formatDescription: scText.description,
+    targetLabel: t(locale, "format.catanTarget", { vp: targetVp }),
     seatsLabel,
     seatsSubLabel,
     ruleChips,
@@ -229,21 +276,24 @@ export function renderSetupSummaryCardPure(
   room: ClientRoom,
   isOwner: boolean
 ): string {
+  const locale = model.locale;
   const info = getRoomSetupSummaryDataPure(model, room);
   const badgeLabel =
     room.status === "in_progress"
-      ? "Match active"
-      : `Joined as ${escapeAttr(model.currentUserName)}`;
+      ? t(locale, "room.summaryMatchActive")
+      : t(locale, "room.summaryJoinedAs", { name: model.currentUserName });
   const noticeCopy =
     room.status === "in_progress"
-      ? "A match is currently underway. Table setup unlocks once the game concludes."
-      : `Hosted by <strong>${escapeAttr(room.ownerName || "Room host")}</strong>. Review the match setup summary below while waiting for the host to start.`;
+      ? escapeAttr(t(locale, "room.summaryActiveNotice"))
+      : t(locale, "room.summaryGuestNotice", {
+          host: `<strong>${escapeAttr(room.ownerName || t(locale, "common.roomHost"))}</strong>`,
+        });
 
   return `
       <div class="ga-surface-card ga-setup-summary">
         <div class="ga-section-bar">
-          <h2>Setup summary</h2>
-          <span class="ga-chip ${isOwner ? "ga-chip--accent" : ""}">${badgeLabel}</span>
+          <h2>${escapeAttr(t(locale, "room.summaryHeading"))}</h2>
+          <span class="ga-chip ${isOwner ? "ga-chip--accent" : ""}">${escapeAttr(badgeLabel)}</span>
         </div>
 
         <div class="ga-notice">
@@ -252,35 +302,46 @@ export function renderSetupSummaryCardPure(
 
         <div class="ga-summary-grid">
           <div class="ga-summary-cell">
-            <span class="ga-summary-cell__label">Board game</span>
-            <span class="ga-summary-cell__value">${info.gameTitle}</span>
-            <span class="ga-summary-cell__sub">Host: ${escapeAttr(room.ownerName || "Host")}</span>
+            <span class="ga-summary-cell__label">${escapeAttr(t(locale, "room.summaryBoardGame"))}</span>
+            <span class="ga-summary-cell__value">${escapeAttr(info.gameTitle)}</span>
+            <span class="ga-summary-cell__sub">${escapeAttr(
+              t(locale, "lobby.hostLabel", {
+                name: room.ownerName || t(locale, "common.host"),
+              })
+            )}</span>
           </div>
 
           <div class="ga-summary-cell">
-            <span class="ga-summary-cell__label">Victory target</span>
-            <span class="ga-summary-cell__value ga-num">${info.targetLabel}</span>
-            <span class="ga-summary-cell__sub ga-num">Room ${escapeAttr(formatRoomHashLabelPure(room.roomId))}</span>
+            <span class="ga-summary-cell__label">${escapeAttr(t(locale, "room.summaryVictoryTarget"))}</span>
+            <span class="ga-summary-cell__value ga-num">${escapeAttr(info.targetLabel)}</span>
+            <span class="ga-summary-cell__sub ga-num">${escapeAttr(
+              t(locale, "lobby.roomTitle", {
+                hash: formatRoomHashLabelPure(room.roomId),
+              })
+            )}</span>
           </div>
 
           <div class="ga-summary-cell">
-            <span class="ga-summary-cell__label">Scenario and format</span>
-            <span class="ga-summary-cell__value">${info.formatTitle}</span>
-            <span class="ga-summary-cell__sub">${info.formatDescription}</span>
+            <span class="ga-summary-cell__label">${escapeAttr(t(locale, "room.summaryScenarioFormat"))}</span>
+            <span class="ga-summary-cell__value">${escapeAttr(info.formatTitle)}</span>
+            <span class="ga-summary-cell__sub">${escapeAttr(info.formatDescription)}</span>
           </div>
 
           <div class="ga-summary-cell">
-            <span class="ga-summary-cell__label">Seats and control</span>
-            <span class="ga-summary-cell__value ga-num">${info.seatsLabel}</span>
-            <span class="ga-summary-cell__sub">${info.seatsSubLabel}</span>
+            <span class="ga-summary-cell__label">${escapeAttr(t(locale, "room.summarySeatsControl"))}</span>
+            <span class="ga-summary-cell__value ga-num">${escapeAttr(info.seatsLabel)}</span>
+            <span class="ga-summary-cell__sub">${escapeAttr(info.seatsSubLabel)}</span>
           </div>
         </div>
 
         <div class="ga-summary-rules">
-          <span class="ga-summary-cell__label">Active rules and expansions</span>
+          <span class="ga-summary-cell__label">${escapeAttr(t(locale, "room.summaryActiveRules"))}</span>
           <div style="display: flex; flex-wrap: wrap; gap: 6px;">
             ${info.ruleChips
-              .map((chip) => `<span class="ga-chip ga-chip--accent">${escapeAttr(chip)}</span>`)
+              .map(
+                (chip) =>
+                  `<span class="ga-chip ga-chip--accent">${escapeAttr(chip)}</span>`
+              )
               .join("")}
           </div>
         </div>

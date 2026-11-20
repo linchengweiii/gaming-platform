@@ -1,7 +1,6 @@
 import {
   COMMODITIES,
   type CatanState,
-  PROGRESS_CARD_CATALOG,
   RESOURCES,
   TERRAIN_TO_RESOURCE,
   TRADE_GOODS,
@@ -11,24 +10,36 @@ import {
   totalResourceCount,
 } from "@gaming-platform/catan";
 import {
-  COMMODITY_META,
   DISCIPLINE_META,
-  RESOURCE_META,
-  TRADE_GOOD_META,
   renderActionPieceIconSvg,
   renderMiniResourceCardSvg,
   renderMiniTradeGoodCardSvg,
 } from "../../../catan-graphics.ts";
+import {
+  type SupportedLocale,
+  getCatanCommodityTextLocalized,
+  getCatanDisciplineTextLocalized,
+  getCatanProgressCardTextLocalized,
+  getCatanResourceTextLocalized,
+  getCatanTradeGoodLabelLocalized,
+  t,
+} from "../../../i18n/index.ts";
 import { escapeAttr } from "../../helpers/html-and-dropdown.ts";
 import type { AppModel } from "../../types.ts";
 
-function describeVertexSpotsPure(state: CatanState, vId: string): string {
+function describeVertexSpotsPure(
+  state: CatanState,
+  vId: string,
+  locale: SupportedLocale
+): string {
   const vNode = state.topology.vertices[vId];
   return (vNode?.adjacentHexIds ?? [])
     .map((hId) => {
-      const t = state.hexes[hId];
-      const r = t ? TERRAIN_TO_RESOURCE[t.terrain] : null;
-      return r && t?.numberToken ? `${RESOURCE_META[r].label} #${t.numberToken}` : null;
+      const tile = state.hexes[hId];
+      const r = tile ? TERRAIN_TO_RESOURCE[tile.terrain] : null;
+      return r && tile?.numberToken
+        ? `${getCatanResourceTextLocalized(r, locale).label} #${tile.numberToken}`
+        : null;
     })
     .filter(Boolean)
     .join(" · ");
@@ -41,6 +52,7 @@ function renderCardPickerMatrixPure(
   submitId: string,
   submitLabel: string
 ): string {
+  const locale = model.locale;
   const totalSelected =
     totalResourceCount(model.discardSelection) +
     totalCommodityCount(model.discardCommodities);
@@ -48,15 +60,16 @@ function renderCardPickerMatrixPure(
 
   return `
     <div class="ga-res-matrix ga-res-matrix--ck">
-      <div class="ga-res-matrix__row-label">Cards</div>
+      <div class="ga-res-matrix__row-label">${escapeAttr(t(locale, "catan.ck.cardsRow"))}</div>
       ${TRADE_GOODS.map((g) => {
         const have = getPlayerGoodCount(sourcePlayer, g);
         const picked = isCommodityType(g)
           ? model.discardCommodities[g]
           : model.discardSelection[g];
+        const goodLabel = getCatanTradeGoodLabelLocalized(g, locale);
         return `<div class="ga-res-col-head">
           <div class="ga-res-col-head__top">
-            <span>${TRADE_GOOD_META[g].label.slice(0, 3)}</span>
+            <span>${escapeAttr(locale === "en" ? goodLabel.slice(0, 3) : goodLabel)}</span>
             <span class="ga-res-col-head__have">${have}</span>
           </div>
           <div class="ga-res-cell ${picked > 0 ? "ga-res-cell--active-want" : ""}">
@@ -68,10 +81,15 @@ function renderCardPickerMatrixPure(
       }).join("")}
     </div>
     <div class="ga-trade-preview">
-      <span class="ga-chip ${canSubmit ? "ga-chip--ok" : "ga-chip--warn"} ga-num">${totalSelected}/${requiredCount} selected</span>
+      <span class="ga-chip ${canSubmit ? "ga-chip--ok" : "ga-chip--warn"} ga-num">${escapeAttr(
+        t(locale, "catan.phase.selectedCount", {
+          selected: totalSelected,
+          req: requiredCount,
+        })
+      )}</span>
       <div style="display: inline-flex; gap: 6px;">
-        <button type="button" id="btn-discard-reset" class="btn btn--secondary btn--sm">Reset</button>
-        <button type="button" id="${submitId}" class="btn btn--primary btn--sm" ${!canSubmit ? "disabled" : ""}>${submitLabel}</button>
+        <button type="button" id="btn-discard-reset" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.reset"))}</button>
+        <button type="button" id="${submitId}" class="btn btn--primary btn--sm" ${!canSubmit ? "disabled" : ""}>${escapeAttr(submitLabel)}</button>
       </div>
     </div>`;
 }
@@ -84,8 +102,13 @@ export function renderCkInteractionDockPure(
   if (state.phase !== "CK_INTERACTION" || !state.pendingCkInteraction) {
     return null;
   }
+  const locale = model.locale;
   if (model.autoPlayBots) {
-    return `<div class="action-buttons"><span class="action-prompt"><strong>Cities &amp; Knights:</strong> Resolving player choice...</span></div>`;
+    return `<div class="action-buttons"><span class="action-prompt">${t(
+      locale,
+      "catan.ck.resolvingChoice",
+      { prefix: `<strong>${escapeAttr(t(locale, "catan.ck.ckPrefix"))}</strong>` }
+    )}</span></div>`;
   }
   const pending = state.pendingCkInteraction;
   const pColor = actingPlayer.color;
@@ -95,16 +118,23 @@ export function renderCkInteractionDockPure(
       return `
         <div class="sub-modal sub-modal--trade">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Displaced Knight · ${escapeAttr(actingPlayer.name)}:</strong> Choose where your Level ${pending.knight.level} Knight retreats</span>
-            <span class="ga-chip ga-chip--warn ga-num">${pending.candidateVertexIds.length} spots</span>
+            <span class="action-prompt">${t(locale, "catan.ck.displacedHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.displacedPrefix", { name: actingPlayer.name }))}</strong>`,
+              lv: pending.knight.level,
+            })}</span>
+            <span class="ga-chip ga-chip--warn ga-num">${escapeAttr(
+              t(locale, "catan.ck.spotsCount", {
+                count: pending.candidateVertexIds.length,
+              })
+            )}</span>
           </div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px;">
             ${pending.candidateVertexIds
               .map((vId, idx) => {
-                const desc = describeVertexSpotsPure(state, vId);
+                const desc = describeVertexSpotsPure(state, vId, locale);
                 return `<button type="button" data-ck-retreat-vertex="${vId}" class="btn btn--secondary btn--sm action-btn-graphic">
                   ${renderActionPieceIconSvg("move_knight", pColor, 16)}
-                  <span>Spot #${idx + 1}${desc ? ` (${desc})` : ""}</span>
+                  <span>${escapeAttr(t(locale, "catan.ck.spotNum", { num: idx + 1 }))}${desc ? ` (${escapeAttr(desc)})` : ""}</span>
                 </button>`;
               })
               .join("")}
@@ -112,23 +142,30 @@ export function renderCkInteractionDockPure(
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("move_knight", pColor, 20)}
-          <span class="action-prompt"><strong>Knight displaced:</strong> Click a glowing road intersection on the map or pick below.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.displacedPrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.knightDisplacedPrefix"))}</strong>`,
+          })}</span>
         </div>`;
 
     case "deserter_choose_knight":
       return `
         <div class="sub-modal sub-modal--trade">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Deserter · ${escapeAttr(actingPlayer.name)}:</strong> Choose 1 of your Knights to desert</span>
+            <span class="action-prompt">${t(locale, "catan.ck.deserterChooseHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.deserterPrefix", { name: actingPlayer.name }))}</strong>`,
+            })}</span>
           </div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px;">
             ${pending.candidateVertexIds
               .map((vId, idx) => {
                 const k = state.knights[vId];
-                const desc = describeVertexSpotsPure(state, vId);
+                const desc = describeVertexSpotsPure(state, vId, locale);
+                const statusWord = k?.active
+                  ? t(locale, "catan.ck.knightActiveWord")
+                  : t(locale, "catan.ck.knightInactiveWord");
                 return `<button type="button" data-ck-deserter-pick="${vId}" class="btn btn--secondary btn--sm action-btn-graphic">
                   ${renderActionPieceIconSvg("knight_piece", pColor, 16)}
-                  <span>Lv ${k?.level ?? 1} ${k?.active ? "Active" : "Inactive"} #${idx + 1}${desc ? ` (${desc})` : ""}</span>
+                  <span>Lv ${k?.level ?? 1} ${escapeAttr(statusWord)} #${idx + 1}${desc ? ` (${escapeAttr(desc)})` : ""}</span>
                 </button>`;
               })
               .join("")}
@@ -136,22 +173,32 @@ export function renderCkInteractionDockPure(
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("knight_piece", "#ef4444", 20)}
-          <span class="action-prompt"><strong>Deserter:</strong> Click one of your highlighted Knights on the map or pick below.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.deserterChoosePrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.deserterShortPrefix"))}</strong>`,
+          })}</span>
         </div>`;
 
     case "deserter_place_knight":
       return `
         <div class="sub-modal sub-modal--trade">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Deserter Recruit · ${escapeAttr(actingPlayer.name)}:</strong> Place your new Level ${pending.knightLevel} ${pending.knightActive ? "Active" : "Inactive"} Knight</span>
+            <span class="action-prompt">${t(locale, "catan.ck.deserterPlaceHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.deserterRecruitPrefix", { name: actingPlayer.name }))}</strong>`,
+              lv: pending.knightLevel,
+              status: escapeAttr(
+                pending.knightActive
+                  ? t(locale, "catan.ck.knightActiveWord")
+                  : t(locale, "catan.ck.knightInactiveWord")
+              ),
+            })}</span>
           </div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px;">
             ${pending.candidateVertexIds
               .map((vId, idx) => {
-                const desc = describeVertexSpotsPure(state, vId);
+                const desc = describeVertexSpotsPure(state, vId, locale);
                 return `<button type="button" data-ck-deserter-place="${vId}" class="btn btn--secondary btn--sm action-btn-graphic">
                   ${renderActionPieceIconSvg("knight_piece", pColor, 16)}
-                  <span>Spot #${idx + 1}${desc ? ` (${desc})` : ""}</span>
+                  <span>${escapeAttr(t(locale, "catan.ck.spotNum", { num: idx + 1 }))}${desc ? ` (${escapeAttr(desc)})` : ""}</span>
                 </button>`;
               })
               .join("")}
@@ -159,24 +206,36 @@ export function renderCkInteractionDockPure(
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("knight_piece", pColor, 20)}
-          <span class="action-prompt"><strong>Place deserted Knight:</strong> Click a highlighted road intersection on the map or pick below.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.deserterPlacePrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.placeDesertedPrefix"))}</strong>`,
+          })}</span>
         </div>`;
 
     case "spy_choose_card": {
       const target = state.players.find((p) => p.id === pending.targetPlayerId);
+      const targetName = target?.name ?? t(locale, "common.playerFallback");
       return `
         <div class="sub-modal sub-modal--trade">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Spy · ${escapeAttr(actingPlayer.name)}:</strong> Inspect ${escapeAttr(target?.name ?? "opponent")}'s Progress Cards and take 1</span>
+            <span class="action-prompt">${t(locale, "catan.ck.spyHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.spyPrefix", { name: actingPlayer.name }))}</strong>`,
+              target: escapeAttr(targetName),
+            })}</span>
           </div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px;">
             ${(target?.progressCards ?? [])
               .map((c) => {
-                const cat = PROGRESS_CARD_CATALOG[c.type];
+                const cat = getCatanProgressCardTextLocalized(c.type, locale);
                 const dMeta = DISCIPLINE_META[c.discipline];
+                const dText = getCatanDisciplineTextLocalized(c.discipline, locale);
                 return `<button type="button" data-ck-spy-card="${c.id}" class="btn btn--secondary btn--sm action-btn-graphic" title="${escapeAttr(cat.description)}">
                   ${renderActionPieceIconSvg("progress_card", dMeta.accent, 16)}
-                  <span>Take ${escapeAttr(cat.title)} (${dMeta.label})</span>
+                  <span>${escapeAttr(
+                    t(locale, "catan.ck.takeProgressCard", {
+                      title: cat.title,
+                      discipline: dText.label,
+                    })
+                  )}</span>
                 </button>`;
               })
               .join("")}
@@ -184,7 +243,10 @@ export function renderCkInteractionDockPure(
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("progress_card", pColor, 20)}
-          <span class="action-prompt"><strong>Spy:</strong> Choose 1 Progress Card to steal from ${escapeAttr(target?.name ?? "opponent")}.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.spyPrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.spyShortPrefix"))}</strong>`,
+            target: escapeAttr(targetName),
+          })}</span>
         </div>`;
     }
 
@@ -194,19 +256,27 @@ export function renderCkInteractionDockPure(
       return `
         <div class="sub-modal sub-modal--trade">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Master Merchant · ${escapeAttr(actingPlayer.name)}:</strong> Inspect ${escapeAttr(target.name)}'s hand and take ${pending.maxCards} card(s)</span>
+            <span class="action-prompt">${t(locale, "catan.ck.mmHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.mmPrefix", { name: actingPlayer.name }))}</strong>`,
+              target: escapeAttr(target.name),
+              count: pending.maxCards,
+            })}</span>
           </div>
           ${renderCardPickerMatrixPure(
             model,
             target,
             pending.maxCards,
             "btn-ck-mm-submit",
-            `Take ${pending.maxCards} card(s)`
+            t(locale, "catan.ck.mmSubmit", { count: pending.maxCards })
           )}
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("progress_card", "#fbbf24", 20)}
-          <span class="action-prompt"><strong>Master Merchant:</strong> Select ${pending.maxCards} card(s) from ${escapeAttr(target.name)}'s hand below.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.mmPrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.mmShortPrefix"))}</strong>`,
+            count: pending.maxCards,
+            target: escapeAttr(target.name),
+          })}</span>
         </div>`;
     }
 
@@ -215,19 +285,28 @@ export function renderCkInteractionDockPure(
       return `
         <div class="sub-modal sub-modal--trade">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Wedding · ${escapeAttr(actingPlayer.name)}:</strong> Choose ${pending.requiredCount} card(s) to gift to ${escapeAttr(initiator?.name ?? "player")}</span>
+            <span class="action-prompt">${t(locale, "catan.ck.weddingHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.weddingPrefix", { name: actingPlayer.name }))}</strong>`,
+              count: pending.requiredCount,
+              initiator: escapeAttr(
+                initiator?.name ?? t(locale, "common.playerFallback")
+              ),
+            })}</span>
           </div>
           ${renderCardPickerMatrixPure(
             model,
             actingPlayer,
             pending.requiredCount,
             "btn-ck-wedding-submit",
-            `Gift ${pending.requiredCount} card(s)`
+            t(locale, "catan.ck.weddingSubmit", { count: pending.requiredCount })
           )}
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("progress_card", pColor, 20)}
-          <span class="action-prompt"><strong>Wedding gift:</strong> Pick ${pending.requiredCount} card(s) from your hand below.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.weddingPrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.weddingShortPrefix"))}</strong>`,
+            count: pending.requiredCount,
+          })}</span>
         </div>`;
     }
 
@@ -236,8 +315,10 @@ export function renderCkInteractionDockPure(
       return `
         <div class="sub-modal sub-modal--trade sub-modal--keep-hand">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Commercial Harbor · ${escapeAttr(actingPlayer.name)}:</strong> Offer 1 resource to an eligible opponent for 1 commodity</span>
-            <button type="button" id="btn-ck-ch-end" class="btn btn--secondary btn--sm">Done trading</button>
+            <span class="action-prompt">${t(locale, "catan.ck.chOfferHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.chPrefix", { name: actingPlayer.name }))}</strong>`,
+            })}</span>
+            <button type="button" id="btn-ck-ch-end" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "catan.ck.doneTrading"))}</button>
           </div>
           <div style="display: flex; flex-direction: column; gap: 6px;">
             ${pending.eligibleTargetIds
@@ -252,7 +333,12 @@ export function renderCkInteractionDockPure(
                     .map(
                       (r) => `<button type="button" data-ck-ch-offer="${oppId}:${r}" class="btn btn--secondary btn--sm action-btn-graphic">
                         ${renderMiniResourceCardSvg(r, 26, 16)}
-                        <span>Offer ${RESOURCE_META[r].label} (×${actingPlayer.resources[r]})</span>
+                        <span>${escapeAttr(
+                          t(locale, "catan.ck.offerResourceCount", {
+                            label: getCatanResourceTextLocalized(r, locale).label,
+                            count: actingPlayer.resources[r],
+                          })
+                        )}</span>
                       </button>`
                     )
                     .join("")}
@@ -263,31 +349,49 @@ export function renderCkInteractionDockPure(
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("maritime_trade", "#fbbf24", 20)}
-          <span class="action-prompt"><strong>Commercial Harbor:</strong> Choose an opponent &amp; resource, or click <strong>Done trading</strong>.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.chOfferPrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.chShortPrefix"))}</strong>`,
+            done: `<strong>${escapeAttr(t(locale, "catan.ck.doneTrading"))}</strong>`,
+          })}</span>
         </div>`;
     }
 
     case "commercial_harbor_respond": {
       const initiator = state.players.find((p) => p.id === pending.initiatorId);
       const availComms = COMMODITIES.filter((c) => actingPlayer.commodities[c] > 0);
+      const offeredLabel = getCatanResourceTextLocalized(
+        pending.offeredResource,
+        locale
+      ).label;
       return `
         <div class="sub-modal sub-modal--trade sub-modal--keep-hand">
           <div class="ga-trade-head">
-            <span class="action-prompt"><strong>Commercial Harbor · ${escapeAttr(actingPlayer.name)}:</strong> ${escapeAttr(initiator?.name ?? "Player")} offers 1 ${RESOURCE_META[pending.offeredResource].label} — choose 1 commodity to trade</span>
+            <span class="action-prompt">${t(locale, "catan.ck.chRespondHead", {
+              prefix: `<strong>${escapeAttr(t(locale, "catan.ck.chPrefix", { name: actingPlayer.name }))}</strong>`,
+              initiator: escapeAttr(
+                initiator?.name ?? t(locale, "common.player")
+              ),
+              resource: escapeAttr(offeredLabel),
+            })}</span>
           </div>
           <div class="ga-trade-offer-bar">
             <div class="ga-trade-offer-side ga-trade-offer-side--gain">
               <span class="ga-trade-offer-side__label">
-                <span class="ga-res-row-dot ga-res-row-dot--want"></span>You get
+                <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.youGet"))}
               </span>
-              <span class="map-yield-chip">+1 ${renderMiniResourceCardSvg(pending.offeredResource, 30, 19)}<span>${RESOURCE_META[pending.offeredResource].label}</span></span>
+              <span class="map-yield-chip">+1 ${renderMiniResourceCardSvg(pending.offeredResource, 30, 19)}<span>${escapeAttr(offeredLabel)}</span></span>
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto;">
               ${availComms
                 .map(
                   (c) => `<button type="button" data-ck-ch-resp="${c}" class="btn btn--primary btn--sm action-btn-graphic">
                     ${renderMiniTradeGoodCardSvg(c, 30, 19)}
-                    <span>Give ${COMMODITY_META[c].label} (×${actingPlayer.commodities[c]})</span>
+                    <span>${escapeAttr(
+                      t(locale, "catan.ck.giveCommodityCount", {
+                        label: getCatanCommodityTextLocalized(c, locale).label,
+                        count: actingPlayer.commodities[c],
+                      })
+                    )}</span>
                   </button>`
                 )
                 .join("")}
@@ -296,7 +400,10 @@ export function renderCkInteractionDockPure(
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("maritime_trade", pColor, 20)}
-          <span class="action-prompt"><strong>Commercial Harbor:</strong> Pick which commodity to trade for 1 ${RESOURCE_META[pending.offeredResource].label}.</span>
+          <span class="action-prompt">${t(locale, "catan.ck.chRespondPrompt", {
+            prefix: `<strong>${escapeAttr(t(locale, "catan.ck.chShortPrefix"))}</strong>`,
+            resource: escapeAttr(offeredLabel),
+          })}</span>
         </div>`;
     }
   }

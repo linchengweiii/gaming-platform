@@ -10,6 +10,12 @@ import {
   getWallColumnForColor,
 } from "@gaming-platform/azul";
 import {
+  type SupportedLocale,
+  getAzulTileLabelLocalized,
+  getBotDifficultyMetaLocalized,
+  t,
+} from "../../i18n/index.ts";
+import {
   AZUL_TILE_STYLES,
   computeMarginalFloorPenaltyUi,
   computeProjectedLineWallGainUi,
@@ -23,8 +29,10 @@ export function renderAzulPalaceCardHtml(
   selectedDraft: { source: AzulDraftSource; color: AzulTileColor } | null,
   canViewerActNow: boolean,
   draftedCount: number,
-  takesFirstMarker: boolean
+  takesFirstMarker: boolean,
+  locale: SupportedLocale = "en"
 ): string {
+  const ptsUnit = t(locale, "common.ptsUnit");
   const patternRowsHtml = ([0, 1, 2, 3, 4] as const)
     .map((row) => {
       const line = focusPlayer.patternLines[row]!;
@@ -38,7 +46,7 @@ export function renderAzulPalaceCardHtml(
       for (let s = line.capacity - 1; s >= 0; s--) {
         const isFilled = s < line.count && line.color !== null;
         if (isFilled) {
-          slots.push(renderAzulTile(line.color!, 28));
+          slots.push(renderAzulTile(line.color!, 28, false, false, "", false, locale));
         } else {
           slots.push(`
             <div class="az-slot-empty" style="
@@ -75,11 +83,11 @@ export function renderAzulPalaceCardHtml(
             : 0;
 
         const gainChip = completes
-          ? `<span class="ga-chip ga-chip--ok ga-num" style="height:19px;padding:0 5px;font-size:11px;">+${wallGain} pts</span>`
+          ? `<span class="ga-chip ga-chip--ok ga-num" style="height:19px;padding:0 5px;font-size:11px;">+${wallGain} ${ptsUnit}</span>`
           : `<span class="ga-chip ga-num" style="height:19px;padding:0 5px;font-size:11px;">${line.count + placed}/${line.capacity}</span>`;
         const penChip =
           floorPen > 0
-            ? `<span class="ga-chip ga-chip--danger ga-num" style="height:19px;padding:0 5px;font-size:11px;">-${floorPen} flr</span>`
+            ? `<span class="ga-chip ga-chip--danger ga-num" style="height:19px;padding:0 5px;font-size:11px;">${t(locale, "az.floorPenChip", { pen: floorPen })}</span>`
             : "";
         previewBadgeHtml = `<div class="az-row-badge" style="display:inline-flex;gap:3px;min-width:92px;justify-content:flex-end;">${gainChip}${penChip}</div>`;
       } else {
@@ -100,7 +108,8 @@ export function renderAzulPalaceCardHtml(
             placed !== null,
             placed === null,
             "",
-            isPreviewTarget
+            isPreviewTarget,
+            locale
           );
         })
         .join("");
@@ -135,7 +144,7 @@ export function renderAzulPalaceCardHtml(
 
           <span class="az-row-progress ga-num ${
             rowWallFilled === 5 ? "ga-chip ga-chip--ok" : "t-label muted"
-          }" style="min-width:44px;text-align:center;font-size:11px;" title="Complete horizontal row: +2 endgame bonus (triggers final round)">
+          }" style="min-width:44px;text-align:center;font-size:11px;" title="${t(locale, "az.rowBonusTitle")}">
             ${rowWallFilled === 5 ? "+2 ✓" : `${rowWallFilled}/5`}
           </span>
         </div>
@@ -150,7 +159,7 @@ export function renderAzulPalaceCardHtml(
       ).length;
       return `<span class="az-col-cell ga-num" style="width:28px;text-align:center;font-size:10px;color:${
         filled === 5 ? "#4ade80" : "var(--muted)"
-      };" title="Column ${col + 1}: ${filled}/5 tiles (+7 endgame bonus)">${
+      };" title="${t(locale, "az.colBonusTitle", { col: col + 1, filled })}">${
         filled === 5 ? "+7" : `${filled}/5`
       }</span>`;
     })
@@ -166,9 +175,10 @@ export function renderAzulPalaceCardHtml(
       0
     );
     const st = AZUL_TILE_STYLES[color];
+    const label = getAzulTileLabelLocalized(color, locale);
     return `<span class="ga-chip ${
       cnt === 5 ? "ga-chip--ok" : ""
-    } ga-num" style="height:20px;padding:0 6px;font-size:11px;" title="${st.label}: ${cnt}/5 on wall (+10 endgame bonus)">${st.symbol} ${cnt}/5${cnt === 5 ? " +10" : ""}</span>`;
+    } ga-num" style="height:20px;padding:0 6px;font-size:11px;" title="${t(locale, "az.colorBonusTitle", { label, count: cnt })}">${st.symbol} ${cnt}/5${cnt === 5 ? " +10" : ""}</span>`;
   }).join("");
 
   const canPlaceFloor = Boolean(canViewerActNow && selectedDraft);
@@ -189,7 +199,7 @@ export function renderAzulPalaceCardHtml(
           tok === "first_player"
             ? `<div class="ga-num" style="width: 28px; height: 28px; border-radius: 5px; background: #fef3c7; border: 1.5px solid #d97706; color: #78350f; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center;">1st</div>`
             : tok
-              ? renderAzulTile(tok, 28)
+              ? renderAzulTile(tok, 28, false, false, "", false, locale)
               : `<div class="az-slot-empty" style="width: 28px; height: 28px; border-radius: 5px; background: var(--bg); border: 1px dashed var(--line-strong);"></div>`
         }
       </div>
@@ -218,14 +228,14 @@ export function renderAzulPalaceCardHtml(
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 8px; gap: 10px; flex-wrap: wrap;">
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <span class="player-dot" style="background: ${focusPlayer.color}"></span>
-            <strong style="font-weight: 500;">${escapeHtml(focusPlayer.name)} mosaic wall</strong>
-            <span class="ga-chip ga-chip--warn ga-num">${focusPlayer.score} pts</span>
+            <strong style="font-weight: 500;">${t(locale, "az.mosaicWall", { name: escapeHtml(focusPlayer.name) })}</strong>
+            <span class="ga-chip ga-chip--warn ga-num">${focusPlayer.score} ${ptsUnit}</span>
           </div>
           ${boardTabsHtml}
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
-          <span class="t-label muted">Bonuses: Row +2 · Col +7 · 5-of-a-color +10</span>
+          <span class="t-label muted">${t(locale, "az.bonusesSummary")}</span>
           <div style="display:flex;gap:4px;flex-wrap:wrap;">${colorBonusChipsHtml}</div>
         </div>
 
@@ -233,7 +243,7 @@ export function renderAzulPalaceCardHtml(
           ${patternRowsHtml}
           <div class="az-col-footer" style="display:flex;align-items:center;gap:8px;">
             <div class="az-row-badge" style="min-width:92px;"></div>
-            <div class="az-pattern-line az-col-footer__label t-label muted" style="width:172px;text-align:right;">Col +7:</div>
+            <div class="az-pattern-line az-col-footer__label t-label muted" style="width:172px;text-align:right;">${t(locale, "az.colPlus7")}</div>
             <div class="az-row-arrow" style="width:14px;"></div>
             <div class="az-wall-row az-col-footer__cells" style="display:flex;gap:4px;padding:0 6px;">${colProgressHtml}</div>
             <div class="az-row-progress" style="min-width:44px;"></div>
@@ -256,9 +266,9 @@ export function renderAzulPalaceCardHtml(
           gap: 12px;
         ">
           <span class="t-label" style="color: #fca5a5;">
-            Floor line ${
+            ${t(locale, "az.floorLine")} ${
               canPlaceFloor
-                ? `(place all here: -${floorDirectPen} pts)`
+                ? t(locale, "az.floorPlaceAll", { pen: floorDirectPen })
                 : ""
             }
           </span>
@@ -269,28 +279,22 @@ export function renderAzulPalaceCardHtml(
       </div>`;
 }
 
-const AZUL_DIFF_BADGE: Record<string, string> = {
-  easy: "Easy",
-  normal: "Normal",
-  smart: "Smart",
-  master: "Master",
-};
-
 export function renderAzulPlayerCard(
   _state: AzulState,
   p: AzulState["players"][number],
-  isActing: boolean
+  isActing: boolean,
+  locale: SupportedLocale = "en"
 ): string {
   const seatBadge = p.isBot
-    ? `Bot · ${AZUL_DIFF_BADGE[p.botDifficulty ?? "smart"] ?? "Smart"}`
-    : "Human";
+    ? `${t(locale, "common.bot")} · ${getBotDifficultyMetaLocalized(p.botDifficulty ?? "smart", locale).badge}`
+    : t(locale, "common.human");
   const miniWall = ([0, 1, 2, 3, 4] as const)
     .map((r) =>
       ([0, 1, 2, 3, 4] as const)
         .map((c) => {
           const template = AZUL_WALL_PATTERN[r]![c]!;
           const filled = p.wall[r]![c] !== null;
-          return renderAzulTile(template, 15, filled, !filled);
+          return renderAzulTile(template, 15, filled, !filled, "", false, locale);
         })
         .join("")
     )
@@ -306,10 +310,11 @@ export function renderAzulPlayerCard(
   const coloredLinesHtml = p.patternLines
     .map((l, idx) => {
       if (!l.color || l.count === 0) {
-        return `<span class="ga-chip ga-num" style="height:20px;padding:0 6px;font-size:10.5px;opacity:0.65;" title="Row ${idx + 1}: empty (0/${l.capacity})">0/${l.capacity}</span>`;
+        return `<span class="ga-chip ga-num" style="height:20px;padding:0 6px;font-size:10.5px;opacity:0.65;" title="${t(locale, "az.rowEmptyTitle", { row: idx + 1, cap: l.capacity })}">0/${l.capacity}</span>`;
       }
       const st = AZUL_TILE_STYLES[l.color];
-      return `<span class="ga-num" title="Row ${idx + 1}: ${l.count}/${l.capacity} ${st.label}" style="
+      const label = getAzulTileLabelLocalized(l.color, locale);
+      return `<span class="ga-num" title="${t(locale, "az.rowFilledTitle", { row: idx + 1, count: l.count, cap: l.capacity, label })}" style="
         display:inline-flex;align-items:center;gap:3px;height:20px;padding:0 6px;border-radius:5px;
         background:${st.bg};border:1px solid ${st.border};color:${l.color === "yellow" ? "#422006" : "#fff"};font-size:10.5px;font-weight:500;
       ">${st.symbol}${l.count}/${l.capacity}</span>`;
@@ -317,23 +322,27 @@ export function renderAzulPlayerCard(
     .join("");
 
   return `
-    <div class="player-card clickable-target ${isActing ? "active-turn" : ""}" data-azul-inspect-player="${escapeHtml(p.id)}" title="Click to inspect ${escapeHtml(p.name)}'s palace wall">
+    <div class="player-card clickable-target ${isActing ? "active-turn" : ""}" data-azul-inspect-player="${escapeHtml(p.id)}" title="${t(locale, "az.inspectPalaceTitle", { name: escapeHtml(p.name) })}">
       <div class="player-header">
         <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
           <span class="player-dot" style="background: ${p.color}"></span>
           <strong style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(p.name)}</strong>
           <span class="ga-chip">${seatBadge}</span>
         </div>
-        <span class="ga-chip ga-chip--warn ga-num">${p.score} pts</span>
+        <span class="ga-chip ga-chip--warn ga-num">${p.score} ${t(locale, "common.ptsUnit")}</span>
       </div>
 
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
         <div class="ga-stat-list" style="gap:5px;">
           <div class="ga-num" style="font-size:11px;">
-            Rows ${p.completedRows}/5 · Cols ${p.completedCols}/5 · Sets ${p.completedColorSets}/5
+            ${t(locale, "az.playerCardStats", { rows: p.completedRows, cols: p.completedCols, sets: p.completedColorSets })}
           </div>
           <div class="ga-num" style="font-size:11px;">
-            Floor ${p.floorLine.length}/7${curFloorPenalty > 0 ? ` (-${curFloorPenalty})` : ""}${holdsFirst ? " · 1st" : ""}
+            ${t(locale, "az.playerCardFloor", {
+              len: p.floorLine.length,
+              pen: curFloorPenalty > 0 ? ` (-${curFloorPenalty})` : "",
+              first: holdsFirst ? t(locale, "az.firstShort") : "",
+            })}
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;">
             ${coloredLinesHtml}
@@ -350,21 +359,28 @@ export function renderAzulPlayerCard(
 export function renderAzulActionDock(
   state: AzulState,
   actingPlayer: AzulState["players"][number] | null,
-  selectedDraft: { source: AzulDraftSource; color: AzulTileColor } | null
+  selectedDraft: { source: AzulDraftSource; color: AzulTileColor } | null,
+  locale: SupportedLocale = "en"
 ): string {
   if (state.phase === "GAME_OVER" || !actingPlayer) {
     const winner = state.players.find((p) => p.id === state.winnerId);
     const rowsCount = winner?.completedRows ?? 0;
     return `<div class="action-prompt">
-      <strong>Match complete.</strong> ${escapeHtml(winner?.name ?? "Player")} wins Azul with ${
-        winner?.score ?? 0
-      } points (${rowsCount} completed horizontal ${rowsCount === 1 ? "row" : "rows"}).
+      ${t(locale, rowsCount === 1 ? "az.winsAzulOne" : "az.winsAzulMany", {
+        complete: `<strong>${t(locale, "inGame.matchComplete")}.</strong>`,
+        winner: escapeHtml(winner?.name ?? t(locale, "common.player")),
+        score: winner?.score ?? 0,
+        rows: rowsCount,
+      })}
     </div>`;
   }
 
   if (!selectedDraft) {
     return `<div class="action-buttons">
-      <span class="action-prompt"><strong>${escapeHtml(actingPlayer.name)} to act (step 1 of 2):</strong> Select a tile color from any factory display (F1–F${state.factories.length}) or the center pool.</span>
+      <span class="action-prompt">${t(locale, "az.step1Prompt", {
+        prefix: `<strong>${t(locale, "az.step1Prefix", { name: escapeHtml(actingPlayer.name) })}</strong>`,
+        factories: state.factories.length,
+      })}</span>
     </div>`;
   }
 
@@ -381,18 +397,22 @@ export function renderAzulActionDock(
 
   const srcName =
     selectedDraft.source.kind === "factory"
-      ? `Factory ${selectedDraft.source.factoryIndex + 1}`
-      : "Center pool";
+      ? t(locale, "az.factoryN", { num: selectedDraft.source.factoryIndex + 1 })
+      : t(locale, "az.centerPool");
+  const colorLabel = getAzulTileLabelLocalized(selectedDraft.color, locale);
 
   return `<div class="action-buttons">
-    ${renderAzulTile(selectedDraft.color, 24, true)}
-    <span class="action-prompt"><strong>Step 2 of 2:</strong> Drafting <strong>${count}× ${AZUL_TILE_STYLES[selectedDraft.color].label}</strong> from ${srcName}${
-      takesFirst
+    ${renderAzulTile(selectedDraft.color, 24, true, false, "", false, locale)}
+    <span class="action-prompt">${t(locale, "az.step2Prompt", {
+      prefix: `<strong>${t(locale, "az.step2Prefix")}</strong>`,
+      tiles: `<strong>${count}× ${colorLabel}</strong>`,
+      source: srcName,
+      marker: takesFirst
         ? firstMarkerPenalty > 0
-          ? ` (+ 1st marker, -${firstMarkerPenalty} floor)`
-          : " (+ 1st marker)"
-        : ""
-    }. Click a highlighted pattern row (1–5) or the floor line.</span>
-    <button type="button" id="btn-azul-cancel-draft" class="btn btn--secondary btn--sm">Cancel selection</button>
+          ? t(locale, "az.firstMarkerWithPen", { pen: firstMarkerPenalty })
+          : t(locale, "az.firstMarkerNoPen")
+        : "",
+    })}</span>
+    <button type="button" id="btn-azul-cancel-draft" class="btn btn--secondary btn--sm">${t(locale, "az.cancelSelection")}</button>
   </div>`;
 }
