@@ -101,7 +101,7 @@ export function renderInGameBoardStagePure(
             room.gameId !== "catan" ? "board-container--neutral" : ""
           }">
             <div class="board-banner">
-              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+              <div class="board-banner__status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
                 ${
                   actingPlayer
                     ? `<span class="player-dot" style="background: ${actingPlayer.color}"></span>
@@ -157,7 +157,7 @@ export function renderInGameBoardStagePure(
                 }
               </div>
 
-              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 5px;">
+              <div class="board-banner__controls" style="display: flex; flex-wrap: wrap; align-items: center; gap: 5px;">
                 <button type="button" data-open-guide="${room.gameId}" class="btn btn--secondary btn--sm">Guide</button>${botBannerControlsHtml}
                 ${
                   (room.gameId === "catan" || room.gameId === "seven_wonders") &&

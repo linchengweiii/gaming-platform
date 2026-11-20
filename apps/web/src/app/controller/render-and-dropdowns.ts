@@ -220,6 +220,8 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
     ctx.render();
   };
 
+  let lastRenderedViewKey = "";
+
   const render = (): void => {
     ctx.cleanupViewportDrag?.();
     ctx.cleanupViewportDrag = null;
@@ -231,6 +233,17 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
     if (typeof document !== "undefined" && document.body?.classList) {
       document.body.classList.toggle("ga-body--in-game", inActiveGame);
     }
+
+    const nextViewKey = `${ctx.model.isAuthenticated ? ctx.model.viewMode : "login"}:${ctx.model.activeRoomId}`;
+    if (
+      lastRenderedViewKey &&
+      lastRenderedViewKey !== nextViewKey &&
+      typeof window !== "undefined" &&
+      typeof window.scrollTo === "function"
+    ) {
+      window.scrollTo(0, 0);
+    }
+    lastRenderedViewKey = nextViewKey;
 
     if (!ctx.model.isAuthenticated || ctx.model.viewMode === "login") {
       ctx.scheduleOnlineBotWatchdogIfNeeded();

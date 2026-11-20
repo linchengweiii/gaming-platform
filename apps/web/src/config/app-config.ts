@@ -115,6 +115,7 @@ export const CATAN_MAP_VIEWPORT_CONFIG = {
   panOverflowRatio: 0.2,
   maxPanCenterRatio: 0.5,
   dragThresholdPx: 5,
+  touchDragThresholdPx: 10,
   wheelZoomSensitivity: 0.0022,
   pinchWheelSensitivity: 0.01,
   maxWheelDelta: 240,

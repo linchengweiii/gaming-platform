@@ -1,0 +1,413 @@
+/* ============================================================================
+ * Mobile & iPhone Shell Styles (iOS Safari, Safe Areas, Nav, Lobby, Room Setup, Modals)
+ * Scoped cleanly to mobile/touch viewports; desktop (>= 1024px) remains untouched.
+ * ========================================================================== */
+
+html,
+body {
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app {
+  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.ga-nav {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Eliminate double-tap zoom delay & harsh tap flash on interactive controls */
+button,
+[role="button"],
+.ga-tab,
+.ga-dropdown__trigger,
+.ga-dropdown__option,
+.game-select-card__main,
+.clickable-target,
+.spot-hit-target,
+.resource-playing-card,
+.sw-card {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent sticky hover lift states on touch-only screens (iPhone / iPad) */
+@media (hover: none) {
+  .game-select-card:hover,
+  .room-card:hover,
+  .sw-card:hover,
+  .resource-playing-card.has-cards:hover {
+    transform: none;
+  }
+}
+
+/* Prevent iOS Safari automatic zoom when focusing form fields (< 16px triggers zoom) */
+@media (max-width: 768px), (pointer: coarse) {
+  input.ga-input,
+  select.ga-select,
+  textarea.ga-input,
+  #inp-rename-guest {
+    font-size: 16px !important;
+  }
+}
+
+/* ---------------------------------------------------------------- Mobile Shell & Navigation (<= 768px) */
+@media (max-width: 768px) {
+  .ga-nav {
+    position: relative;
+  }
+
+  .ga-nav__inner,
+  .ga-nav--room .ga-nav__inner,
+  .ga-nav--table .ga-nav__inner {
+    width: calc(100% - 20px);
+    min-height: 44px;
+    padding-block: 7px;
+    gap: 6px;
+  }
+
+  .ga-nav__left {
+    gap: 6px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .ga-brand {
+    font-size: 15px;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .ga-brand__mark {
+    width: 24px;
+    height: 24px;
+  }
+
+  .ga-toolbar {
+    width: 100%;
+    gap: 5px;
+  }
+
+  /* Fix horizontal overflow caused by nowrap inline-flex user group */
+  .ga-topbar-user-group {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px !important;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .ga-topbar-user-group .ga-inline-label {
+    display: none;
+  }
+
+  .ga-topbar-user-group .ga-dropdown--inline {
+    flex: 1 1 108px;
+    min-width: 0;
+  }
+
+  .ga-topbar-user-group .ga-dropdown--inline .ga-dropdown__trigger {
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    padding: 0 8px 0 10px;
+    font-size: 12.5px;
+  }
+
+  .ga-topbar-user-group .btn--sm {
+    height: 32px;
+    min-height: 32px;
+    padding: 0 8px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .ga-topbar-user-group #form-rename-guest {
+    display: flex !important;
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 6px !important;
+  }
+
+  .ga-topbar-user-group #inp-rename-guest {
+    flex: 1 1 140px;
+    width: auto !important;
+    height: 36px !important;
+  }
+
+  /* In-game mobile topbar: slim non-sticky single-row header to maximize board space */
+  .ga-game-canvas .ga-nav--room {
+    position: relative;
+    z-index: 25;
+  }
+
+  .ga-game-canvas .ga-nav--room .ga-nav__inner {
+    flex-wrap: nowrap;
+    padding-block: 6px;
+    min-height: 44px;
+    gap: 6px;
+  }
+
+  .ga-game-canvas .ga-nav--room .ga-nav__left {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    width: 100%;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .ga-game-canvas .ga-nav--room .ga-brand__sub,
+  .ga-game-canvas .ga-nav--room .ga-nav__left > .ga-chip,
+  .ga-game-canvas .ga-nav--room .ga-toolbar {
+    display: none;
+  }
+
+  .ga-game-canvas .ga-nav--room .ga-brand {
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ga-game-canvas .ga-nav--room .ga-tabs {
+    flex: none;
+  }
+
+  .ga-game-canvas .ga-nav--room .ga-tab {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12.5px;
+  }
+
+  .ga-game-canvas .ga-nav--room #btn-copy-room-link {
+    height: 30px;
+    padding: 0 9px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex: none;
+  }
+
+  /* Room setup shell tighter margins */
+  .ga-room-shell {
+    width: calc(100% - 16px);
+    padding-block: 10px 24px;
+    gap: 12px;
+  }
+
+  .ga-surface-card {
+    padding: 14px 12px;
+    border-radius: var(--r-md);
+    gap: 12px;
+  }
+
+  .ga-seg-switch__btn {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px 10px;
+  }
+
+  .ga-invite-bar {
+    flex-wrap: wrap;
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .ga-seat-row {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 2px;
+  }
+
+  .ga-seat-bot-controls {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ga-check-row {
+    min-height: 44px;
+    padding: 10px 0;
+  }
+
+  .ga-check-row input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* Dropdown touch ergonomics & viewport clamping */
+  .ga-dropdown__option {
+    min-height: 42px;
+    padding: 8px 10px;
+  }
+
+  .ga-dropdown--inline .ga-dropdown__menu {
+    min-width: min(220px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* ---------------------------------------------------------------- Phone-Specific Layout (<= 639px, iPhone series) */
+@media (max-width: 639px) {
+  .ga-brand__sub {
+    display: none;
+  }
+
+  /* Login screen compact stats */
+  .ga-login-shell {
+    min-height: calc(100dvh - 64px);
+    padding-block: 14px 28px;
+    gap: 16px;
+  }
+
+  .ga-lobby-hero__title {
+    font-size: clamp(28px, 7.5vw, 36px);
+  }
+
+  .ga-lobby-stats {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .ga-lobby-stat dd {
+    font-size: 19px;
+    line-height: 1.2;
+  }
+
+  .ga-login-card {
+    padding: 16px 14px;
+  }
+
+  /* Lobby: 2x2 compact game grid so Open Rooms & Create Room are immediately visible */
+  .ga-lobby-shell {
+    padding-block: 12px 24px;
+    gap: 14px;
+  }
+
+  .ga-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .game-select-card {
+    padding: 11px 11px 10px;
+    gap: 8px;
+    border-radius: var(--r-md);
+  }
+
+  .game-select-card__top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .game-select-card__title {
+    font-size: 15px;
+    line-height: 1.2;
+  }
+
+  .game-select-card__top .ga-chip {
+    height: 20px;
+    padding: 0 7px;
+    font-size: 10.5px;
+  }
+
+  .game-select-card__desc {
+    font-size: 12px;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .game-select-card__actions {
+    gap: 6px;
+    padding-top: 8px;
+  }
+
+  .game-select-card__actions .btn--sm {
+    height: 32px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+
+  .rooms-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .ga-section-bar {
+    gap: 8px;
+  }
+
+  .ga-section-bar > div:last-child {
+    width: 100%;
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 6px !important;
+  }
+
+  .ga-section-bar .ga-dropdown--inline {
+    flex: 1 1 130px;
+  }
+
+  .ga-section-bar .ga-dropdown--inline .ga-dropdown__trigger {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #btn-create-room {
+    flex: 1 1 170px;
+    justify-content: center;
+  }
+
+  /* Reference Guide Modal on iPhone */
+  .ga-guide-backdrop {
+    padding: max(10px, env(safe-area-inset-top, 10px)) 10px max(10px, env(safe-area-inset-bottom, 10px));
+    align-items: flex-end;
+  }
+
+  .ga-guide-dialog {
+    padding: 14px;
+    border-radius: var(--r-md);
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    gap: 12px;
+  }
+
+  .ga-guide-dialog__head {
+    position: sticky;
+    top: -14px;
+    z-index: 2;
+    margin: -14px -14px 0;
+    padding: 12px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+/* Very compact iPhone SE / mini (<= 380px) */
+@media (max-width: 380px) {
+  .ga-game-canvas .ga-nav--room #btn-copy-room-link {
+    padding: 0 7px;
+    font-size: 11px;
+  }
+
+  .ga-game-canvas .ga-nav--room .ga-brand {
+    font-size: 13px;
+    gap: 5px;
+  }
+
+  .ga-lobby-stats {
+    padding: 10px 8px;
+    gap: 6px;
+  }
+
+  .ga-lobby-stat dd {
+    font-size: 16px;
+  }
+}

@@ -41,7 +41,7 @@ export function renderAzulPalaceCardHtml(
           slots.push(renderAzulTile(line.color!, 28));
         } else {
           slots.push(`
-            <div style="
+            <div class="az-slot-empty" style="
               width: 28px;
               height: 28px;
               border-radius: 5px;
@@ -81,9 +81,9 @@ export function renderAzulPalaceCardHtml(
           floorPen > 0
             ? `<span class="ga-chip ga-chip--danger ga-num" style="height:19px;padding:0 5px;font-size:11px;">-${floorPen} flr</span>`
             : "";
-        previewBadgeHtml = `<div style="display:inline-flex;gap:3px;min-width:92px;justify-content:flex-end;">${gainChip}${penChip}</div>`;
+        previewBadgeHtml = `<div class="az-row-badge" style="display:inline-flex;gap:3px;min-width:92px;justify-content:flex-end;">${gainChip}${penChip}</div>`;
       } else {
-        previewBadgeHtml = `<div style="min-width:92px;text-align:right;"><span class="t-label muted ga-num">${line.count}/${line.capacity}</span></div>`;
+        previewBadgeHtml = `<div class="az-row-badge" style="min-width:92px;text-align:right;"><span class="t-label muted ga-num">${line.count}/${line.capacity}</span></div>`;
       }
 
       const rowWallFilled = focusPlayer.wall[row]!.filter(
@@ -106,11 +106,11 @@ export function renderAzulPalaceCardHtml(
         .join("");
 
       return `
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="az-pattern-row" style="display: flex; align-items: center; gap: 8px;">
           ${previewBadgeHtml}
           <div ${
             canPlaceHere ? `data-azul-target-line="${row}"` : ""
-          } class="${
+          } class="az-pattern-line ${
             canPlaceHere ? "clickable-target pulse-highlight" : ""
           }" style="
             width: 172px;
@@ -125,15 +125,15 @@ export function renderAzulPalaceCardHtml(
             ${slots.join("")}
           </div>
 
-          <svg width="14" height="14" viewBox="0 0 12 12" aria-hidden="true" style="color: var(--muted); flex: none;">
+          <svg class="az-row-arrow" width="14" height="14" viewBox="0 0 12 12" aria-hidden="true" style="color: var(--muted); flex: none;">
             <path d="M2 6h8M6.5 2.5 10 6l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
 
-          <div style="display: flex; gap: 4px; background: var(--bg); padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line);">
+          <div class="az-wall-row" style="display: flex; gap: 4px; background: var(--bg); padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line);">
             ${wallCells}
           </div>
 
-          <span class="ga-num ${
+          <span class="az-row-progress ga-num ${
             rowWallFilled === 5 ? "ga-chip ga-chip--ok" : "t-label muted"
           }" style="min-width:44px;text-align:center;font-size:11px;" title="Complete horizontal row: +2 endgame bonus (triggers final round)">
             ${rowWallFilled === 5 ? "+2 ✓" : `${rowWallFilled}/5`}
@@ -148,7 +148,7 @@ export function renderAzulPalaceCardHtml(
       const filled = ([0, 1, 2, 3, 4] as const).filter(
         (r) => focusPlayer.wall[r]![col] !== null
       ).length;
-      return `<span class="ga-num" style="width:28px;text-align:center;font-size:10px;color:${
+      return `<span class="az-col-cell ga-num" style="width:28px;text-align:center;font-size:10px;color:${
         filled === 5 ? "#4ade80" : "var(--muted)"
       };" title="Column ${col + 1}: ${filled}/5 tiles (+7 endgame bonus)">${
         filled === 5 ? "+7" : `${filled}/5`
@@ -190,7 +190,7 @@ export function renderAzulPalaceCardHtml(
             ? `<div class="ga-num" style="width: 28px; height: 28px; border-radius: 5px; background: #fef3c7; border: 1.5px solid #d97706; color: #78350f; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center;">1st</div>`
             : tok
               ? renderAzulTile(tok, 28)
-              : `<div style="width: 28px; height: 28px; border-radius: 5px; background: var(--bg); border: 1px dashed var(--line-strong);"></div>`
+              : `<div class="az-slot-empty" style="width: 28px; height: 28px; border-radius: 5px; background: var(--bg); border: 1px dashed var(--line-strong);"></div>`
         }
       </div>
     `;
@@ -229,20 +229,20 @@ export function renderAzulPalaceCardHtml(
           <div style="display:flex;gap:4px;flex-wrap:wrap;">${colorBonusChipsHtml}</div>
         </div>
 
-        <div style="display: flex; flex-direction: column; gap: 5px;">
+        <div class="az-wall-grid" style="display: flex; flex-direction: column; gap: 5px;">
           ${patternRowsHtml}
-          <div style="display:flex;align-items:center;gap:8px;">
-            <div style="min-width:92px;"></div>
-            <div style="width:172px;text-align:right;" class="t-label muted">Col +7:</div>
-            <div style="width:14px;"></div>
-            <div style="display:flex;gap:4px;padding:0 6px;">${colProgressHtml}</div>
-            <div style="min-width:44px;"></div>
+          <div class="az-col-footer" style="display:flex;align-items:center;gap:8px;">
+            <div class="az-row-badge" style="min-width:92px;"></div>
+            <div class="az-pattern-line az-col-footer__label t-label muted" style="width:172px;text-align:right;">Col +7:</div>
+            <div class="az-row-arrow" style="width:14px;"></div>
+            <div class="az-wall-row az-col-footer__cells" style="display:flex;gap:4px;padding:0 6px;">${colProgressHtml}</div>
+            <div class="az-row-progress" style="min-width:44px;"></div>
           </div>
         </div>
 
         <div ${
           canPlaceFloor ? `data-azul-target-line="floor"` : ""
-        } class="${
+        } class="az-floor-bar ${
           canPlaceFloor ? "clickable-target pulse-highlight" : ""
         }" style="
           margin-top: 4px;
@@ -262,7 +262,7 @@ export function renderAzulPalaceCardHtml(
                 : ""
             }
           </span>
-          <div style="display: flex; gap: 6px;">
+          <div class="az-floor-slots" style="display: flex; gap: 6px;">
             ${floorSlotsHtml}
           </div>
         </div>

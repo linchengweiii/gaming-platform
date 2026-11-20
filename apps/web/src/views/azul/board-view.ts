@@ -62,7 +62,7 @@ export function renderAzulBoardView(
 
   return `
     <div class="az-board">
-      <div style="display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: center;">
+      <div class="az-factories-wrap" style="display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: center;">
         ${factoriesHtml}
       </div>
       ${centerPoolHtml}
