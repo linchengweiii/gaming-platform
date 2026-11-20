@@ -8,6 +8,11 @@ import {
   hasWonderStageEffect,
 } from "@gaming-platform/seven-wonders";
 import {
+  type SupportedLocale,
+  getSevenWondersCardNameLocalized,
+  t,
+} from "../../i18n/index.ts";
+import {
   SW_CARD_COLOR_META,
   escapeSwHtml as escapeHtml,
   renderCostStripHtml,
@@ -25,21 +30,23 @@ export function renderHandOrResolutionHtml(
   selectedCardId: string | null,
   legalActions: readonly SevenWondersAction[],
   hideHandForPassAndPlay: boolean,
-  passLabel: string
+  passLabel: string,
+  locale: SupportedLocale = "en"
 ): string {
   if (state.phase === "GAME_OVER") {
-    return renderScorepadHtml(state);
+    return renderScorepadHtml(state, locale);
   }
 
   if (isInspectingOther) {
     return `
         <div class="sw-hand-section" style="flex-direction:row;align-items:center;justify-content:space-between;padding:14px 16px;">
-          <span class="t-small muted">Inspecting <strong>${escapeHtml(player.name)}</strong>'s civilization (${
-            player.handRedacted
+          <span class="t-small muted">${t(locale, "sw.inspectingCiv", {
+            name: `<strong>${escapeHtml(player.name)}</strong>`,
+            count: player.handRedacted
               ? (player.hiddenHandCount ?? 0)
-              : player.hand.length
-          } secret cards in hand).</span>
-          <button type="button" data-sw-inspect-player="${escapeHtml(viewerPlayer.id)}" class="btn btn--primary btn--sm">Return to ${escapeHtml(viewerPlayer.name)}'s hand</button>
+              : player.hand.length,
+          })}</span>
+          <button type="button" data-sw-inspect-player="${escapeHtml(viewerPlayer.id)}" class="btn btn--primary btn--sm">${t(locale, "sw.returnToHand", { name: escapeHtml(viewerPlayer.name) })}</button>
         </div>
       `;
   }
@@ -48,12 +55,16 @@ export function renderHandOrResolutionHtml(
     const privacyText =
       state.phase === "HALIKARNASSUS_PICK" &&
       state.halikarnassusQueue[0] === player.id
-        ? `<strong>${escapeHtml(player.name)}'s</strong> Halikarnassus discard options are hidden while passing the screen.`
-        : `<strong>${escapeHtml(player.name)}'s</strong> draft hand is hidden while passing the screen.`;
+        ? t(locale, "sw.privacyHalikarnassus", {
+            name: `<strong>${escapeHtml(player.name)}</strong>`,
+          })
+        : t(locale, "sw.privacyDraftHand", {
+            name: `<strong>${escapeHtml(player.name)}</strong>`,
+          });
     return `
         <div class="sw-hand-section" style="flex-direction:row;align-items:center;justify-content:space-between;padding:16px;flex-wrap:wrap;gap:10px;">
           <span class="t-small muted">${privacyText}</span>
-          <button type="button" id="btn-reveal-hand" class="btn btn--secondary btn--sm">Show ${escapeHtml(player.name)}'s hand</button>
+          <button type="button" id="btn-reveal-hand" class="btn btn--secondary btn--sm">${t(locale, "inGame.showPlayerHand", { name: escapeHtml(player.name) })}</button>
         </div>
       `;
   }
@@ -77,8 +88,8 @@ export function renderHandOrResolutionHtml(
     return `
         <div class="sw-hand-section">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-            <strong style="font-size:13px;font-weight:500;">Mausoleum of Halikarnassus — Build 1 discarded structure for free</strong>
-            <button type="button" data-sw-skip-discard="true" class="btn btn--secondary btn--sm">Skip</button>
+            <strong style="font-size:13px;font-weight:500;">${t(locale, "sw.halikarnassusTitle")}</strong>
+            <button type="button" data-sw-skip-discard="true" class="btn btn--secondary btn--sm">${t(locale, "common.skip")}</button>
           </div>
           <div class="sw-cards-row">
             ${discardOptions
@@ -86,16 +97,20 @@ export function renderHandOrResolutionHtml(
                 const card = state.discardPile.find((c) => c.id === act.cardId);
                 if (!card) return "";
                 const cMeta = SW_CARD_COLOR_META[card.color];
+                const cardName = getSevenWondersCardNameLocalized(
+                  card.name,
+                  locale
+                );
                 return `
                   <div class="sw-card is-affordable" style="border-color:${cMeta.border};">
                     <div class="sw-card__head" style="background:${cMeta.headerBg};">
-                      <span class="sw-card__title">${escapeHtml(card.name)}</span>
-                      <span class="t-label" style="color:${cMeta.accent};">Free</span>
+                      <span class="sw-card__title">${escapeHtml(cardName)}</span>
+                      <span class="t-label" style="color:${cMeta.accent};">${t(locale, "common.free")}</span>
                     </div>
                     <div class="sw-card__body">
-                      <div class="sw-card__effects">${summarizeCardEffectsHtml(card)}</div>
-                      ${computeImmediateCardPreviewHtml(state, focusIdx, card)}
-                      <button type="button" data-sw-discard-pick="${card.id}" class="btn btn--primary btn--sm" style="width:100%;">Build free</button>
+                      <div class="sw-card__effects">${summarizeCardEffectsHtml(card, locale)}</div>
+                      ${computeImmediateCardPreviewHtml(state, focusIdx, card, locale)}
+                      <button type="button" data-sw-discard-pick="${card.id}" class="btn btn--primary btn--sm" style="width:100%;">${t(locale, "sw.buildFree")}</button>
                     </div>
                   </div>
                 `;
@@ -110,10 +125,13 @@ export function renderHandOrResolutionHtml(
     const canUnselectInspected = canPlayerUnselectDraftPick(state, player.id);
     return `
         <div class="sw-hand-section" style="flex-direction:row;align-items:center;justify-content:space-between;padding:16px;flex-wrap:wrap;gap:10px;">
-          <span class="t-small muted">Viewing ${escapeHtml(player.name)}'s empire — ${player.hiddenHandCount ?? 0} secret cards in hand.</span>
+          <span class="t-small muted">${t(locale, "sw.viewingEmpire", {
+            name: escapeHtml(player.name),
+            count: player.hiddenHandCount ?? 0,
+          })}</span>
           ${
             canUnselectInspected
-              ? `<button type="button" id="btn-sw-unselect-pick" data-sw-unselect-player="${escapeHtml(player.id)}" class="btn btn--secondary btn--sm">Change ${escapeHtml(player.name)}'s pick</button>`
+              ? `<button type="button" id="btn-sw-unselect-pick" data-sw-unselect-player="${escapeHtml(player.id)}" class="btn btn--secondary btn--sm">${t(locale, "sw.changePlayerPick", { name: escapeHtml(player.name) })}</button>`
               : ""
           }
         </div>
@@ -126,16 +144,25 @@ export function renderHandOrResolutionHtml(
     const lockedCard = lockedChoice
       ? player.hand.find((c) => c.id === lockedChoice.cardId)
       : null;
+    const lockedKindLabel =
+      lockedChoice?.kind === "build"
+        ? t(locale, "sw.kind.build")
+        : lockedChoice?.kind === "wonder"
+          ? t(locale, "sw.kind.wonder")
+          : lockedChoice?.kind === "discard"
+            ? t(locale, "sw.kind.discard")
+            : "";
+    const detail = lockedCard
+      ? ` (${escapeHtml(getSevenWondersCardNameLocalized(lockedCard.name, locale))} — ${lockedKindLabel})`
+      : "";
     return `
         <div class="sw-hand-section" style="flex-direction:row;align-items:center;justify-content:space-between;padding:14px 16px;flex-wrap:wrap;gap:10px;">
           <span class="t-small">
-            <strong>${escapeHtml(player.name)} draft pick locked${
-              lockedCard
-                ? ` (${escapeHtml(lockedCard.name)} — ${lockedChoice?.kind})`
-                : ""
-            }</strong> · Waiting for remaining civilizations to choose before simultaneous reveal.
+            ${t(locale, "sw.pickLockedBanner", {
+              locked: `<strong>${t(locale, "sw.pickLockedPrefix", { name: escapeHtml(player.name), detail })}</strong>`,
+            })}
           </span>
-          <button type="button" id="btn-sw-unselect-pick" data-sw-unselect-player="${escapeHtml(player.id)}" class="btn btn--secondary btn--sm">Change pick</button>
+          <button type="button" id="btn-sw-unselect-pick" data-sw-unselect-player="${escapeHtml(player.id)}" class="btn btn--secondary btn--sm">${t(locale, "sw.changePick")}</button>
         </div>
       `;
   }
@@ -149,7 +176,9 @@ export function renderHandOrResolutionHtml(
     );
     return `
         <div class="sw-hand-section" style="flex-direction:row;align-items:center;justify-content:space-between;padding:14px 16px;flex-wrap:wrap;gap:10px;">
-          <span class="t-small muted">Waiting for <strong>${escapeHtml(babylonPlayer?.name ?? "Babylon")}</strong> to play its bonus 7th card.</span>
+          <span class="t-small muted">${t(locale, "sw.waitingBabylon", {
+            name: `<strong>${escapeHtml(babylonPlayer?.name ?? t(locale, "sw.babylonFallback"))}</strong>`,
+          })}</span>
         </div>
       `;
   }
@@ -166,23 +195,28 @@ export function renderHandOrResolutionHtml(
       <div class="sw-hand-section">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
           <div style="display:inline-flex;align-items:center;gap:8px;">
-            <strong style="font-size:13px;font-weight:500;">${escapeHtml(player.name)}'s Draft Hand (${player.hand.length} cards)</strong>
+            <strong style="font-size:13px;font-weight:500;">${t(locale, "sw.draftHandTitle", { name: escapeHtml(player.name), count: player.hand.length })}</strong>
             <span class="t-label muted">${
               waitingForHalikarnassus
-                ? `Waiting for ${escapeHtml(halikarnassusPlayer?.name ?? "Halikarnassus")} to resolve discard build`
+                ? t(locale, "sw.waitingHalikarnassus", {
+                    name: escapeHtml(
+                      halikarnassusPlayer?.name ??
+                        t(locale, "sw.halikarnassusFallback")
+                    ),
+                  })
                 : state.phase === "SEVENTH_CARD_PLAY"
-                  ? "Babylon bonus 7th card — build, tuck, or sell"
+                  ? t(locale, "sw.babylonSeventhHint")
                   : state.draftRound === 6 && state.phase === "AGE_DRAFT"
                     ? hasWonderStageEffect(player, "play_seventh_card")
-                      ? "Final draft pick — Babylon will also play your 7th card!"
-                      : "Final pick of this Age — unchosen 7th card will be discarded"
+                      ? t(locale, "sw.finalPickBabylon")
+                      : t(locale, "sw.finalPickNormal")
                     : passLabel
             }</span>
           </div>
           <span class="t-label muted">${
             canAct
-              ? "Select Build, Wonder stage, or Sell +3c"
-              : "Waiting for active player"
+              ? t(locale, "sw.selectActionHint")
+              : t(locale, "sw.waitingActivePlayer")
           }</span>
         </div>
 
@@ -190,6 +224,10 @@ export function renderHandOrResolutionHtml(
           ${player.hand
             .map((card) => {
               const cMeta = SW_CARD_COLOR_META[card.color];
+              const cardName = getSevenWondersCardNameLocalized(
+                card.name,
+                locale
+              );
               const isSelected = selectedCardId === card.id;
               const isDup = hasDuplicateCardName(player, card.name);
               const isChainFree = !isDup && canPlayerBuildViaChain(player, card);
@@ -232,43 +270,45 @@ export function renderHandOrResolutionHtml(
               const hasMultipleWonderChoices = wonderActs.length > 1;
 
               const statusBadge = isDup
-                ? `<span class="ga-chip">Owned</span>`
+                ? `<span class="ga-chip">${t(locale, "common.owned")}</span>`
                 : !canAct
                   ? ""
                   : isChainFree
-                    ? `<span class="ga-chip ga-chip--ok">Chain free</span>`
+                    ? `<span class="ga-chip ga-chip--ok">${t(locale, "sw.chainFree")}</span>`
                     : freeOlympiaBuild && normalBuilds.length > 0
-                      ? `<span class="ga-chip ga-chip--ok ga-num">${totalCoinPrice}c / Zeus 0c</span>`
+                      ? `<span class="ga-chip ga-chip--ok ga-num">${t(locale, "sw.zeusOrPrice", { price: totalCoinPrice })}</span>`
                       : normalBuilds.length > 0
                         ? totalCoinPrice === 0
-                          ? `<span class="ga-chip ga-chip--ok">Free</span>`
+                          ? `<span class="ga-chip ga-chip--ok">${t(locale, "common.free")}</span>`
                           : `<span class="ga-chip ga-chip--warn ga-num">${totalCoinPrice}c${hasMultipleBuildChoices ? " ▾" : ""}</span>`
                         : freeOlympiaBuild
-                          ? `<span class="ga-chip ga-chip--ok">Zeus free</span>`
-                          : `<span class="ga-chip">Locked</span>`;
+                          ? `<span class="ga-chip ga-chip--ok">${t(locale, "sw.zeusFree")}</span>`
+                          : `<span class="ga-chip">${t(locale, "common.locked")}</span>`;
 
+              const buildWord = t(locale, "sw.build");
               const buildLabel = isChainFree
-                ? "Chain"
+                ? t(locale, "sw.chain")
                 : freeOlympiaBuild && normalBuilds.length === 0
-                  ? "Zeus free"
+                  ? t(locale, "sw.zeusFree")
                   : hasMultipleBuildChoices
-                    ? `Build (${totalCoinPrice}c ▾)`
+                    ? `${buildWord} (${totalCoinPrice}c ▾)`
                     : totalCoinPrice > 0
-                      ? `Build (${totalCoinPrice}c)`
-                      : "Build";
+                      ? `${buildWord} (${totalCoinPrice}c)`
+                      : buildWord;
 
               const primaryWonder = wonderActs[0] ?? null;
               const wonderTradeCoins = primaryWonder?.payment
                 ? primaryWonder.payment.leftCoins +
                   primaryWonder.payment.rightCoins
                 : 0;
+              const wonderWord = t(locale, "sw.wonder");
               const wonderLabel = !primaryWonder
-                ? "Wonder"
+                ? wonderWord
                 : hasMultipleWonderChoices
-                  ? `Wonder (${wonderTradeCoins}c ▾)`
+                  ? `${wonderWord} (${wonderTradeCoins}c ▾)`
                   : wonderTradeCoins > 0
-                    ? `Wonder (${wonderTradeCoins}c)`
-                    : "Wonder";
+                    ? `${wonderWord} (${wonderTradeCoins}c)`
+                    : wonderWord;
 
               return `
                 <div class="sw-card ${primaryBuild ? "is-affordable" : ""} ${
@@ -277,31 +317,37 @@ export function renderHandOrResolutionHtml(
                   isSelected ? "var(--action)" : cMeta.border
                 };">
                   <div class="sw-card__head" style="background:${cMeta.headerBg};">
-                    <span class="sw-card__title" title="${escapeHtml(card.name)}">${escapeHtml(card.name)}</span>
+                    <span class="sw-card__title" title="${escapeHtml(cardName)}">${escapeHtml(cardName)}</span>
                     ${statusBadge}
                   </div>
                   <div class="sw-card__body">
                     <div class="sw-card__effects">
-                      ${summarizeCardEffectsHtml(card)}
+                      ${summarizeCardEffectsHtml(card, locale)}
                     </div>
-                    ${isDup ? "" : computeImmediateCardPreviewHtml(state, focusIdx, card)}
+                    ${isDup ? "" : computeImmediateCardPreviewHtml(state, focusIdx, card, locale)}
                     <div class="sw-card__cost">
-                      <span class="t-label muted">Cost:</span>
-                      ${renderCostStripHtml(card.resourceCost, card.coinCost)}
+                      <span class="t-label muted">${t(locale, "sw.costLabel")}</span>
+                      ${renderCostStripHtml(card.resourceCost, card.coinCost, locale)}
                     </div>
                     ${
                       card.chainsTo.length > 0
-                        ? `<div class="t-label muted" title="Unlocks free construction in next Age">Chains → ${escapeHtml(card.chainsTo.join(", "))}</div>`
+                        ? `<div class="t-label muted" title="${t(locale, "sw.chainsToTitle")}">${t(locale, "sw.chainsTo", {
+                            targets: escapeHtml(
+                              card.chainsTo
+                                .map((n) =>
+                                  getSevenWondersCardNameLocalized(n, locale)
+                                )
+                                .join(", ")
+                            ),
+                          })}</div>`
                         : ""
                     }
                     <div class="sw-card__actions">
                       <button type="button" data-sw-quick-build="${card.id}" class="btn ${
                         primaryBuild ? "btn--primary" : "btn--secondary"
                       } btn--sm" ${!canAct || !primaryBuild ? "disabled" : ""}>${buildLabel}</button>
-                      <button type="button" data-sw-quick-wonder="${card.id}" class="btn btn--secondary btn--sm" title="Tuck card to build Wonder Stage ${
-                        player.builtWonderStages + 1
-                      }" ${!canAct || !primaryWonder ? "disabled" : ""}>${wonderLabel}</button>
-                      <button type="button" data-sw-quick-discard="${card.id}" class="btn btn--secondary btn--sm" title="Sell card to bank for +3 coins" ${
+                      <button type="button" data-sw-quick-wonder="${card.id}" class="btn btn--secondary btn--sm" title="${t(locale, "sw.tuckWonderTitle", { stage: player.builtWonderStages + 1 })}" ${!canAct || !primaryWonder ? "disabled" : ""}>${wonderLabel}</button>
+                      <button type="button" data-sw-quick-discard="${card.id}" class="btn btn--secondary btn--sm" title="${t(locale, "sw.sellCardTitle")}" ${
                         !canAct ? "disabled" : ""
                       }>+3c</button>
                     </div>

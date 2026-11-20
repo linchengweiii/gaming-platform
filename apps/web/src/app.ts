@@ -13,6 +13,15 @@ export {
   getBotMoveThrottlePresetPure,
   getNextBotMoveThrottlePresetPure,
 } from "./config/app-config.ts";
+export {
+  DEFAULT_LOCALE,
+  SUPPORTED_LOCALES,
+  detectBrowserLocale,
+  normalizeLocale,
+  t,
+  type SupportedLocale,
+  type TranslationKey,
+} from "./i18n/index.ts";
 export { escapeAttr, escapeHtml, formatPhaseLabel, renderDropdown } from "./app/helpers/html-and-dropdown.ts";
 export {
   canControlPlayerOnDevicePure, getActingPlayerIdPure, getActiveRoomPure, getEngineForGamePure,

@@ -12,12 +12,15 @@ import {
   totalResourceCount,
 } from "@gaming-platform/catan";
 import {
-  RESOURCE_META,
-  TRADE_GOOD_META,
   renderActionPieceIconSvg,
   renderMiniResourceCardSvg,
   renderMiniTradeGoodCardSvg,
 } from "../../../catan-graphics.ts";
+import {
+  getCatanResourceTextLocalized,
+  getCatanTradeGoodLabelLocalized,
+  t,
+} from "../../../i18n/index.ts";
 import { DRAWN_ARROW_SVG, escapeAttr } from "../../helpers/html-and-dropdown.ts";
 import type { AppModel } from "../../types.ts";
 import {
@@ -29,15 +32,16 @@ export function renderTradeModeTabsPure(
   model: Readonly<AppModel>,
   pColor: string
 ): string {
+  const locale = model.locale;
   return `
-      <div class="ga-trade-tabs" role="tablist" aria-label="Trade mode">
+      <div class="ga-trade-tabs" role="tablist" aria-label="${escapeAttr(t(locale, "catan.trade.modeAria"))}">
         <button type="button" role="tab" aria-selected="${
           model.buildMode === "maritime_trade"
         }" data-trade-tab="maritime_trade" class="ga-trade-tab ${
           model.buildMode === "maritime_trade" ? "is-active" : ""
         }">
           ${renderActionPieceIconSvg("maritime_trade", pColor, 15)}
-          <span>Bank and harbors</span>
+          <span>${escapeAttr(t(locale, "catan.trade.bankAndHarbors"))}</span>
         </button>
         <button type="button" role="tab" aria-selected="${
           model.buildMode === "domestic_trade"
@@ -45,7 +49,7 @@ export function renderTradeModeTabsPure(
           model.buildMode === "domestic_trade" ? "is-active" : ""
         }">
           ${renderActionPieceIconSvg("domestic_trade", pColor, 15)}
-          <span>Player trade</span>
+          <span>${escapeAttr(t(locale, "catan.dock.playerTrade"))}</span>
         </button>
       </div>
     `;
@@ -56,6 +60,7 @@ export function renderMaritimeTradeSubModalPure(
   state: CatanState,
   actingPlayer: CatanState["players"][number]
 ): string {
+  const locale = model.locale;
   const pColor = actingPlayer.color;
   if (state.config.enableCitiesAndKnights) {
     const goodRatios = getPlayerGoodTradeRatios(state, actingPlayer.id);
@@ -98,18 +103,22 @@ export function renderMaritimeTradeSubModalPure(
       )
       .join("");
 
+    const diffNeed = giveCredits - receiveCount;
+    const diffGive = receiveCount - giveCredits;
     const statusHint =
       giveCredits === 0 && receiveCount === 0
-        ? "Offer resource or commodity bundles (+4, +3, or +2)"
-        : giveCredits > receiveCount
-          ? `Add ${giveCredits - receiveCount} more requested card${
-              giveCredits - receiveCount === 1 ? "" : "s"
-            }`
-          : receiveCount > giveCredits
-            ? `Add ${receiveCount - giveCredits} more bundle${
-                receiveCount - giveCredits === 1 ? "" : "s"
-              }`
-            : `${giveCredits} bank trade${giveCredits === 1 ? "" : "s"} ready`;
+        ? t(locale, "catan.trade.ckMaritimeHint")
+        : diffNeed > 0
+          ? diffNeed === 1
+            ? t(locale, "catan.trade.addMoreRequestedOne")
+            : t(locale, "catan.trade.addMoreRequestedMany", { count: diffNeed })
+          : diffGive > 0
+            ? diffGive === 1
+              ? t(locale, "catan.trade.addMoreBundlesOne")
+              : t(locale, "catan.trade.addMoreBundlesMany", { count: diffGive })
+            : giveCredits === 1
+              ? t(locale, "catan.trade.readyOne")
+              : t(locale, "catan.trade.readyMany", { count: giveCredits });
 
     return `<div class="sub-modal sub-modal--trade">
           <div class="ga-trade-head">
@@ -122,7 +131,7 @@ export function renderMaritimeTradeSubModalPure(
                     ? "ga-chip--warn"
                     : ""
               } ga-num">${escapeAttr(statusHint)}</span>
-              <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+              <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
             </div>
           </div>
 
@@ -130,11 +139,12 @@ export function renderMaritimeTradeSubModalPure(
             ${renderTradeGoodColumnHeadersPure(
               actingPlayer,
               undefined,
-              goodRatios
+              goodRatios,
+              locale
             )}
 
             <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
+              <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.offer"))}
             </div>
             ${TRADE_GOODS.map((g) => {
               const ratio = goodRatios[g];
@@ -149,15 +159,18 @@ export function renderMaritimeTradeSubModalPure(
                     val <= 0 ? "disabled" : ""
                   }>−</button>
                   <span class="ga-res-step-val">${val}</span>
-                  <button type="button" data-ck-maritime-give="${g}" class="ga-res-step-btn" title="Offer ${ratio} ${
-                    TRADE_GOOD_META[g].label
-                  } (${ratio}:1 rate)" ${!canAddBundle ? "disabled" : ""}>+</button>
+                  <button type="button" data-ck-maritime-give="${g}" class="ga-res-step-btn" title="${escapeAttr(
+                    t(locale, "catan.trade.offerRateTitle", {
+                      ratio,
+                      label: getCatanTradeGoodLabelLocalized(g, locale),
+                    })
+                  )}" ${!canAddBundle ? "disabled" : ""}>+</button>
                 </div>
               `;
             }).join("")}
 
             <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
+              <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.request"))}
             </div>
             ${TRADE_GOODS.map((g) => {
               const val = getMarWant(g);
@@ -182,17 +195,17 @@ export function renderMaritimeTradeSubModalPure(
             <div class="ga-trade-bundle">
               ${
                 giveCardsPreview || wantCardsPreview
-                  ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
-                  : `<span class="t-label muted">Trade resources & commodities (Trading House Lv 3 unlocks 2:1 commodities)</span>`
+                  ? `${giveCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noOffer"))}</span>`} ${DRAWN_ARROW_SVG} ${wantCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noRequest"))}</span>`}`
+                  : `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.ckBankFootnote"))}</span>`
               }
             </div>
             <div style="display: flex; gap: 6px;">
-              <button type="button" id="btn-maritime-reset" class="btn btn--secondary btn--sm">Reset</button>
+              <button type="button" id="btn-maritime-reset" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.reset"))}</button>
               <button type="button" id="btn-exec-maritime" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
                 !canExec ? "disabled" : ""
               }>
                 ${renderActionPieceIconSvg("maritime_trade", pColor, 16)}
-                <span>Trade with bank</span>
+                <span>${escapeAttr(t(locale, "catan.trade.withBank"))}</span>
               </button>
             </div>
           </div>
@@ -229,20 +242,24 @@ export function renderMaritimeTradeSubModalPure(
     )
     .join("");
 
+  const diffNeed = giveCredits - receiveCount;
+  const diffGive = receiveCount - giveCredits;
   const statusHint =
     giveCredits === 0 && receiveCount === 0
-      ? "Offer harbor bundles (+4, +3, or +2) for your request"
-      : giveCredits > receiveCount
-        ? `Add ${giveCredits - receiveCount} more requested card${
-            giveCredits - receiveCount === 1 ? "" : "s"
-          }`
-        : receiveCount > giveCredits
-          ? `Add ${receiveCount - giveCredits} more harbor bundle${
-              receiveCount - giveCredits === 1 ? "" : "s"
-            } for request`
-          : `${giveCredits} bank trade${
-              giveCredits === 1 ? "" : "s"
-            } ready`;
+      ? t(locale, "catan.trade.maritimeHint")
+      : diffNeed > 0
+        ? diffNeed === 1
+          ? t(locale, "catan.trade.addMoreRequestedOne")
+          : t(locale, "catan.trade.addMoreRequestedMany", { count: diffNeed })
+        : diffGive > 0
+          ? diffGive === 1
+            ? t(locale, "catan.trade.addMoreHarborBundlesOne")
+            : t(locale, "catan.trade.addMoreHarborBundlesMany", {
+                count: diffGive,
+              })
+          : giveCredits === 1
+            ? t(locale, "catan.trade.readyOne")
+            : t(locale, "catan.trade.readyMany", { count: giveCredits });
 
   return `<div class="sub-modal sub-modal--trade">
         <div class="ga-trade-head">
@@ -255,7 +272,7 @@ export function renderMaritimeTradeSubModalPure(
                   ? "ga-chip--warn"
                   : ""
             } ga-num">${escapeAttr(statusHint)}</span>
-            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
           </div>
         </div>
 
@@ -263,11 +280,12 @@ export function renderMaritimeTradeSubModalPure(
           ${renderResourceColumnHeadersPure(
             actingPlayer.resources,
             undefined,
-            ratios
+            ratios,
+            locale
           )}
 
           <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.offer"))}
           </div>
           ${RESOURCES.map((r) => {
             const ratio = ratios[r];
@@ -281,15 +299,18 @@ export function renderMaritimeTradeSubModalPure(
                   val <= 0 ? "disabled" : ""
                 }>−</button>
                 <span class="ga-res-step-val">${val}</span>
-                <button type="button" data-maritime-give="${r}" class="ga-res-step-btn" title="Offer ${ratio} ${
-                  RESOURCE_META[r].label
-                } (${ratio}:1 rate)" ${!canAddBundle ? "disabled" : ""}>+</button>
+                <button type="button" data-maritime-give="${r}" class="ga-res-step-btn" title="${escapeAttr(
+                  t(locale, "catan.trade.offerRateTitle", {
+                    ratio,
+                    label: getCatanResourceTextLocalized(r, locale).label,
+                  })
+                )}" ${!canAddBundle ? "disabled" : ""}>+</button>
               </div>
             `;
           }).join("")}
 
           <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.request"))}
           </div>
           ${RESOURCES.map((r) => {
             const val = model.maritimeWant[r];
@@ -314,17 +335,17 @@ export function renderMaritimeTradeSubModalPure(
           <div class="ga-trade-bundle">
             ${
               giveCardsPreview || wantCardsPreview
-                ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
-                : `<span class="t-label muted">Use + and − in each column to set your offer and request</span>`
+                ? `${giveCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noOffer"))}</span>`} ${DRAWN_ARROW_SVG} ${wantCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noRequest"))}</span>`}`
+                : `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.baseBankFootnote"))}</span>`
             }
           </div>
           <div style="display: flex; gap: 6px;">
-            <button type="button" id="btn-maritime-reset" class="btn btn--secondary btn--sm">Reset</button>
+            <button type="button" id="btn-maritime-reset" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.reset"))}</button>
             <button type="button" id="btn-exec-maritime" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
               !canExec ? "disabled" : ""
             }>
               ${renderActionPieceIconSvg("maritime_trade", pColor, 16)}
-              <span>Trade with bank</span>
+              <span>${escapeAttr(t(locale, "catan.trade.withBank"))}</span>
             </button>
           </div>
         </div>

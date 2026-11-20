@@ -1,3 +1,4 @@
+import { type SupportedLocale, type TranslationKey, t } from "../../i18n/index.ts";
 import type { DropdownSpec } from "../types.ts";
 
 export const DRAWN_ARROW_SVG = `<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg>`;
@@ -99,8 +100,16 @@ export function renderDropdown(spec: DropdownSpec): string {
   `;
 }
 
-export function formatPhaseLabel(phase: string): string {
-  if (phase === "CK_INTERACTION") return "C&K choice";
+export function formatPhaseLabel(
+  phase: string,
+  locale: SupportedLocale = "en"
+): string {
+  const key = `phase.${phase}` as TranslationKey;
+  const translated = t(locale, key);
+  if (translated !== key) {
+    return translated;
+  }
+  if (phase === "CK_INTERACTION") return t(locale, "phase.CK_INTERACTION");
   const clean = phase.replace(/_/g, " ").toLowerCase();
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }

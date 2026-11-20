@@ -8,6 +8,12 @@ import {
   clampBotMoveThrottleMsPure,
 } from "../../config/app-config.ts";
 import {
+  DEFAULT_LOCALE,
+  type SupportedLocale,
+  normalizeLocale,
+  t,
+} from "../../i18n/index.ts";
+import {
   extractDebugModeFromLocationPure,
   extractInviteRoomHashFromLocationPure,
 } from "../helpers/room-hash-and-links.ts";
@@ -30,8 +36,16 @@ export function createInitialAppModelPure(
     readonly locationHash?: string;
     readonly savedShowBotMoves?: boolean | null;
     readonly savedBotMoveThrottleMs?: number | null;
+    readonly savedLocale?: SupportedLocale | null;
+    readonly browserLocale?: SupportedLocale | null;
   }
 ): AppModel {
+  const locale: SupportedLocale =
+    normalizeLocale(options?.locale) ??
+    normalizeLocale(env.savedLocale) ??
+    (env.isBrowserHttp || env.isStaticHost
+      ? normalizeLocale(env.browserLocale) ?? DEFAULT_LOCALE
+      : DEFAULT_LOCALE);
   const staticHostOnly = env.isStaticHost;
   const useServerBackend = env.isBrowserHttp && !env.isStaticHost;
   const serverReachable = !env.isStaticHost;
@@ -118,6 +132,7 @@ export function createInitialAppModelPure(
   })();
 
   const baseModel: AppModel = {
+    locale,
     viewMode: authInit.viewMode,
     lobbyGameFilter: "catan",
     lobbyHeroEnteredOnce: false,
@@ -235,7 +250,7 @@ export function resolveGuestSignInPure(
       ok: false,
       model: {
         ...model,
-        loginErrorMsg: "Enter a guest display name to continue.",
+        loginErrorMsg: t(model.locale, "login.errorEmptyName"),
       },
     };
   }

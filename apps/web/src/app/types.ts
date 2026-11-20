@@ -12,6 +12,7 @@ import type {
 import type { GemColor } from "@gaming-platform/splendor";
 import type { AzulDraftSource, AzulTileColor } from "@gaming-platform/azul";
 import type { CatanMapViewport } from "../catan-graphics/viewport.ts";
+import type { SupportedLocale } from "../i18n/types.ts";
 
 export type SupportedGameId = "catan" | "splendor" | "azul" | "seven_wonders";
 export type AppViewMode = "login" | "lobby" | "room_setup" | "in_game";
@@ -21,6 +22,7 @@ export interface MultiGamePlatformAppOptions {
   forceLocalMode?: boolean;
   staticHostOnly?: boolean;
   debugMode?: boolean;
+  locale?: SupportedLocale;
 }
 
 export interface GuestSession {
@@ -121,6 +123,7 @@ export interface CreateLocalRoomOptions {
 }
 
 export interface AppModel {
+  readonly locale: SupportedLocale;
   readonly viewMode: AppViewMode;
   readonly lobbyGameFilter: SupportedGameId;
   readonly lobbyHeroEnteredOnce: boolean;
@@ -241,6 +244,7 @@ export interface RoomsMapView {
 
 export interface MultiGamePlatformApp {
   readonly root: HTMLElement;
+  locale: SupportedLocale;
   viewMode: AppViewMode;
   lobbyGameFilter: SupportedGameId;
   lobbyHeroEnteredOnce: boolean;
@@ -296,6 +300,7 @@ export interface MultiGamePlatformApp {
   botFeedHistoryExpanded: boolean;
   botMoveThrottleMs: number;
   render(): void;
+  setLocale(nextLocale: SupportedLocale): void;
   signInAsGuest(rawName?: string, existingGuestId?: string): boolean;
   startSoloGameFromLogin(rawName?: string): boolean;
   startOfflineLocalFromLogin(rawName?: string): boolean;

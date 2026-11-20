@@ -1,5 +1,8 @@
+import {
+  getBotDifficultyMetaLocalized,
+  t,
+} from "../../i18n/index.ts";
 import { renderReferenceGuideModalPure } from "../../tutorials.ts";
-import { BOT_DIFFICULTY_META } from "../../config/app-config.ts";
 import { DRAWN_ARROW_SVG, escapeAttr } from "../helpers/html-and-dropdown.ts";
 import {
   getRoomBoundsPure,
@@ -22,6 +25,7 @@ export function renderRoomSetupViewPure(
   readonly maxBots: number;
   readonly bounds: { minPlayers: number; maxPlayers: number };
 } {
+  const locale = model.locale;
   const isOwner = Boolean(room.ownerId && room.ownerId === model.currentUserId);
   const isEditablePhase =
     room.status === "lobby" || room.status === "finished";
@@ -41,11 +45,18 @@ export function renderRoomSetupViewPure(
       return {
         value: String(b),
         label: room.allBots
-          ? `${b} bots`
+          ? b === 1
+            ? t(locale, "lobby.seatsBotsOnlyOne")
+            : t(locale, "lobby.seatsBotsOnlyMany", { bots: b })
           : b === 0
-            ? "0 bots (humans only)"
-            : `${b} ${b === 1 ? "bot" : "bots"}`,
-        meta: `${totalP} ${totalP === 1 ? "player" : "players"}`,
+            ? t(locale, "setup.zeroBotsLabel")
+            : b === 1
+              ? t(locale, "lobby.seatsBotsOnlyOne")
+              : t(locale, "lobby.seatsBotsOnlyMany", { bots: b }),
+        meta:
+          locale === "en"
+            ? `${totalP} ${totalP === 1 ? "player" : "players"}`
+            : `${totalP} 位玩家`,
       };
     }
   );
@@ -56,17 +67,21 @@ export function renderRoomSetupViewPure(
       : room.startingPlayerMode;
 
   const startingPlayerOptions: DropdownOption[] = [
-    { value: "random", label: "Random player", meta: "Fair draw" },
+    {
+      value: "random",
+      label: t(locale, "room.randomPlayer"),
+      meta: t(locale, "room.fairDraw"),
+    },
     ...room.players.map((p, idx) => ({
       value: p.id,
-      label: `Seat ${idx + 1} · ${p.name}`,
+      label: t(locale, "room.seatWithName", { num: idx + 1, name: p.name }),
       meta: p.isBot
-        ? "Bot"
+        ? t(locale, "common.bot")
         : p.id === room.ownerId
-          ? "Host"
+          ? t(locale, "common.host")
           : p.controllerId || room.isOfflineLocal
-            ? "Local player"
-            : "Guest",
+            ? t(locale, "common.localPlayer")
+            : t(locale, "common.guest"),
     })),
   ];
 
@@ -82,8 +97,11 @@ export function renderRoomSetupViewPure(
     humanCount,
     botCountOptions,
     effectiveStartingValue,
-    startingPlayerOptions
+    startingPlayerOptions,
+    locale
   );
+
+  const neededPlayers = bounds.minPlayers - room.players.length;
 
   const html = `
       ${renderRoomHeaderPure(model, room, "setup")}
@@ -93,36 +111,41 @@ export function renderRoomSetupViewPure(
 
         <aside class="ga-surface-card">
           <div class="ga-section-bar">
-            <h2>Table seats (${room.players.length}/${bounds.maxPlayers})</h2>
-            <span class="t-label muted">${
+            <h2>${escapeAttr(
+              t(locale, "setup.tableSeats", {
+                count: room.players.length,
+                max: bounds.maxPlayers,
+              })
+            )}</h2>
+            <span class="t-label muted">${escapeAttr(
               room.status === "lobby"
-                ? "Pre-game"
+                ? t(locale, "common.preGame")
                 : room.status === "in_progress"
-                  ? "In progress"
-                  : "Finished"
-            }</span>
+                  ? t(locale, "common.inProgress")
+                  : t(locale, "common.finished")
+            )}</span>
           </div>
 
           ${
             !room.isOfflineLocal
               ? `<div class="ga-invite-bar">
                    <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
-                     <span class="t-label" style="color:var(--ink);font-weight:500;">${
+                     <span class="t-label" style="color:var(--ink);font-weight:500;">${escapeAttr(
                        room.isPrivate
-                         ? "Private room — players can only join via link"
-                         : "Invite friends via direct link"
-                     }</span>
+                         ? t(locale, "setup.privateInviteTitle")
+                         : t(locale, "setup.publicInviteTitle")
+                     )}</span>
                      <span class="t-label muted ga-num" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">#room=${escapeAttr(
                        room.roomId
                      )}</span>
                    </div>
                    <button type="button" data-copy-room-link="${escapeAttr(
                      room.roomId
-                   )}" class="btn btn--secondary btn--sm ga-num">${
+                   )}" class="btn btn--secondary btn--sm ga-num">${escapeAttr(
                      model.copiedRoomLinkId === room.roomId
-                       ? "Copied ✓"
-                       : "Copy invite link"
-                   }</button>
+                       ? t(locale, "common.copied")
+                       : t(locale, "common.copyInviteLink")
+                   )}</button>
                  </div>`
               : ""
           }
@@ -134,39 +157,42 @@ export function renderRoomSetupViewPure(
               <div class="ga-seat-row">
                 <div style="display: flex; align-items: center; gap: 10px;">
                   <span class="player-dot" style="background: ${p.color}"></span>
-                  <span style="font-weight: 500;">Seat ${i + 1} · ${escapeAttr(p.name)}</span>
+                  <span style="font-weight: 500;">${escapeAttr(
+                    t(locale, "room.seatWithName", { num: i + 1, name: p.name })
+                  )}</span>
                 </div>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
                   ${
                     p.id === room.ownerId
-                      ? `<span class="ga-chip ga-chip--accent">Owner</span>`
+                      ? `<span class="ga-chip ga-chip--accent">${escapeAttr(t(locale, "common.owner"))}</span>`
                       : ""
                   }
                   ${
                     p.id === model.currentUserId
-                      ? `<span class="ga-chip ga-chip--ok">You</span>`
+                      ? `<span class="ga-chip ga-chip--ok">${escapeAttr(t(locale, "common.you"))}</span>`
                       : ""
                   }
                   ${
                     room.offlinePlayerIds?.includes(p.id)
-                      ? `<span class="ga-chip ga-chip--warn" title="Temporarily disconnected — waiting to reconnect">Offline</span>`
+                      ? `<span class="ga-chip ga-chip--warn" title="${escapeAttr(t(locale, "common.offlineTooltip"))}">${escapeAttr(t(locale, "common.offline"))}</span>`
                       : ""
                   }
-                  <span class="ga-chip">${
+                  <span class="ga-chip">${escapeAttr(
                     p.isBot
-                      ? `Bot · ${
-                          BOT_DIFFICULTY_META[
-                            p.botDifficulty ?? room.botDifficulty
-                          ].badge
+                      ? `${t(locale, "common.bot")} · ${
+                          getBotDifficultyMetaLocalized(
+                            p.botDifficulty ?? room.botDifficulty,
+                            locale
+                          ).badge
                         }`
                       : p.controllerId ||
                           (room.isOfflineLocal && p.id !== room.ownerId)
-                        ? "Local player"
-                        : "Guest"
-                  }</span>
+                        ? t(locale, "common.localPlayer")
+                        : t(locale, "common.guest")
+                  )}</span>
                   ${
                     canEditSetup && !p.isBot && p.id !== room.ownerId
-                      ? `<button type="button" data-remove-player="${escapeAttr(p.id)}" class="btn btn--secondary btn--sm">Remove</button>`
+                      ? `<button type="button" data-remove-player="${escapeAttr(p.id)}" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.remove"))}</button>`
                       : ""
                   }
                 </div>
@@ -183,7 +209,7 @@ export function renderRoomSetupViewPure(
                   room.humanPlayers.length < bounds.maxPlayers
                     ? `
                       <div class="ga-field" style="margin-top: var(--s-2);">
-                        <label for="inp-local-friend-name">Add local friend on this computer</label>
+                        <label for="inp-local-friend-name">${escapeAttr(t(locale, "setup.addLocalFriendLabel"))}</label>
                         <div class="ga-local-friend-bar">
                           <input
                             type="text"
@@ -191,23 +217,25 @@ export function renderRoomSetupViewPure(
                             class="ga-input"
                             maxlength="28"
                             value="${escapeAttr(model.localFriendDraftName)}"
-                            placeholder="Friend's name"
+                            placeholder="${escapeAttr(t(locale, "setup.friendPlaceholder"))}"
                           />
-                          <button type="button" id="btn-add-local-friend" class="btn btn--secondary btn--sm">Add player</button>
+                          <button type="button" id="btn-add-local-friend" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "setup.addPlayer"))}</button>
                         </div>
                       </div>
                     `
                     : ""
                 }
                 <div class="ga-seat-bot-controls">
-                  <span class="t-label muted">Bots added: <strong style="color: var(--ink);">${room.botCount}</strong></span>
+                  <span class="t-label muted">${t(locale, "setup.botsAdded", {
+                    count: `<strong style="color: var(--ink);">${room.botCount}</strong>`,
+                  })}</span>
                   <div style="display: inline-flex; gap: 6px;">
                     <button type="button" id="btn-seat-remove-bot" class="btn btn--secondary btn--sm" ${
                       room.botCount <= 0 ? "disabled" : ""
-                    }>Remove bot</button>
+                    }>${escapeAttr(t(locale, "setup.removeBot"))}</button>
                     <button type="button" id="btn-seat-add-bot" class="btn btn--secondary btn--sm" ${
                       room.botCount >= maxBots ? "disabled" : ""
-                    }>Add bot</button>
+                    }>${escapeAttr(t(locale, "setup.addBot"))}</button>
                   </div>
                 </div>
               `
@@ -219,79 +247,88 @@ export function renderRoomSetupViewPure(
               room.status === "in_progress"
                 ? `
                   <p class="t-small muted">
-                    Return to the active board to continue playing.
+                    ${escapeAttr(t(locale, "setup.returnActiveHint"))}
                   </p>
                   <button type="button" id="btn-return-active-game" class="btn btn--primary" style="width: 100%;">
-                    Return to game board${DRAWN_ARROW_SVG}
+                    ${escapeAttr(t(locale, "setup.returnActiveBtn"))}${DRAWN_ARROW_SVG}
                   </button>
                 `
                 : canEditSetup
                   ? `
                     <p class="t-small muted">
-                      ${
+                      ${escapeAttr(
                         enoughPlayersToStart
-                          ? "Starting the match locks these rules until the game concludes."
-                          : `Add ${bounds.minPlayers - room.players.length} more ${bounds.minPlayers - room.players.length === 1 ? "player or bot" : "players or bots"} to reach the ${bounds.minPlayers}-player minimum.`
-                      }
+                          ? t(locale, "setup.startLocksHint")
+                          : t(locale, "setup.needMorePlayersHint", {
+                              needed: neededPlayers,
+                              neededWord:
+                                neededPlayers === 1
+                                  ? t(locale, "setup.playerOrBotOne")
+                                  : t(locale, "setup.playerOrBotMany"),
+                              min: bounds.minPlayers,
+                            })
+                      )}
                     </p>
                     <button type="button" id="btn-launch-match" class="btn btn--primary" style="width: 100%;" ${
                       !enoughPlayersToStart ? "disabled" : ""
                     }>
-                      ${
+                      ${escapeAttr(
                         room.status === "finished"
-                          ? "Start next game"
-                          : "Start match"
-                      }${DRAWN_ARROW_SVG}
+                          ? t(locale, "setup.startNextGame")
+                          : t(locale, "lobby.startMatch")
+                      )}${DRAWN_ARROW_SVG}
                     </button>
                     ${
                       hasMatchState
-                        ? `<button type="button" id="btn-return-active-game" class="btn btn--secondary" style="width: 100%;">View finished board</button>`
+                        ? `<button type="button" id="btn-return-active-game" class="btn btn--secondary" style="width: 100%;">${escapeAttr(t(locale, "setup.viewFinishedBoard"))}</button>`
                         : ""
                     }
                     ${
                       isSeatedHuman
-                        ? `<button type="button" id="btn-leave-room" class="btn btn--secondary" style="width: 100%;">Leave room</button>`
+                        ? `<button type="button" id="btn-leave-room" class="btn btn--secondary" style="width: 100%;">${escapeAttr(t(locale, "setup.leaveRoom"))}</button>`
                         : ""
                     }
                   `
                   : roomUsesServerPure(model, room)
                     ? `
                       <div class="ga-notice">
-                        Waiting for <strong>${escapeAttr(room.ownerName || "the host")}</strong> to start the match. Your board opens automatically as soon as the game begins.
+                        ${t(locale, "setup.waitingForHostNotice", {
+                          host: `<strong>${escapeAttr(room.ownerName || t(locale, "common.theHost"))}</strong>`,
+                        })}
                       </div>
                       ${
                         hasMatchState
-                          ? `<button type="button" id="btn-return-active-game" class="btn btn--secondary" style="width: 100%;">View finished board</button>`
+                          ? `<button type="button" id="btn-return-active-game" class="btn btn--secondary" style="width: 100%;">${escapeAttr(t(locale, "setup.viewFinishedBoard"))}</button>`
                           : ""
                       }
                       <button type="button" id="btn-leave-room" class="btn btn--secondary" style="width: 100%;">
-                        Leave room
+                        ${escapeAttr(t(locale, "setup.leaveRoom"))}
                       </button>
                     `
                     : `
                       <p class="t-small muted">
-                        Enter the board to play with the host's configured table rules.
+                        ${escapeAttr(t(locale, "setup.enterBoardHint"))}
                       </p>
                       <button type="button" id="btn-launch-match" class="btn btn--primary" style="width: 100%;">
-                        Enter game board${DRAWN_ARROW_SVG}
+                        ${escapeAttr(t(locale, "setup.enterBoardBtn"))}${DRAWN_ARROW_SVG}
                       </button>
                       ${
                         isSeatedHuman
-                          ? `<button type="button" id="btn-leave-room" class="btn btn--secondary" style="width: 100%;">Leave room</button>`
+                          ? `<button type="button" id="btn-leave-room" class="btn btn--secondary" style="width: 100%;">${escapeAttr(t(locale, "setup.leaveRoom"))}</button>`
                           : ""
                       }
                     `
             }
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:4px;border-top:1px solid var(--line);">
-              <button type="button" data-open-guide="${room.gameId}" class="btn btn--secondary btn--sm">How to play</button>
-              <button type="button" data-start-tutorial="${room.gameId}" class="btn btn--secondary btn--sm">Interactive tutorial</button>
+              <button type="button" data-open-guide="${room.gameId}" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.howToPlay"))}</button>
+              <button type="button" data-start-tutorial="${room.gameId}" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.interactiveTutorial"))}</button>
             </div>
           </div>
         </aside>
       </div>
       ${
         model.guideModalGameId
-          ? renderReferenceGuideModalPure(model.guideModalGameId, false)
+          ? renderReferenceGuideModalPure(model.guideModalGameId, false, locale)
           : ""
       }
     `;

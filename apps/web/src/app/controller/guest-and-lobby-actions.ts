@@ -1,3 +1,4 @@
+import { t } from "../../i18n/index.ts";
 import {
   findActiveRoomPure,
   getActiveRoomPure,
@@ -70,7 +71,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
           );
           const data = await res.json();
           if (!res.ok) {
-            alert(data.error ?? "Unable to add local player");
+            alert(data.error ?? t(ctx.model.locale, "alert.unableAddLocalPlayer"));
             return;
           }
           ctx.model = upsertRoomFromSummaryPure(
@@ -79,7 +80,11 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
           ).model;
           ctx.render();
         } catch (err: any) {
-          alert(`Unable to add local player: ${err?.message ?? String(err)}`);
+          alert(
+            t(ctx.model.locale, "alert.unableAddLocalPlayerWithReason", {
+              reason: err?.message ?? String(err),
+            })
+          );
         }
       })();
       return;
@@ -117,13 +122,17 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
           );
           const data = await res.json();
           if (!res.ok) {
-            alert(data.error ?? "Unable to remove player");
+            alert(data.error ?? t(ctx.model.locale, "alert.unableRemovePlayer"));
             return;
           }
           ctx.model = upsertRoomFromSummaryPure(ctx.model, data.room).model;
           ctx.render();
         } catch (err: any) {
-          alert(`Unable to remove player: ${err?.message ?? String(err)}`);
+          alert(
+            t(ctx.model.locale, "alert.unableRemovePlayerWithReason", {
+              reason: err?.message ?? String(err),
+            })
+          );
         }
       })();
       return;
@@ -171,7 +180,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
           if (ctx.navEpoch !== capturedEpoch) return;
           const data = await res.json();
           if (!res.ok) {
-            alert(data.error ?? "Unable to create room");
+            alert(data.error ?? t(ctx.model.locale, "alert.unableCreateRoom"));
             return;
           }
           const upserted = upsertRoomFromSummaryPure(

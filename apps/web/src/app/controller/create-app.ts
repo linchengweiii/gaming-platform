@@ -1,3 +1,4 @@
+import { detectBrowserLocale } from "../../i18n/index.ts";
 import { createInitialAppModelPure } from "../reducers/session-init-and-signin.ts";
 import type {
   MultiGamePlatformApp as MultiGamePlatformAppType,
@@ -15,6 +16,7 @@ import {
   loadDeviceGuestsFromStorage,
   loadLastActiveGuestIdFromStorage,
   loadSavedGuestSessionFromStorage,
+  loadSavedLocaleFromStorage,
   loadShowBotMovesFromStorage,
   saveDeviceGuestsToStorage,
   saveGuestSessionToStorage,
@@ -44,6 +46,10 @@ export function createMultiGamePlatformApp(
     Boolean(window.location?.protocol?.startsWith("http"));
 
   const savedGuest = loadSavedGuestSessionFromStorage();
+  const browserLocale =
+    typeof navigator !== "undefined"
+      ? detectBrowserLocale(navigator.languages, navigator.language)
+      : null;
   const initialModel = createInitialAppModelPure(options, {
     isStaticHost,
     isBrowserHttp,
@@ -58,6 +64,8 @@ export function createMultiGamePlatformApp(
       typeof window !== "undefined" ? window.location?.hash ?? "" : "",
     savedShowBotMoves: loadShowBotMovesFromStorage(),
     savedBotMoveThrottleMs: loadBotMoveThrottleMsFromStorage(),
+    savedLocale: loadSavedLocaleFromStorage(),
+    browserLocale,
   });
 
   if (initialModel.isAuthenticated) {

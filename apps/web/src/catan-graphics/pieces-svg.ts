@@ -1,5 +1,9 @@
 import type { CatanState } from "@gaming-platform/catan";
 import { DISCIPLINE_META } from "../config/catan-palette-config.ts";
+import {
+  type SupportedLocale,
+  getCatanDisciplineTextLocalized,
+} from "../i18n/index.ts";
 import { shadeHexColor } from "./geometry.ts";
 
 export type ActionGraphicKind =
@@ -234,7 +238,8 @@ export function renderEdgeRoutePiecePart(
 export function renderVertexBuildingAndKnightParts(
   state: CatanState,
   vId: string,
-  isClickable: boolean
+  isClickable: boolean,
+  locale: SupportedLocale = "en"
 ): readonly string[] {
   const vNode = state.topology.vertices[vId]!;
   const building = state.buildings[vId];
@@ -311,12 +316,16 @@ export function renderVertexBuildingAndKnightParts(
 
       if (state.config.enableCitiesAndKnights && building.metropolis) {
         const dMeta = DISCIPLINE_META[building.metropolis];
+        const dText = getCatanDisciplineTextLocalized(
+          building.metropolis,
+          locale
+        );
         parts.push(`
             <g transform="translate(${vx}, ${vy})">
               <path d="M-16,10.5 V-9.5 L-9,-18 L0,-23 L9,-18 L16,-9.5 V10.5 H12.2 V-6.5 L0,-15.5 L-12.2,-6.5 V10.5 Z"
                     fill="#f59e0b" stroke="#fef08a" stroke-width="1.35" stroke-linejoin="round" />
               <circle cx="0" cy="-21.5" r="7.2" fill="${dMeta.bg}" stroke="${dMeta.border}" stroke-width="1.7" />
-              <text x="0" y="-18.7" text-anchor="middle" font-family="Sora, system-ui, sans-serif" font-size="8.4" font-weight="700" fill="#ffffff">${dMeta.shortCode}</text>
+              <text x="0" y="-18.7" text-anchor="middle" font-family="Sora, system-ui, sans-serif" font-size="8.4" font-weight="700" fill="#ffffff">${dText.shortCode}</text>
             </g>
           `);
       }

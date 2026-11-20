@@ -8,6 +8,11 @@ import {
   getWallColumnForColor,
   scoreWallPlacement,
 } from "@gaming-platform/azul";
+import {
+  type SupportedLocale,
+  getAzulTileLabelLocalized,
+  t,
+} from "../../i18n/index.ts";
 
 export const AZUL_TILE_STYLES: Record<
   AzulTileColor,
@@ -107,9 +112,11 @@ export function renderAzulTile(
   selected = false,
   faded = false,
   dataAttrs = "",
-  targetPreview = false
+  targetPreview = false,
+  locale: SupportedLocale = "en"
 ): string {
   const st = AZUL_TILE_STYLES[color];
+  const label = getAzulTileLabelLocalized(color, locale);
   const a11yAttrs = dataAttrs ? `role="button" tabindex="0"` : "";
   return `
     <div ${dataAttrs} ${a11yAttrs} class="az-tile ${dataAttrs ? "clickable-target" : ""}" style="
@@ -137,7 +144,7 @@ export function renderAzulTile(
       font-weight: 500;
       opacity: ${targetPreview ? "0.82" : faded ? "0.22" : "1"};
       user-select: none;
-    " title="${st.label}">
+    " title="${label}">
       <span aria-hidden="true">${st.symbol}</span>
     </div>
   `;
@@ -146,7 +153,8 @@ export function renderAzulTile(
 export function renderAzulFactoriesHtml(
   state: AzulState,
   selectedDraft: { source: AzulDraftSource; color: AzulTileColor } | null,
-  isViewerTurn: boolean
+  isViewerTurn: boolean,
+  locale: SupportedLocale = "en"
 ): string {
   return state.factories
     .map((tiles, fIdx) => {
@@ -161,7 +169,7 @@ export function renderAzulFactoriesHtml(
           </span>
           ${
             tiles.length === 0
-              ? `<span class="muted" style="grid-column: span 2; grid-row: span 2; text-align: center; font-size: var(--t-label);">Empty</span>`
+              ? `<span class="muted" style="grid-column: span 2; grid-row: span 2; text-align: center; font-size: var(--t-label);">${t(locale, "common.empty")}</span>`
               : tiles
                   .map((c) => {
                     const isPicked =
@@ -173,7 +181,9 @@ export function renderAzulFactoriesHtml(
                       false,
                       isViewerTurn
                         ? `data-azul-factory="${fIdx}" data-azul-color="${c}"`
-                        : ""
+                        : "",
+                      false,
+                      locale
                     );
                   })
                   .join("")
@@ -187,14 +197,15 @@ export function renderAzulFactoriesHtml(
 export function renderAzulCenterPoolHtml(
   state: AzulState,
   selectedDraft: { source: AzulDraftSource; color: AzulTileColor } | null,
-  isViewerTurn: boolean
+  isViewerTurn: boolean,
+  locale: SupportedLocale = "en"
 ): string {
   const isCenterSelected = selectedDraft?.source.kind === "center";
   const centerGroupsHtml = AZUL_COLORS.map((color) => {
     const cnt = state.centerPool.filter((c) => c === color).length;
     if (cnt === 0) return "";
     const isPicked = isCenterSelected && selectedDraft?.color === color;
-    const st = AZUL_TILE_STYLES[color];
+    const label = getAzulTileLabelLocalized(color, locale);
     return `
       <div ${
         isViewerTurn ? `data-azul-center="true" data-azul-color="${color}"` : ""
@@ -208,9 +219,9 @@ export function renderAzulCenterPoolHtml(
         border-radius: 7px;
         border: 1.5px solid ${isPicked ? "var(--action)" : "var(--line-strong)"};
         background: ${isPicked ? "rgba(255,74,31,0.14)" : "rgba(24,25,27,0.55)"};
-      " title="Draft all ${cnt} ${st.label} tile(s) from Center pool">
+      " title="${t(locale, "az.draftFromCenterTitle", { count: cnt, label })}">
         ${Array.from({ length: Math.min(cnt, 3) }, () =>
-          renderAzulTile(color, 26, isPicked)
+          renderAzulTile(color, 26, isPicked, false, "", false, locale)
         ).join("")}
         <span class="ga-num" style="font-size:12px;font-weight:500;padding-left:2px;">×${cnt}</span>
       </div>
@@ -220,7 +231,7 @@ export function renderAzulCenterPoolHtml(
   return `
     <div class="az-center-pool ${isCenterSelected ? "is-selected" : ""}">
       <span class="t-label muted" style="width: 100%; text-align: center;">
-        Center pool (${state.centerPool.length} tiles)
+        ${t(locale, "az.centerPoolHeading", { count: state.centerPool.length })}
       </span>
       ${
         state.centerHasFirstPlayerMarker
@@ -236,12 +247,12 @@ export function renderAzulCenterPoolHtml(
               display: inline-flex;
               align-items: center;
               justify-content: center;
-            " title="First player marker (-1 floor slot, acts first next round)">1st</div>`
+            " title="${t(locale, "az.firstMarkerTitle")}">1st</div>`
           : ""
       }
       ${
         state.centerPool.length === 0 && !state.centerHasFirstPlayerMarker
-          ? `<span class="t-label muted">Empty</span>`
+          ? `<span class="t-label muted">${t(locale, "common.empty")}</span>`
           : centerGroupsHtml
       }
     </div>

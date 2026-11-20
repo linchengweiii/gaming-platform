@@ -5,6 +5,11 @@ import {
   totalTokens,
 } from "@gaming-platform/splendor";
 import {
+  type SupportedLocale,
+  getSplendorGemTextLocalized,
+  t,
+} from "../../i18n/index.ts";
+import {
   escapeSplendorHtml as escapeHtml,
   renderSplendorCardItem,
   renderSplendorGemToken,
@@ -15,7 +20,8 @@ export function renderSplendorBoardView(
   state: SplendorState,
   draftGems: Partial<Record<GemColor, number>>,
   viewerPlayerId?: string | null,
-  isViewerTurn = true
+  isViewerTurn = true,
+  locale: SupportedLocale = "en"
 ): string {
   const activePlayer = state.players[state.activePlayerIndex]!;
   const focusPlayer =
@@ -44,17 +50,27 @@ export function renderSplendorBoardView(
     state.phase === "MAIN_ACTION" &&
     (isTwoSameLegal || isDistinctLegal);
 
+  const draftItemsText =
+    draftEntries.length === 0
+      ? t(locale, "sp.draftNone")
+      : draftEntries
+          .map(
+            ([c, n]) =>
+              `${n} ${locale === "en" ? c : getSplendorGemTextLocalized(c, locale).label}`
+          )
+          .join(", ");
+
   return `
     <div class="sp-board">
       ${
         state.finalRoundTriggered && state.phase !== "GAME_OVER"
           ? `<div class="ga-chip ga-chip--danger ga-num" style="align-self:center;padding:3px 12px;">
-              Final round triggered — completing equal turns (tiebreaker: fewest purchased cards)
+              ${t(locale, "sp.finalRoundBanner")}
             </div>`
           : ""
       }
 
-      ${renderSplendorNoblesRowHtml(state, focusPlayer, canViewerActNow)}
+      ${renderSplendorNoblesRowHtml(state, focusPlayer, canViewerActNow, locale)}
 
       <div style="display: flex; flex-direction: column; gap: 10px; width: 100%; align-items: center;">
         ${([3, 2, 1] as const)
@@ -62,7 +78,7 @@ export function renderSplendorBoardView(
             (tier) => `
           <div class="sp-tier-row">
             <div class="sp-deck-card">
-              <div class="t-label muted">Tier ${tier}</div>
+              <div class="t-label muted">${t(locale, "sp.tierN", { tier })}</div>
               <div class="ga-num" style="font-family: var(--font-display); font-size: 22px; font-weight: 500;">${
                 state.decks[tier].length
               }</div>
@@ -73,7 +89,7 @@ export function renderSplendorBoardView(
                 state.phase !== "MAIN_ACTION"
                   ? "disabled"
                   : ""
-              }>Draw hold</button>
+              }>${t(locale, "sp.drawHold")}</button>
             </div>
 
             ${state.market[tier]
@@ -83,7 +99,8 @@ export function renderSplendorBoardView(
                   focusPlayer,
                   canViewerActNow,
                   card,
-                  true
+                  true,
+                  locale
                 )
               )
               .join("")}
@@ -94,7 +111,7 @@ export function renderSplendorBoardView(
       </div>
 
       <div class="sp-bank-bar">
-        <span class="t-label muted">Gem bank</span>
+        <span class="t-label muted">${t(locale, "sp.gemBank")}</span>
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
           ${GEM_COLORS.map((c) =>
             renderSplendorGemToken(
@@ -102,56 +119,57 @@ export function renderSplendorBoardView(
               state.bank[c],
               44,
               canViewerActNow ? `data-sp-gem="${c}"` : "",
-              draftGems[c] ?? 0
+              draftGems[c] ?? 0,
+              "in bank",
+              locale
             )
           ).join("")}
-          ${renderSplendorGemToken("gold", state.bank.gold, 44)}
+          ${renderSplendorGemToken("gold", state.bank.gold, 44, "", 0, "in bank", locale)}
         </div>
 
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
           <span class="t-small muted ga-num">
-            Draft: ${
-              draftEntries.length === 0
-                ? "none"
-                : draftEntries.map(([c, n]) => `${n} ${c}`).join(", ")
-            }${
+            ${t(locale, "sp.draftPrefix", { items: draftItemsText })}${
               draftEntries.length > 0 &&
               totalTokens(focusPlayer.tokens) +
                 draftEntries.reduce((s, [, n]) => s + n, 0) >
                 10
-                ? ` (return ${
-                    totalTokens(focusPlayer.tokens) +
-                    draftEntries.reduce((s, [, n]) => s + n, 0) -
-                    10
-                  } after)`
+                ? t(locale, "sp.returnAfter", {
+                    count:
+                      totalTokens(focusPlayer.tokens) +
+                      draftEntries.reduce((s, [, n]) => s + n, 0) -
+                      10,
+                  })
                 : ""
             }
           </span>
           <button type="button" id="btn-sp-clear-gems" class="btn btn--secondary btn--sm" ${
             draftEntries.length === 0 ? "disabled" : ""
-          }>Clear</button>
+          }>${t(locale, "common.clear")}</button>
           <button type="button" id="btn-sp-take-gems" class="btn btn--primary btn--sm" ${
             !canConfirmGemDraft ? "disabled" : ""
-          }>Take gems</button>
+          }>${t(locale, "sp.takeGems")}</button>
         </div>
       </div>
 
       ${
         focusPlayer.reservedCards.length > 0
           ? `<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center;">
-              <span class="t-label muted">${escapeHtml(
-                focusPlayer.name
-              )} reserved (${focusPlayer.reservedCards.length}/3)</span>
+              <span class="t-label muted">${t(locale, "sp.reservedHeading", {
+                name: escapeHtml(focusPlayer.name),
+                count: focusPlayer.reservedCards.length,
+              })}</span>
               ${focusPlayer.reservedCards
                 .map((card) =>
                   card.redacted
-                    ? `<div class="sp-deck-card" style="justify-content:center;"><span class="t-label muted">Tier ${card.tier} secret hold</span></div>`
+                    ? `<div class="sp-deck-card" style="justify-content:center;"><span class="t-label muted">${t(locale, "sp.secretHold", { tier: card.tier })}</span></div>`
                     : renderSplendorCardItem(
                         state,
                         focusPlayer,
                         canViewerActNow,
                         card,
-                        false
+                        false,
+                        locale
                       )
                 )
                 .join("")}

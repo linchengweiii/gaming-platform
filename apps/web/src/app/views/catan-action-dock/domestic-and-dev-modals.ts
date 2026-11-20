@@ -13,12 +13,12 @@ import {
   totalResourceCount,
 } from "@gaming-platform/catan";
 import {
-  RESOURCE_META,
   renderActionPieceIconSvg,
   renderMiniResourceCardSvg,
   renderMiniTradeGoodCardSvg,
 } from "../../../catan-graphics.ts";
-import { DRAWN_ARROW_SVG } from "../../helpers/html-and-dropdown.ts";
+import { getCatanResourceTextLocalized, t } from "../../../i18n/index.ts";
+import { DRAWN_ARROW_SVG, escapeAttr } from "../../helpers/html-and-dropdown.ts";
 import type { AppModel } from "../../types.ts";
 import {
   renderResourceColumnHeadersPure,
@@ -31,6 +31,7 @@ export function renderDomesticTradeSubModalPure(
   state: CatanState,
   actingPlayer: CatanState["players"][number]
 ): string {
+  const locale = model.locale;
   const pColor = actingPlayer.color;
   if (state.config.enableCitiesAndKnights) {
     const goodRatios = getPlayerGoodTradeRatios(state, actingPlayer.id);
@@ -69,8 +70,8 @@ export function renderDomesticTradeSubModalPure(
           <div class="ga-trade-head">
             ${renderTradeModeTabsPure(model, pColor)}
             <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
-              <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">Open to all players · resources & commodities</span>
-              <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+              <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">${escapeAttr(t(locale, "catan.trade.ckDomesticBadge"))}</span>
+              <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
             </div>
           </div>
 
@@ -78,11 +79,12 @@ export function renderDomesticTradeSubModalPure(
             ${renderTradeGoodColumnHeadersPure(
               actingPlayer,
               undefined,
-              goodRatios
+              goodRatios,
+              locale
             )}
 
             <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
+              <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.offer"))}
             </div>
             ${TRADE_GOODS.map((g) => {
               const val = getDomGive(g);
@@ -97,7 +99,7 @@ export function renderDomesticTradeSubModalPure(
             }).join("")}
 
             <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
+              <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.request"))}
             </div>
             ${TRADE_GOODS.map((g) => {
               const val = getDomWant(g);
@@ -115,17 +117,17 @@ export function renderDomesticTradeSubModalPure(
             <div class="ga-trade-bundle">
               ${
                 giveCardsPreview || wantCardsPreview
-                  ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
-                  : `<span class="t-label muted">Use + and − in each column to trade resources or commodities</span>`
+                  ? `${giveCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noOffer"))}</span>`} ${DRAWN_ARROW_SVG} ${wantCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noRequest"))}</span>`}`
+                  : `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.ckDomesticFootnote"))}</span>`
               }
             </div>
             <div style="display: flex; gap: 6px;">
-              <button type="button" id="btn-dom-reset" class="btn btn--secondary btn--sm">Reset</button>
+              <button type="button" id="btn-dom-reset" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.reset"))}</button>
               <button type="button" id="btn-dom-propose" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
                 !canPropose ? "disabled" : ""
               }>
                 ${renderActionPieceIconSvg("domestic_trade", pColor, 16)}
-                <span>Send trade offer</span>
+                <span>${escapeAttr(t(locale, "catan.trade.sendOffer"))}</span>
               </button>
             </div>
           </div>
@@ -158,8 +160,8 @@ export function renderDomesticTradeSubModalPure(
         <div class="ga-trade-head">
           ${renderTradeModeTabsPure(model, pColor)}
           <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
-            <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">Open to all players · pick partner after accept</span>
-            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+            <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">${escapeAttr(t(locale, "catan.trade.baseDomesticBadge"))}</span>
+            <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
           </div>
         </div>
 
@@ -167,11 +169,12 @@ export function renderDomesticTradeSubModalPure(
           ${renderResourceColumnHeadersPure(
             actingPlayer.resources,
             undefined,
-            ratios
+            ratios,
+            locale
           )}
 
           <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--give"></span>Offer
+            <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.offer"))}
           </div>
           ${RESOURCES.map((r) => {
             const val = model.domesticGive[r];
@@ -186,7 +189,7 @@ export function renderDomesticTradeSubModalPure(
           }).join("")}
 
           <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Request
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.request"))}
           </div>
           ${RESOURCES.map((r) => {
             const val = model.domesticWant[r];
@@ -204,17 +207,17 @@ export function renderDomesticTradeSubModalPure(
           <div class="ga-trade-bundle">
             ${
               giveCardsPreview || wantCardsPreview
-                ? `${giveCardsPreview || '<span class="t-label muted">No offer</span>'} ${DRAWN_ARROW_SVG} ${wantCardsPreview || '<span class="t-label muted">No request</span>'}`
-                : `<span class="t-label muted">Use + and − in each column to set your offer and request</span>`
+                ? `${giveCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noOffer"))}</span>`} ${DRAWN_ARROW_SVG} ${wantCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noRequest"))}</span>`}`
+                : `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.baseBankFootnote"))}</span>`
             }
           </div>
           <div style="display: flex; gap: 6px;">
-            <button type="button" id="btn-dom-reset" class="btn btn--secondary btn--sm">Reset</button>
+            <button type="button" id="btn-dom-reset" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.reset"))}</button>
             <button type="button" id="btn-dom-propose" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
               !canPropose ? "disabled" : ""
             }>
               ${renderActionPieceIconSvg("domestic_trade", pColor, 16)}
-              <span>Send trade offer</span>
+              <span>${escapeAttr(t(locale, "catan.trade.sendOffer"))}</span>
             </button>
           </div>
         </div>
@@ -226,6 +229,7 @@ export function renderDevCardSubModalPure(
   state: CatanState,
   actingPlayer: CatanState["players"][number]
 ): string {
+  const locale = model.locale;
   const pColor = actingPlayer.color;
   if (model.buildMode === "year_of_plenty") {
     const totalBankRes = RESOURCES.reduce<number>(
@@ -241,28 +245,32 @@ export function renderDevCardSubModalPure(
         <div class="ga-trade-head">
           <div style="display: inline-flex; align-items: center; gap: 7px;">
             ${renderActionPieceIconSvg("year_of_plenty", pColor, 20)}
-            <strong style="font-size: var(--t-small); font-weight: 500;">Year of plenty — choose ${singleCardOnly ? "1 remaining bank card" : "2 free bank cards"}</strong>
+            <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(
+              singleCardOnly
+                ? t(locale, "catan.yop.titleOne")
+                : t(locale, "catan.yop.titleTwo")
+            )}</strong>
           </div>
-          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
         </div>
         <div class="ga-res-matrix">
-          ${renderResourceColumnHeadersPure(undefined, state.bank)}
+          ${renderResourceColumnHeadersPure(undefined, state.bank, undefined, locale)}
 
           <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>1st card
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.yop.firstCard"))}
           </div>
           ${RESOURCES.map(
             (r) => `
               <button type="button" data-yop-pick1="${r}" class="ga-res-port-btn ${
                 model.yopRes1 === r ? "is-selected-want" : ""
               }" ${state.bank[r] <= 0 ? "disabled" : ""}>
-                <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
+                <span style="font-size: 13px; font-weight: 600;">+1 ${escapeAttr(getCatanResourceTextLocalized(r, locale).label)}</span>
               </button>
             `
           ).join("")}
 
           <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>2nd card
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.yop.secondCard"))}
           </div>
           ${RESOURCES.map(
             (r) => `
@@ -277,7 +285,7 @@ export function renderDevCardSubModalPure(
                     ? "disabled"
                     : ""
               }>
-                <span style="font-size: 13px; font-weight: 600;">+1 ${RESOURCE_META[r].label}</span>
+                <span style="font-size: 13px; font-weight: 600;">+1 ${escapeAttr(getCatanResourceTextLocalized(r, locale).label)}</span>
               </button>
             `
           ).join("")}
@@ -287,31 +295,39 @@ export function renderDevCardSubModalPure(
             ${renderMiniResourceCardSvg(model.yopRes1, 42, 27)}
             ${singleCardOnly ? "" : renderMiniResourceCardSvg(model.yopRes2, 42, 27)}
           </div>
-          <button type="button" id="btn-exec-yop" class="btn btn--primary btn--sm" ${canExecYoP ? "" : "disabled"}>${singleCardOnly ? "Take 1 resource" : "Take 2 resources"}</button>
+          <button type="button" id="btn-exec-yop" class="btn btn--primary btn--sm" ${canExecYoP ? "" : "disabled"}>${escapeAttr(
+            singleCardOnly
+              ? t(locale, "catan.yop.takeOne")
+              : t(locale, "catan.yop.takeTwo")
+          )}</button>
         </div>
       </div>`;
   }
 
   if (model.buildMode === "monopoly") {
+    const monoResLabel = getCatanResourceTextLocalized(
+      model.monoRes,
+      locale
+    ).label;
     return `<div class="sub-modal">
         <div class="ga-trade-head">
           <div style="display: inline-flex; align-items: center; gap: 7px;">
             ${renderActionPieceIconSvg("monopoly", pColor, 20)}
-            <strong style="font-size: var(--t-small); font-weight: 500;">Monopoly — claim every opponent copy of 1 resource</strong>
+            <strong style="font-size: var(--t-small); font-weight: 500;">${escapeAttr(t(locale, "catan.mono.title"))}</strong>
           </div>
-          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">Close</button>
+          <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
         </div>
         <div class="ga-res-matrix">
-          ${renderResourceColumnHeadersPure(actingPlayer.resources)}
+          ${renderResourceColumnHeadersPure(actingPlayer.resources, undefined, undefined, locale)}
           <div class="ga-res-matrix__row-label">
-            <span class="ga-res-row-dot ga-res-row-dot--want"></span>Claim all
+            <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.mono.claimAll"))}
           </div>
           ${RESOURCES.map(
             (r) => `
               <button type="button" data-mono-pick="${r}" class="ga-res-port-btn ${
                 model.monoRes === r ? "is-selected-want" : ""
               }">
-                <span style="font-size: 13px; font-weight: 600;">${RESOURCE_META[r].label}</span>
+                <span style="font-size: 13px; font-weight: 600;">${escapeAttr(getCatanResourceTextLocalized(r, locale).label)}</span>
               </button>
             `
           ).join("")}
@@ -320,7 +336,11 @@ export function renderDevCardSubModalPure(
           <div class="ga-trade-bundle">
             ${renderMiniResourceCardSvg(model.monoRes, 44, 28)}
           </div>
-          <button type="button" id="btn-exec-mono" class="btn btn--primary btn--sm">Claim all ${RESOURCE_META[model.monoRes].label.toLowerCase()}</button>
+          <button type="button" id="btn-exec-mono" class="btn btn--primary btn--sm">${escapeAttr(
+            t(locale, "catan.mono.claimAllResource", {
+              resource: locale === "en" ? monoResLabel.toLowerCase() : monoResLabel,
+            })
+          )}</button>
         </div>
       </div>`;
   }

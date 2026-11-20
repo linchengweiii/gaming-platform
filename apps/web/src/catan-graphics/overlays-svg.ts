@@ -320,7 +320,14 @@ export function buildEdgesAndVerticesParts(
     const vNode = topo.vertices[vId]!;
     const isClickable = targets.clickableVertices.has(vId);
 
-    parts.push(...renderVertexBuildingAndKnightParts(state, vId, isClickable));
+    parts.push(
+      ...renderVertexBuildingAndKnightParts(
+        state,
+        vId,
+        isClickable,
+        options.locale ?? "en"
+      )
+    );
 
     const isSelectedVertex =
       options.selectedSpot?.kind === "vertex" &&

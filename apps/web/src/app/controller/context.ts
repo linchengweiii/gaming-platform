@@ -1,5 +1,11 @@
 import type { ResourceType } from "@gaming-platform/catan";
 import { COPY_LINK_RESET_DELAY_MS } from "../../config/app-config.ts";
+import {
+  type SupportedLocale,
+  getLocaleMeta,
+  normalizeLocale,
+  t,
+} from "../../i18n/index.ts";
 import { buildRoomShareUrlPure } from "../helpers/room-hash-and-links.ts";
 import {
   removeRoomFromModelPure,
@@ -13,6 +19,7 @@ import type {
   RoomsMapView,
   SupportedGameId,
 } from "../types.ts";
+import { saveLocaleToStorage } from "./storage.ts";
 
 export {
   clearActiveRoomIdFromStorage,
@@ -23,12 +30,14 @@ export {
   loadDeviceGuestsFromStorage,
   loadLastActiveGuestIdFromStorage,
   loadSavedGuestSessionFromStorage,
+  loadSavedLocaleFromStorage,
   loadShowBotMovesFromStorage,
   saveActiveRoomIdToStorage,
   saveBotMoveThrottleMsToStorage,
   saveDeviceGuestsToStorage,
   saveGuestSessionToStorage,
   saveLastActiveGuestIdToStorage,
+  saveLocaleToStorage,
   saveShowBotMovesToStorage,
 } from "./storage.ts";
 
@@ -66,6 +75,7 @@ export interface AppRuntimeContext {
   getOrCreateRoomLens: (roomId: string) => ClientRoom;
   syncUrlRoomHash: (roomId: string | null) => void;
   copyRoomShareLink: (roomId: string) => string;
+  setLocale: (nextLocale: SupportedLocale) => void;
   render: () => void;
   renderPreservingFocus: () => void;
   stopAutoPlay: () => void;
@@ -156,6 +166,7 @@ export function createAppRuntimeContext(
     getOrCreateRoomLens: null as unknown as (roomId: string) => ClientRoom,
     syncUrlRoomHash: noop,
     copyRoomShareLink: () => "",
+    setLocale: noop,
     render: noop,
     renderPreservingFocus: noop,
     stopAutoPlay: noop,
@@ -425,10 +436,31 @@ export function createAppRuntimeContext(
     },
   };
 
+  const setLocale = (rawLocale: SupportedLocale): void => {
+    const resolved = normalizeLocale(rawLocale) ?? "en";
+    if (ctx.model.locale === resolved) return;
+    ctx.model = {
+      ...ctx.model,
+      locale: resolved,
+      loginErrorMsg: ctx.model.loginErrorMsg
+        ? t(resolved, "login.errorEmptyName")
+        : "",
+    };
+    saveLocaleToStorage(resolved);
+    if (typeof document !== "undefined") {
+      if (document.documentElement) {
+        document.documentElement.lang = getLocaleMeta(resolved).htmlLang;
+      }
+      document.title = t(resolved, "app.pageTitle");
+    }
+    ctx.render();
+  };
+
   (ctx as { roomsFacade: RoomsMapView }).roomsFacade = roomsFacade;
   ctx.getOrCreateRoomLens = getOrCreateRoomLens;
   ctx.syncUrlRoomHash = syncUrlRoomHash;
   ctx.copyRoomShareLink = copyRoomShareLink;
+  ctx.setLocale = setLocale;
 
   return ctx;
 }

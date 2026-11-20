@@ -7,6 +7,13 @@ import {
   totalTokens,
 } from "@gaming-platform/splendor";
 import {
+  type SupportedLocale,
+  getBotDifficultyMetaLocalized,
+  getSplendorGemTextLocalized,
+  getSplendorNobleNameLocalized,
+  t,
+} from "../../i18n/index.ts";
+import {
   GEM_STYLES,
   escapeSplendorHtml as escapeHtml,
   renderSplendorGemToken,
@@ -15,10 +22,11 @@ import {
 export function renderSplendorNoblesRowHtml(
   state: SplendorState,
   focusPlayer: SplendorPlayerState,
-  canViewerActNow: boolean
+  canViewerActNow: boolean,
+  locale: SupportedLocale = "en"
 ): string {
   return `<div class="sp-nobles-row">
-        <span class="t-label muted">Royal nobles (+3 prestige)</span>
+        <span class="t-label muted">${t(locale, "sp.noblesHeading")}</span>
         ${state.nobles
           .map((noble) => {
             const isEligibleChoice =
@@ -56,7 +64,7 @@ export function renderSplendorNoblesRowHtml(
                 isEligibleChoice ? "clickable-target pulse-highlight" : ""
               }">
                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                  <strong style="font-size: var(--t-label); font-weight: 500;">${escapeHtml(noble.name)}</strong>
+                  <strong style="font-size: var(--t-label); font-weight: 500;">${escapeHtml(getSplendorNobleNameLocalized(noble.id, noble.name, locale))}</strong>
                   <span class="ga-chip ga-chip--warn ga-num" style="height: 20px; padding: 0 6px;">+${noble.points}</span>
                 </div>
                 <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
@@ -66,7 +74,8 @@ export function renderSplendorNoblesRowHtml(
                       const have = focusPlayer.bonuses[c];
                       const met = have >= req;
                       const st = GEM_STYLES[c];
-                      return `<span class="ga-num" title="${st.label}: you have ${have}/${req} bonuses" style="
+                      const gText = getSplendorGemTextLocalized(c, locale);
+                      return `<span class="ga-num" title="${t(locale, "sp.nobleReqTitle", { label: gText.label, have, req })}" style="
                         padding: 1px 6px;
                         border-radius: 4px;
                         background: ${st.bg};
@@ -74,17 +83,19 @@ export function renderSplendorNoblesRowHtml(
                         color: ${st.text};
                         font-size: 12px;
                         font-weight: 500;
-                      ">${have}/${req}${st.short[0]}</span>`;
+                      ">${have}/${req}${gText.short[0]}</span>`;
                     })
                     .join("")}
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px;" class="ga-num">
                   <span class="${myMissing === 0 ? "t-label" : "muted"}">${
-                    myMissing === 0 ? "Ready!" : `You need ${myMissing}`
+                    myMissing === 0
+                      ? t(locale, "sp.nobleReady")
+                      : t(locale, "sp.nobleNeed", { count: myMissing })
                   }</span>
                   ${
                     nearOpponent
-                      ? `<span style="color:#fca5a5;">${escapeHtml(nearOpponent.name)}: ≤1 away</span>`
+                      ? `<span style="color:#fca5a5;">${t(locale, "sp.nobleNearOpp", { name: escapeHtml(nearOpponent.name) })}</span>`
                       : ""
                   }
                 </div>
@@ -95,31 +106,33 @@ export function renderSplendorNoblesRowHtml(
       </div>`;
 }
 
-const DIFF_BADGE: Record<string, string> = {
-  easy: "Easy",
-  normal: "Normal",
-  smart: "Smart",
-  master: "Master",
-};
-
 export function renderSplendorPlayerCard(
   state: SplendorState,
   p: SplendorState["players"][number],
-  isActing: boolean
+  isActing: boolean,
+  locale: SupportedLocale = "en"
 ): string {
   const seatBadge = p.isBot
-    ? `Bot · ${DIFF_BADGE[p.botDifficulty ?? "smart"] ?? "Smart"}`
-    : "Human";
+    ? `${t(locale, "common.bot")} · ${getBotDifficultyMetaLocalized(p.botDifficulty ?? "smart", locale).badge}`
+    : t(locale, "common.human");
   const reservedSummary =
     p.reservedCards.length === 0
-      ? "No reserved cards"
+      ? t(locale, "sp.noReservedCards")
       : p.reservedCards
           .map((c) => {
-            if (c.redacted) return `Tier ${c.tier} (blind deck)`;
+            if (c.redacted) return t(locale, "sp.blindDeck", { tier: c.tier });
             const costStr = GEM_COLORS.filter((col) => c.cost[col] > 0)
-              .map((col) => `${c.cost[col]}${GEM_STYLES[col].short[0]}`)
+              .map(
+                (col) =>
+                  `${c.cost[col]}${getSplendorGemTextLocalized(col, locale).short[0]}`
+              )
               .join(" ");
-            return `Tier ${c.tier} +1 ${GEM_STYLES[c.bonus].short} (${c.points} VP · cost ${costStr})`;
+            return t(locale, "sp.reservedCardSummary", {
+              tier: c.tier,
+              short: getSplendorGemTextLocalized(c.bonus, locale).short,
+              pts: c.points,
+              cost: costStr,
+            });
           })
           .join(" · ");
 
@@ -131,13 +144,14 @@ export function renderSplendorPlayerCard(
           <strong class="player-card__name">${escapeHtml(p.name)}</strong>
           <span class="ga-chip">${seatBadge}</span>
         </div>
-        <span class="ga-chip ga-chip--warn ga-num">${p.points}/${state.config.targetPoints} VP</span>
+        <span class="ga-chip ga-chip--warn ga-num">${p.points}/${state.config.targetPoints} ${t(locale, "common.vpUnit")}</span>
       </div>
 
       <div style="display: flex; gap: 5px; flex-wrap: wrap; align-items: center;">
         ${ALL_TOKEN_COLORS.map((c) => {
           const st = GEM_STYLES[c];
-          return `<span class="ga-num" title="${st.label} tokens" style="
+          const gText = getSplendorGemTextLocalized(c, locale);
+          return `<span class="ga-num" title="${t(locale, "sp.tokensTooltip", { label: gText.label })}" style="
             padding: 2px 7px;
             border-radius: 999px;
             background: ${st.bg};
@@ -145,16 +159,17 @@ export function renderSplendorPlayerCard(
             color: ${st.text};
             font-size: 11px;
             font-weight: 500;
-          ">${st.short[0]}${p.tokens[c]}</span>`;
+          ">${gText.short[0]}${p.tokens[c]}</span>`;
         }).join("")}
-        <span class="ga-chip ga-num" title="Tokens in hand">${totalTokens(p.tokens)}/10</span>
+        <span class="ga-chip ga-num" title="${t(locale, "sp.tokensInHandTitle")}">${totalTokens(p.tokens)}/10</span>
       </div>
 
       <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
         <div style="display: flex; gap: 4px; flex-wrap: wrap;">
           ${GEM_COLORS.map((c) => {
             const st = GEM_STYLES[c];
-            return `<span class="ga-num" title="${st.label} permanent discount" style="
+            const gText = getSplendorGemTextLocalized(c, locale);
+            return `<span class="ga-num" title="${t(locale, "sp.permDiscountTooltip", { label: gText.label })}" style="
               padding: 2px 6px;
               border-radius: 5px;
               background: ${st.bg};
@@ -162,10 +177,10 @@ export function renderSplendorPlayerCard(
               color: ${st.text};
               font-size: 11px;
               font-weight: 500;
-            ">+${p.bonuses[c]}${st.short[0]}</span>`;
+            ">+${p.bonuses[c]}${gText.short[0]}</span>`;
           }).join("")}
         </div>
-        <span class="t-label muted ga-num" title="${escapeHtml(reservedSummary)}">Cards ${p.purchasedCards.length} · Hold ${p.reservedCards.length}/3 · Nobles ${p.nobles.length}</span>
+        <span class="t-label muted ga-num" title="${escapeHtml(reservedSummary)}">${t(locale, "sp.playerStats", { cards: p.purchasedCards.length, hold: p.reservedCards.length, nobles: p.nobles.length })}</span>
       </div>
     </div>
   `;
@@ -173,30 +188,42 @@ export function renderSplendorPlayerCard(
 
 export function renderSplendorActionDock(
   state: SplendorState,
-  actingPlayer: SplendorState["players"][number] | null
+  actingPlayer: SplendorState["players"][number] | null,
+  locale: SupportedLocale = "en"
 ): string {
   if (state.phase === "GAME_OVER" || !actingPlayer) {
     const winner = state.players.find((p) => p.id === state.winnerId);
     return `<div class="action-prompt">
-      <strong>Match complete.</strong> ${escapeHtml(winner?.name ?? "Player")} wins Splendor with ${
-        winner?.points ?? 0
-      } prestige points (${winner?.purchasedCards.length ?? 0} purchased cards).
+      ${t(locale, "sp.winsSplendor", {
+        complete: `<strong>${t(locale, "inGame.matchComplete")}.</strong>`,
+        winner: escapeHtml(winner?.name ?? t(locale, "common.player")),
+        pts: winner?.points ?? 0,
+        cards: winner?.purchasedCards.length ?? 0,
+      })}
     </div>`;
   }
 
   if (state.phase === "RETURN_TOKENS") {
     const excess = totalTokens(actingPlayer.tokens) - 10;
     return `<div class="sub-modal">
-      <div class="action-prompt"><strong>Token limit (10) exceeded.</strong> ${escapeHtml(actingPlayer.name)}, click to return ${excess} more token${excess === 1 ? "" : "s"}:</div>
+      <div class="action-prompt">${t(
+        locale,
+        excess === 1 ? "sp.tokenLimitPromptOne" : "sp.tokenLimitPromptMany",
+        {
+          prefix: `<strong>${t(locale, "sp.tokenLimitPrefix")}</strong>`,
+          name: escapeHtml(actingPlayer.name),
+          excess,
+        }
+      )}</div>
       <div class="action-buttons">
         ${ALL_TOKEN_COLORS.filter((c) => actingPlayer.tokens[c] > 0)
-          .map(
-            (c) =>
-              `<button type="button" data-sp-return-one="${c}" class="btn btn--secondary btn--sm action-btn-graphic">
-                ${renderSplendorGemToken(c, actingPlayer.tokens[c], 22, "", 0, "in hand")}
-                <span>Return 1 ${GEM_STYLES[c].label.toLowerCase()}</span>
-              </button>`
-          )
+          .map((c) => {
+            const gLabel = getSplendorGemTextLocalized(c, locale).label;
+            return `<button type="button" data-sp-return-one="${c}" class="btn btn--secondary btn--sm action-btn-graphic">
+                ${renderSplendorGemToken(c, actingPlayer.tokens[c], 22, "", 0, "in hand", locale)}
+                <span>${t(locale, "sp.returnOneGem", { label: locale === "en" ? gLabel.toLowerCase() : gLabel })}</span>
+              </button>`;
+          })
           .join("")}
       </div>
     </div>`;
@@ -204,25 +231,30 @@ export function renderSplendorActionDock(
 
   if (state.phase === "SELECT_NOBLE") {
     return `<div class="action-buttons">
-      <span class="action-prompt"><strong>${escapeHtml(actingPlayer.name)} qualifies for multiple nobles.</strong> Select one highlighted noble card above.</span>
+      <span class="action-prompt">${t(locale, "sp.qualifiesNobles", {
+        prefix: `<strong>${t(locale, "sp.qualifiesNoblesPrefix", { name: escapeHtml(actingPlayer.name) })}</strong>`,
+      })}</span>
     </div>`;
   }
 
+  const finalRoundPrefix = state.finalRoundTriggered
+    ? `<strong style="color:#fca5a5;">${t(locale, "sp.finalRoundPrefix")}</strong> `
+    : "";
   const canPassStalemate = getSplendorLegalActions(state, actingPlayer.id).some(
     (a) => a.type === "PASS_TURN"
   );
   if (canPassStalemate) {
     return `<div class="action-buttons" style="justify-content: space-between;">
-      <span class="action-prompt">${
-        state.finalRoundTriggered ? `<strong style="color:#fca5a5;">Final round!</strong> ` : ""
-      }<strong>${escapeHtml(actingPlayer.name)}:</strong> No gems, holds, or purchases are currently available.</span>
-      <button type="button" id="btn-sp-pass-turn" class="btn btn--primary btn--sm">Pass turn</button>
+      <span class="action-prompt">${finalRoundPrefix}${t(locale, "sp.noActionsPrompt", {
+        name: `<strong>${escapeHtml(actingPlayer.name)}:</strong>`,
+      })}</span>
+      <button type="button" id="btn-sp-pass-turn" class="btn btn--primary btn--sm">${t(locale, "sp.passTurn")}</button>
     </div>`;
   }
 
   return `<div class="action-buttons">
-    <span class="action-prompt">${
-      state.finalRoundTriggered ? `<strong style="color:#fca5a5;">Final round!</strong> ` : ""
-    }<strong>${escapeHtml(actingPlayer.name)} to act:</strong> Select gem tokens from the bank (3 distinct or 2 matching), or buy or hold a development card.</span>
+    <span class="action-prompt">${finalRoundPrefix}${t(locale, "sp.mainPrompt", {
+      name: `<strong>${t(locale, "sp.toActPrefix", { name: escapeHtml(actingPlayer.name) })}</strong>`,
+    })}</span>
   </div>`;
 }

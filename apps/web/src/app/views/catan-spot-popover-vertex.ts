@@ -6,11 +6,12 @@ import {
   getLegalSettlementVertices,
   hasResources,
 } from "@gaming-platform/catan";
+import { renderActionPieceIconSvg } from "../../catan-graphics.ts";
 import {
-  DISCIPLINE_META,
-  RESOURCE_META,
-  renderActionPieceIconSvg,
-} from "../../catan-graphics.ts";
+  getCatanDisciplineTextLocalized,
+  getCatanResourceTextLocalized,
+  t,
+} from "../../i18n/index.ts";
 import { escapeHtml } from "../helpers/html-and-dropdown.ts";
 import type { AppModel } from "../types.ts";
 import {
@@ -32,6 +33,7 @@ export function computeVertexSpotPopoverDetailsPure(
   legalActions: readonly CatanAction[],
   spotId: string
 ): SpotPopoverDetails {
+  const locale = model.locale;
   const pColor = actingPlayer.color;
   const vNode = state.topology.vertices[spotId];
   if (!vNode) {
@@ -47,23 +49,34 @@ export function computeVertexSpotPopoverDetailsPure(
   });
   const spotTitle = harbor
     ? harbor.type === "generic"
-      ? "3:1 Harbor spot"
-      : `2:1 ${RESOURCE_META[harbor.type].label} port`
+      ? t(locale, "catan.spot.harbor31")
+      : t(locale, "catan.spot.port21", {
+          label: getCatanResourceTextLocalized(harbor.type, locale).label,
+        })
     : existing
       ? existing.metropolis
-        ? `${DISCIPLINE_META[existing.metropolis].label} Metropolis`
+        ? t(locale, "catan.spot.metropolisTitle", {
+            discipline: getCatanDisciplineTextLocalized(
+              existing.metropolis,
+              locale
+            ).label,
+          })
         : existing.type === "city"
-          ? "Fortified city"
-          : "Settlement"
+          ? t(locale, "catan.spot.fortifiedCity")
+          : t(locale, "catan.build.settlement")
       : existingKnight
-        ? `${
-            existingKnight.level === 3
-              ? "Mighty"
-              : existingKnight.level === 2
-                ? "Strong"
-                : "Basic"
-          } knight (${existingKnight.active ? "active" : "inactive"})`
-        : "Island intersection";
+        ? t(locale, "catan.spot.knightTitle", {
+            tier:
+              existingKnight.level === 3
+                ? t(locale, "catan.spot.knightMighty")
+                : existingKnight.level === 2
+                  ? t(locale, "catan.spot.knightStrong")
+                  : t(locale, "catan.spot.knightBasic"),
+            status: existingKnight.active
+              ? t(locale, "catan.spot.knightActiveLower")
+              : t(locale, "catan.spot.knightInactiveLower"),
+          })
+        : t(locale, "catan.spot.islandIntersection");
   const titleHtml = `${renderActionPieceIconSvg(
     existing?.metropolis
       ? "metropolis"
@@ -79,7 +92,7 @@ export function computeVertexSpotPopoverDetailsPure(
           pColor
         : pColor,
     18
-  )} <span>${spotTitle}</span>`;
+  )} <span>${escapeHtml(spotTitle)}</span>`;
 
   const canSetupSettleHere = legalActions.some(
     (a) => a.type === "PLACE_SETUP_SETTLEMENT" && a.vertexId === spotId
@@ -139,60 +152,60 @@ export function computeVertexSpotPopoverDetailsPure(
   const setupPieceLabel =
     state.config.enableCitiesAndKnights &&
     state.phase === "SETUP_SETTLEMENT_2"
-      ? "Place starting city"
-      : "Place starting settlement";
+      ? t(locale, "catan.spot.placeStartingCity")
+      : t(locale, "catan.spot.placeStartingSettlement");
 
   const actionItems = [
     canSetupSettleHere
-      ? `<button type="button" data-spot-action="setup_settlement" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg(state.config.enableCitiesAndKnights && state.phase === "SETUP_SETTLEMENT_2" ? "city" : "settlement", pColor, 18)} <span>${setupPieceLabel}</span></button>`
+      ? `<button type="button" data-spot-action="setup_settlement" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg(state.config.enableCitiesAndKnights && state.phase === "SETUP_SETTLEMENT_2" ? "city" : "settlement", pColor, 18)} <span>${escapeHtml(setupPieceLabel)}</span></button>`
       : "",
     canPillageHere
-      ? `<button type="button" data-spot-action="pillage_city" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("robber", "#ef4444", 18)} <span>Downgrade this city</span></button>`
+      ? `<button type="button" data-spot-action="pillage_city" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("robber", "#ef4444", 18)} <span>${escapeHtml(t(locale, "catan.spot.downgradeCity"))}</span></button>`
       : "",
     canSettleHere
       ? `<button type="button" data-spot-action="build_settlement" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("settlement", pColor, 18)} Build settlement</span>
-            ${renderCostPipStripPure(BUILDING_COSTS.settlement)}
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("settlement", pColor, 18)} ${escapeHtml(t(locale, "catan.spot.buildSettlement"))}</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.settlement, locale)}
           </button>`
       : "",
     canCityHere
       ? `<button type="button" data-spot-action="build_city" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("city", pColor, 18)} Upgrade city</span>
-            ${renderCostPipStripPure(effectiveCityCost)}
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("city", pColor, 18)} ${escapeHtml(t(locale, "catan.spot.upgradeCity"))}</span>
+            ${renderCostPipStripPure(effectiveCityCost, locale)}
           </button>`
       : "",
     canWallHere
       ? `<button type="button" data-spot-action="build_wall" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("wall", pColor, 18)} Build city wall</span>
-            ${renderCostPipStripPure(BUILDING_COSTS.cityWall)}
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("wall", pColor, 18)} ${escapeHtml(t(locale, "catan.spot.buildCityWall"))}</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.cityWall, locale)}
           </button>`
       : "",
     canBuildKnightHere
       ? `<button type="button" data-spot-action="build_knight" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("knight_piece", pColor, 18)} Recruit knight</span>
-            ${renderCostPipStripPure(BUILDING_COSTS.knight)}
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("knight_piece", pColor, 18)} ${escapeHtml(t(locale, "catan.spot.recruitKnight"))}</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.knight, locale)}
           </button>`
       : "",
     canActivateKnightHere
       ? `<button type="button" data-spot-action="activate_knight" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("activate_knight", pColor, 18)} Activate knight</span>
-            ${renderCostPipStripPure(BUILDING_COSTS.activateKnight)}
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("activate_knight", pColor, 18)} ${escapeHtml(t(locale, "catan.spot.activateKnight"))}</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.activateKnight, locale)}
           </button>`
       : "",
     canPromoteKnightHere
       ? `<button type="button" data-spot-action="promote_knight" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic" style="justify-content: space-between;">
-            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("promote_knight", pColor, 18)} Promote knight</span>
-            ${renderCostPipStripPure(BUILDING_COSTS.knight)}
+            <span style="display: inline-flex; align-items: center; gap: 6px;">${renderActionPieceIconSvg("promote_knight", pColor, 18)} ${escapeHtml(t(locale, "catan.spot.promoteKnight"))}</span>
+            ${renderCostPipStripPure(BUILDING_COSTS.knight, locale)}
           </button>`
       : "",
     canMoveKnightToHere
-      ? `<button type="button" data-spot-action="complete_move_knight" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_knight", pColor, 18)} <span>March knight here</span></button>`
+      ? `<button type="button" data-spot-action="complete_move_knight" data-spot-id="${spotId}" class="btn btn--primary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_knight", pColor, 18)} <span>${escapeHtml(t(locale, "catan.spot.marchKnightHere"))}</span></button>`
       : "",
     canMoveKnightFromHere
-      ? `<button type="button" data-spot-action="start_move_knight" data-spot-id="${spotId}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_knight", pColor, 18)} <span>Move this knight</span></button>`
+      ? `<button type="button" data-spot-action="start_move_knight" data-spot-id="${spotId}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("move_knight", pColor, 18)} <span>${escapeHtml(t(locale, "catan.spot.moveThisKnight"))}</span></button>`
       : "",
     canChaseFromHere
-      ? `<button type="button" data-spot-action="start_chase_robber" data-spot-id="${spotId}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("chase_robber", pColor, 18)} <span>Chase robber</span></button>`
+      ? `<button type="button" data-spot-action="start_chase_robber" data-spot-id="${spotId}" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("chase_robber", pColor, 18)} <span>${escapeHtml(t(locale, "catan.build.chaseRobber"))}</span></button>`
       : "",
   ].filter(Boolean);
 
@@ -209,12 +222,12 @@ export function computeVertexSpotPopoverDetailsPure(
     ) {
       return `
             <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-              <span>City upgrade needs</span>
-              ${renderMissingCostBadgePure(actingPlayer.resources, effCityCost)}
+              <span>${escapeHtml(t(locale, "catan.spot.cityUpgradeNeeds"))}</span>
+              ${renderMissingCostBadgePure(actingPlayer.resources, effCityCost, locale)}
             </div>
             ${
               state.phase === "MAIN_PHASE" && legalActions.length > 0
-                ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
+                ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>${escapeHtml(t(locale, "catan.spot.tradeForResources"))}</span></button>`
                 : ""
             }
           `;
@@ -228,28 +241,37 @@ export function computeVertexSpotPopoverDetailsPure(
     ) {
       return `
             <div class="t-label muted" style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-              <span>Settlement needs</span>
-              ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.settlement)}
+              <span>${escapeHtml(t(locale, "catan.spot.settlementNeeds"))}</span>
+              ${renderMissingCostBadgePure(actingPlayer.resources, BUILDING_COSTS.settlement, locale)}
             </div>
             ${
               state.phase === "MAIN_PHASE" && legalActions.length > 0
-                ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>Trade for resources</span></button>`
+                ? `<button type="button" data-spot-action="open_trade" class="btn btn--secondary btn--sm action-btn-graphic">${renderActionPieceIconSvg("domestic_trade", pColor, 16)} <span>${escapeHtml(t(locale, "catan.spot.tradeForResources"))}</span></button>`
                 : ""
             }
           `;
     }
     if (existing) {
       const owner = state.players.find((p) => p.id === existing.ownerId);
-      return `<div class="t-label muted">${escapeHtml(owner?.name ?? "Player")} ${existing.type}${existing.hasWall ? " · walled" : ""}</div>`;
+      const bTypeLabel =
+        existing.type === "city"
+          ? t(locale, "catan.phase.anchorCity")
+          : t(locale, "catan.phase.anchorSettlement");
+      return `<div class="t-label muted">${escapeHtml(
+        t(locale, "catan.spot.ownerPiece", {
+          owner: owner?.name ?? t(locale, "common.player"),
+          piece: bTypeLabel,
+        })
+      )}${existing.hasWall ? escapeHtml(t(locale, "catan.spot.walledSuffix")) : ""}</div>`;
     }
     const adjOccupied = vNode.adjacentVertexIds.some((nbV) =>
       Boolean(state.buildings[nbV])
     );
-    return `<div class="t-label muted">${
+    return `<div class="t-label muted">${escapeHtml(
       adjOccupied
-        ? "Distance rule: adjacent intersection occupied."
-        : "Connect your road or ship to settle here."
-    }</div>`;
+        ? t(locale, "catan.spot.distanceRuleHint")
+        : t(locale, "catan.spot.connectSettleHint")
+    )}</div>`;
   })();
 
   return { valid: true, titleHtml, actionItems, hintHtml };
