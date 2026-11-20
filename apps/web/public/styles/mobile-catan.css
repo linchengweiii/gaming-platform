@@ -1,0 +1,472 @@
+/* ============================================================================
+ * Mobile & iPhone In-Game Styles: Banner, Bot Feed, Sidebar & Catan Board/HUD
+ * Scoped cleanly to mobile viewports (<= 768px / <= 639px); desktop untouched.
+ * ========================================================================== */
+
+@media (max-width: 768px) {
+  .ga-game-canvas .ga-room-shell--game {
+    width: calc(100% - 12px);
+    padding-block: 6px 18px;
+    gap: 10px;
+    min-height: 0;
+  }
+
+  .ga-game-canvas .board-container {
+    border-radius: var(--r-md);
+    min-height: 0;
+  }
+
+  /* Compact two-row board banner: status strip + horizontal-scroll controls strip */
+  .ga-game-canvas .board-banner {
+    padding: 7px 10px;
+    gap: 6px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ga-game-canvas .board-banner__status,
+  .ga-game-canvas .board-banner__controls {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+    gap: 5px !important;
+  }
+
+  .ga-game-canvas .board-banner__status::-webkit-scrollbar,
+  .ga-game-canvas .board-banner__controls::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ga-game-canvas .board-banner__status > *,
+  .ga-game-canvas .board-banner__controls > * {
+    flex: none;
+  }
+
+  .ga-game-canvas .board-banner__status strong {
+    font-size: 13px;
+  }
+
+  .ga-game-canvas .board-banner__status .ga-chip {
+    height: 22px;
+    padding: 0 7px;
+    font-size: 11px;
+  }
+
+  .ga-game-canvas .board-banner__controls .btn--sm {
+    height: 30px;
+    min-height: 30px;
+    padding: 0 9px;
+    font-size: 12px;
+  }
+
+  /* Compact single-line bot feed bar on mobile */
+  .ga-bot-feed__bar {
+    flex-wrap: nowrap;
+    min-height: 30px;
+    padding: 4px 10px;
+    gap: 6px;
+  }
+
+  .ga-bot-feed__msg {
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  .ga-bot-feed__btn {
+    height: 26px;
+    min-width: 26px;
+  }
+
+  /* Sidebar compact layout below board */
+  .ga-sidebar {
+    padding: 12px;
+    gap: 12px;
+    border-radius: var(--r-md);
+  }
+
+  .player-card {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .event-log {
+    max-height: 200px;
+  }
+}
+
+/* ---------------------------------------------------------------- iPhone Catan Layout (<= 639px) */
+@media (max-width: 639px) {
+  /* Hide verbose "Rules verified" pill on phone widths unless an error exists */
+  .ga-game-canvas .board-banner__status .ga-chip--ok {
+    display: none;
+  }
+
+  /* Catan Map, Touch Viewport & On-Map HUDs */
+  .ga-game-canvas .board-container:not(.board-container--neutral) .board-svg-wrap {
+    height: clamp(320px, 46dvh, 430px);
+    min-height: clamp(320px, 46dvh, 430px);
+    max-height: clamp(320px, 46dvh, 430px);
+    padding: 2px;
+    touch-action: none;
+  }
+
+  /* Keep interactive overlays and scrollable map popups responsive to touch */
+  .map-zoom-controls,
+  .map-build-dock,
+  .map-end-turn-hud,
+  .map-decision-popup,
+  .map-spot-popover,
+  .ga-tutorial-coach {
+    touch-action: manipulation;
+  }
+
+  .map-build-dock__panel,
+  .map-spot-popover,
+  .map-decision-popup {
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .map-dice-hud {
+    top: 6px;
+    left: 6px;
+    padding: 4px 7px;
+    gap: 3px;
+    max-width: calc(100% - 134px);
+    border-radius: var(--r-sm);
+  }
+
+  .map-dice-hud__row {
+    gap: 5px;
+  }
+
+  .map-dice-hud__row svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .map-dice-hud__total {
+    font-size: 15px;
+    padding: 2px 6px;
+  }
+
+  .map-yield-chip {
+    font-size: 11px;
+    padding: 1px 5px 1px 2px;
+    gap: 3px;
+  }
+
+  .map-yield-chip svg {
+    max-height: 16px;
+    width: auto;
+  }
+
+  .map-barbarian-hud {
+    top: 6px;
+    right: 6px;
+    padding: 4px 7px;
+    gap: 3px;
+    max-width: 168px;
+    border-radius: var(--r-sm);
+  }
+
+  .map-barbarian-hud__title {
+    font-size: 10px;
+  }
+
+  .map-zoom-controls {
+    top: 6px;
+    right: 6px;
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .map-zoom-controls--below-barbarian {
+    top: 76px;
+  }
+
+  .map-zoom-btn {
+    min-width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
+  .map-zoom-btn--reset {
+    min-width: 44px;
+    font-size: 11px;
+    padding: 0 5px;
+  }
+
+  .map-build-dock {
+    left: 6px;
+    bottom: 6px;
+    max-width: calc(100% - 12px);
+  }
+
+  .map-build-dock__bar {
+    padding: 4px 5px;
+    gap: 4px;
+    border-radius: var(--r-md);
+  }
+
+  .btn-build-toggle {
+    height: 36px;
+    padding: 0 10px;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .map-build-active-pill {
+    height: 30px;
+    padding: 0 8px;
+    font-size: 11.5px;
+  }
+
+  .map-build-dock__panel {
+    max-width: calc(100vw - 24px);
+    max-height: min(230px, 56%);
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .map-build-btn {
+    height: 36px;
+    min-width: 140px;
+    padding: 0 9px;
+    font-size: 12.5px;
+  }
+
+  .map-end-turn-hud {
+    right: 6px;
+    bottom: 6px;
+    padding: 4px 5px;
+    border-radius: var(--r-md);
+  }
+
+  .btn-end-turn-graphic {
+    height: 36px;
+    padding: 0 12px;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .map-decision-popup {
+    bottom: 6px;
+    width: calc(100% - 12px);
+    max-height: calc(100% - 56px);
+    overflow-y: auto;
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .map-decision-popup--compact {
+    right: 6px;
+    bottom: 6px;
+    padding: 6px 9px;
+  }
+
+  .btn-roll-graphic {
+    height: 42px;
+    padding: 0 14px 0 10px;
+    font-size: 14.5px;
+  }
+
+  .map-spot-popover {
+    min-width: 188px;
+    max-width: calc(100% - 16px);
+    padding: 9px 10px;
+    gap: 6px;
+  }
+
+  .map-spot-popover__close {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
+  .map-spot-popover__actions .btn {
+    min-height: 36px;
+  }
+
+  /* Compact tutorial coach banner inside Catan map */
+  .board-container:not(.board-container--neutral) .board-svg-wrap > .ga-tutorial-coach {
+    bottom: 6px;
+    width: calc(100% - 12px);
+    padding: 8px 10px;
+    gap: 4px;
+  }
+
+  .board-container:not(.board-container--neutral) .board-svg-wrap > .ga-tutorial-coach--lifted,
+  .board-container:not(.board-container--neutral) .board-svg-wrap:has(.map-build-dock, .map-end-turn-hud) > .ga-tutorial-coach {
+    bottom: 54px;
+  }
+
+  .board-container:not(.board-container--neutral) .board-svg-wrap:has(.map-decision-popup) > .ga-tutorial-coach {
+    bottom: 66px;
+  }
+
+  .ga-tutorial-coach__body {
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+
+  /* Catan Action Dock, Trade Matrix & Hand Tray */
+  .action-dock {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .action-buttons {
+    gap: 6px;
+  }
+
+  .action-buttons > .action-prompt.muted {
+    display: none;
+  }
+
+  .sub-modal {
+    padding: 10px;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ga-trade-tabs {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ga-trade-tab {
+    justify-content: center;
+    min-height: 34px;
+    padding: 5px 8px;
+  }
+
+  .ga-res-matrix {
+    grid-template-columns: 44px repeat(5, minmax(56px, 1fr));
+    gap: 4px;
+    min-width: 332px;
+  }
+
+  .ga-res-matrix--ck {
+    grid-template-columns: 44px repeat(8, minmax(58px, 1fr));
+    min-width: 516px;
+  }
+
+  .ga-res-col-head__top,
+  .ga-res-col-head__have {
+    font-size: 11px;
+    padding-inline: 1px;
+  }
+
+  .ga-res-cell {
+    min-height: 36px;
+    padding: 3px 2px;
+    gap: 2px;
+  }
+
+  .ga-res-step-btn,
+  .ga-res-matrix--ck .ga-res-step-btn {
+    width: 26px;
+    height: 26px;
+    font-size: 14px;
+  }
+
+  .ga-trade-submit-btn {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  /* Compact 5-card Catan Hand Tray (all 5 base resources visible at once on iPhone!) */
+  .visual-hand-tray {
+    padding: 8px 10px 10px;
+    gap: 6px;
+  }
+
+  .hand-tray-header {
+    gap: 6px;
+    min-height: 24px;
+    padding-block: 0;
+  }
+
+  .hand-tray-header__hint {
+    display: none;
+  }
+
+  .hand-cards-scroll {
+    gap: 6px;
+    padding: 2px 1px 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .hand-section-cards {
+    gap: 5px;
+  }
+
+  .playing-card {
+    width: 66px;
+    min-width: 66px;
+    padding: 5px;
+    gap: 3px;
+    border-radius: 9px;
+  }
+
+  .playing-card-glyph {
+    width: 14px;
+    height: 14px;
+  }
+
+  .playing-card-count {
+    font-size: 10.5px;
+    padding: 1px 5px;
+  }
+
+  .playing-card-art {
+    padding: 2px;
+  }
+
+  .playing-card-art svg {
+    max-height: 28px;
+    width: auto;
+    margin-inline: auto;
+  }
+
+  .playing-card-title {
+    font-size: 11px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .playing-card-sub {
+    display: none;
+  }
+
+  .dev-playing-card {
+    width: 152px;
+    min-width: 152px;
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .dev-playing-card .playing-card-art svg {
+    max-height: 22px;
+  }
+
+  .empty-dev-placeholder {
+    min-width: 132px;
+    padding: 6px 8px;
+  }
+}
+
+@media (max-width: 380px) {
+  .playing-card {
+    width: 62px;
+    min-width: 62px;
+  }
+}

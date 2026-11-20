@@ -1,0 +1,309 @@
+/* ============================================================================
+ * Mobile & iPhone Board Styles: Azul, Splendor, and 7 Wonders
+ * Scoped cleanly to mobile viewports (<= 639px); desktop untouched.
+ * ========================================================================== */
+
+@media (max-width: 639px) {
+  .ga-game-canvas .board-container--neutral .board-svg-wrap {
+    padding: 4px;
+    min-height: 0;
+  }
+
+  /* -------------------------------------------------------------- Azul Mobile Board (Zero Clipping) */
+  .az-board {
+    padding: 6px 4px;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .az-factories-wrap {
+    gap: 12px 10px !important;
+  }
+
+  .az-factory {
+    width: 82px;
+    height: 82px;
+    grid-template-columns: repeat(2, 26px);
+    grid-template-rows: repeat(2, 26px);
+    gap: 5px;
+  }
+
+  .az-factory .az-tile {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 13px !important;
+  }
+
+  .az-center-pool {
+    min-width: 0;
+    width: 100%;
+    min-height: 58px;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .az-palace-card {
+    width: 100%;
+    max-width: 100%;
+    padding: 10px 6px;
+    gap: 8px;
+    border-radius: var(--r-md);
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .az-wall-grid {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px !important;
+  }
+
+  .az-pattern-row,
+  .az-col-footer {
+    gap: 3px !important;
+    justify-content: center;
+  }
+
+  .az-row-badge {
+    min-width: 34px !important;
+    font-size: 10px;
+    flex: none;
+  }
+
+  .az-row-badge .ga-chip {
+    height: 18px !important;
+    padding: 0 4px !important;
+    font-size: 10px !important;
+  }
+
+  .az-pattern-line {
+    width: 126px !important;
+    flex: none;
+    gap: 2px !important;
+    padding: 2px 3px !important;
+    box-sizing: border-box;
+  }
+
+  .az-row-arrow {
+    width: 10px !important;
+    height: 10px !important;
+    flex: none;
+  }
+
+  .az-wall-row {
+    gap: 2px !important;
+    padding: 3px 4px !important;
+    flex: none;
+  }
+
+  .az-pattern-line .az-tile,
+  .az-pattern-line .az-slot-empty,
+  .az-wall-row .az-tile {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 11px !important;
+    border-radius: 4px !important;
+  }
+
+  .az-col-cell {
+    width: 22px !important;
+    font-size: 9.5px !important;
+  }
+
+  .az-row-progress {
+    min-width: 24px !important;
+    font-size: 10px !important;
+    flex: none;
+  }
+
+  .az-floor-bar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+    padding: 8px !important;
+  }
+
+  .az-floor-slots {
+    justify-content: space-between;
+    gap: 4px !important;
+  }
+
+  /* -------------------------------------------------------------- Splendor Mobile Board (Swipeable Tier Rails) */
+  .sp-board {
+    padding: 8px 6px;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .sp-nobles-row {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    gap: 8px;
+  }
+
+  .sp-nobles-row > .t-label {
+    display: none;
+  }
+
+  .sp-noble-card {
+    min-width: 146px;
+    flex: none;
+    padding: 7px 10px;
+  }
+
+  .sp-tier-row {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    padding: 2px 2px 6px;
+    gap: 8px;
+    scroll-snap-type: x proximity;
+  }
+
+  .sp-deck-card {
+    width: 82px;
+    min-width: 82px;
+    min-height: 140px;
+    flex: none;
+    padding: 8px 6px;
+    scroll-snap-align: start;
+  }
+
+  .sp-dev-card {
+    width: 126px;
+    min-width: 126px;
+    min-height: 140px;
+    flex: none;
+    padding: 8px;
+    scroll-snap-align: start;
+  }
+
+  .sp-bank-bar {
+    width: 100%;
+    padding: 10px;
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sp-bank-bar > div {
+    justify-content: center;
+  }
+
+  /* -------------------------------------------------------------- 7 Wonders Mobile Board */
+  .sw-board {
+    padding: 8px 6px;
+    gap: 10px;
+  }
+
+  .sw-top-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .sw-age-banner {
+    grid-column: 1 / -1;
+    order: -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    padding: 7px 10px;
+    gap: 6px;
+  }
+
+  .sw-neighbor-card {
+    padding: 8px 9px;
+    gap: 5px;
+  }
+
+  .sw-neighbor-card > div:first-child {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .sw-neighbor-card .ga-chip {
+    height: 20px;
+    padding: 0 6px;
+    font-size: 10.5px;
+  }
+
+  .sw-empire-card {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .sw-wonder-stages-row {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 8px;
+    padding-bottom: 2px;
+  }
+
+  .sw-wonder-stage {
+    min-width: 148px;
+    flex: 1 0 148px;
+    padding: 8px 10px;
+  }
+
+  .sw-tableau-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .sw-hand-section {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .sw-cards-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .sw-card__actions {
+    gap: 6px;
+    padding-top: 6px;
+  }
+
+  .sw-card__actions .btn--sm {
+    height: 36px;
+    min-height: 36px;
+    font-size: 12px;
+    padding-inline: 8px;
+  }
+}
+
+/* Narrow iPhone SE / mini (<= 380px) fine-tuning */
+@media (max-width: 380px) {
+  .az-row-badge {
+    min-width: 38px !important;
+  }
+
+  .az-pattern-line {
+    width: 114px !important;
+  }
+
+  .az-pattern-line .az-tile,
+  .az-pattern-line .az-slot-empty,
+  .az-wall-row .az-tile {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 10px !important;
+  }
+
+  .az-col-cell {
+    width: 20px !important;
+  }
+
+  .az-row-progress {
+    min-width: 24px !important;
+  }
+}

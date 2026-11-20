@@ -112,7 +112,7 @@ export function renderAzulTile(
   const st = AZUL_TILE_STYLES[color];
   const a11yAttrs = dataAttrs ? `role="button" tabindex="0"` : "";
   return `
-    <div ${dataAttrs} ${a11yAttrs} class="${dataAttrs ? "clickable-target" : ""}" style="
+    <div ${dataAttrs} ${a11yAttrs} class="az-tile ${dataAttrs ? "clickable-target" : ""}" style="
       width: ${size}px;
       height: ${size}px;
       border-radius: 6px;

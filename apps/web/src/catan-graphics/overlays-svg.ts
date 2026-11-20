@@ -264,6 +264,7 @@ export function buildEdgesAndVerticesParts(
           ? `
         <g class="clickable-target pulse-highlight" data-edge-id="${eId}" data-spot-edge="${eId}" data-setup-ship="${isSetupShip ? "1" : "0"}">
           <g transform="translate(${eNode.midX}, ${eNode.midY}) rotate(${eNode.angleDeg})">
+            <rect x="${(-hitLen / 2).toFixed(2)}" y="-11" width="${hitLen}" height="22" rx="10" fill="transparent" />
             <rect x="${(-hitLen / 2).toFixed(2)}" y="-9" width="${hitLen}" height="18" rx="8"
                   fill="rgba(253, 224, 71, 0.14)" stroke="${highlightColor}" stroke-width="2.6" />
           </g>
@@ -272,6 +273,7 @@ export function buildEdgesAndVerticesParts(
           : `
         <g class="clickable-target pulse-highlight" data-edge-id="${eId}" data-spot-edge="${eId}" data-setup-ship="${isSetupShip ? "1" : "0"}">
           <g transform="translate(${eNode.midX}, ${eNode.midY}) rotate(${eNode.angleDeg})">
+            <rect x="${(-hitLen / 2).toFixed(2)}" y="-11" width="${hitLen}" height="22" rx="10" fill="transparent" />
             <rect x="${(-hitLen / 2).toFixed(2)}" y="-6" width="${hitLen}" height="12" rx="5"
                   fill="${highlightColor}" opacity="0.62" stroke="#18191b" stroke-width="1.3" />
           </g>
@@ -298,7 +300,7 @@ export function buildEdgesAndVerticesParts(
         parts.push(`
           <g class="spot-hit-target ${isSelectedEdge ? "is-selected-spot" : ""}" data-spot-edge="${eId}">
             <g transform="translate(${eNode.midX}, ${eNode.midY}) rotate(${eNode.angleDeg})">
-              <rect x="${(-hitLen / 2).toFixed(2)}" y="-7" width="${hitLen}" height="14" rx="6"
+              <rect x="${(-hitLen / 2).toFixed(2)}" y="-10" width="${hitLen}" height="20" rx="8"
                     fill="${isSelectedEdge ? "rgba(56, 189, 248, 0.38)" : "transparent"}"
                     stroke="${isSelectedEdge ? "#38bdf8" : "transparent"}" stroke-width="2" />
             </g>
@@ -339,12 +341,14 @@ export function buildEdgesAndVerticesParts(
         isOccupiedVertex
           ? `
         <g class="clickable-target pulse-highlight" data-vertex-id="${vId}" data-spot-vertex="${vId}">
+          <circle cx="${vNode.x}" cy="${vNode.y}" r="18" fill="transparent" />
           <circle cx="${vNode.x}" cy="${vNode.y}" r="16.2" fill="rgba(253, 224, 71, 0.12)" stroke="#18191b" stroke-width="5" />
           <circle cx="${vNode.x}" cy="${vNode.y}" r="16.2" fill="transparent" stroke="#fde047" stroke-width="2.8" />
         </g>
       `
           : `
         <g class="clickable-target pulse-highlight" data-vertex-id="${vId}" data-spot-vertex="${vId}">
+          <circle cx="${vNode.x}" cy="${vNode.y}" r="18" fill="transparent" />
           <circle cx="${vNode.x}" cy="${vNode.y}" r="11.2" fill="rgba(253, 224, 71, 0.9)" stroke="#18191b" stroke-width="2.2" />
           <circle cx="${vNode.x}" cy="${vNode.y}" r="4.2" fill="#18191b" opacity="0.7" />
           ${
@@ -368,7 +372,7 @@ export function buildEdgesAndVerticesParts(
       if (touchesLand) {
         parts.push(`
           <g class="spot-hit-target ${isSelectedVertex ? "is-selected-spot" : ""}" data-spot-vertex="${vId}">
-            <circle cx="${vNode.x}" cy="${vNode.y}" r="11.5"
+            <circle cx="${vNode.x}" cy="${vNode.y}" r="14.5"
                     fill="${isSelectedVertex ? "rgba(56, 189, 248, 0.35)" : "transparent"}"
                     stroke="${isSelectedVertex ? "#38bdf8" : "transparent"}" stroke-width="2.2" />
           </g>

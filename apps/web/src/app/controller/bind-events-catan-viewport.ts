@@ -192,6 +192,13 @@ export function bindCatanMapViewportEvents(
     { passive: false }
   );
 
+  const preventSafariGesture = (e: Event): void => {
+    if (isTargetInsideMapHud(e.target)) return;
+    e.preventDefault();
+  };
+  wrap.addEventListener("gesturestart", preventSafariGesture, { passive: false });
+  wrap.addEventListener("gesturechange", preventSafariGesture, { passive: false });
+
   wrap.addEventListener("pointerdown", (e) => {
     if (isTargetInsideMapHud(e.target)) return;
     if (typeof e.button === "number" && e.button !== 0) return;
@@ -222,7 +229,11 @@ export function bindCatanMapViewportEvents(
           nextPtr.clientX - dragStart.clientX,
           nextPtr.clientY - dragStart.clientY
         );
-        if (dist < CATAN_MAP_VIEWPORT_CONFIG.dragThresholdPx) {
+        const threshold =
+          e.pointerType === "touch"
+            ? CATAN_MAP_VIEWPORT_CONFIG.touchDragThresholdPx
+            : CATAN_MAP_VIEWPORT_CONFIG.dragThresholdPx;
+        if (dist < threshold) {
           return;
         }
         isDragging = true;
