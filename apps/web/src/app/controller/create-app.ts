@@ -11,9 +11,11 @@ import { attachCatanUiActions } from "./catan-ui-actions.ts";
 import {
   createAppRuntimeContext,
   loadActiveRoomIdFromStorage,
+  loadBotMoveThrottleMsFromStorage,
   loadDeviceGuestsFromStorage,
   loadLastActiveGuestIdFromStorage,
   loadSavedGuestSessionFromStorage,
+  loadShowBotMovesFromStorage,
   saveDeviceGuestsToStorage,
   saveGuestSessionToStorage,
 } from "./context.ts";
@@ -54,6 +56,8 @@ export function createMultiGamePlatformApp(
       typeof window !== "undefined" ? window.location?.search ?? "" : "",
     locationHash:
       typeof window !== "undefined" ? window.location?.hash ?? "" : "",
+    savedShowBotMoves: loadShowBotMovesFromStorage(),
+    savedBotMoveThrottleMs: loadBotMoveThrottleMsFromStorage(),
   });
 
   if (initialModel.isAuthenticated) {

@@ -1,5 +1,6 @@
 import type { BotDifficulty } from "@gaming-platform/core";
 import { type ScenarioId, toBaseMapScenarioId } from "@gaming-platform/catan";
+import { clampBotMoveThrottleMsPure } from "../../config/app-config.ts";
 import {
   getRoomStatePure,
   rebuildRoomSeatsPure,
@@ -10,6 +11,7 @@ import { bindCommonIdentityEvents } from "./bind-events-shell.ts";
 import {
   type AppRuntimeContext,
   clearActiveRoomIdFromStorage,
+  saveBotMoveThrottleMsToStorage,
 } from "./context.ts";
 
 export function bindRoomSetupEvents(
@@ -234,6 +236,23 @@ export function bindRoomSetupEvents(
         const nextDiff = (e.target as HTMLSelectElement).value as BotDifficulty;
         ctx.model = updateRoomInModelPure(ctx.model, room.roomId, (r) =>
           rebuildRoomSeatsPure({ ...r, botDifficulty: nextDiff })
+        );
+        const latest = ctx.model.rooms[room.roomId];
+        if (latest) ctx.pushServerRoomSetup(latest);
+        ctx.render();
+      });
+
+    root
+      .querySelector("#setup-sel-bot-pace")
+      ?.addEventListener("change", (e) => {
+        const nextDelayMs = clampBotMoveThrottleMsPure(
+          Number((e.target as HTMLSelectElement).value)
+        );
+        saveBotMoveThrottleMsToStorage(nextDelayMs);
+        ctx.model = updateRoomInModelPure(
+          { ...ctx.model, botMoveThrottleMs: nextDelayMs },
+          room.roomId,
+          (r) => ({ ...r, botStepDelayMs: nextDelayMs })
         );
         const latest = ctx.model.rooms[room.roomId];
         if (latest) ctx.pushServerRoomSetup(latest);

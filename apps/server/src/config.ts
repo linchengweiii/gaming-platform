@@ -9,6 +9,20 @@ export const DEFAULT_SERVER_HOST = "localhost";
 export const PUBLIC_DIR = path.resolve(__dirname, "../../web/public");
 
 export const BOT_STEP_DELAY_MS = 150;
+export const DEFAULT_BOT_STEP_DELAY_MS = 1200;
+export const MIN_BOT_STEP_DELAY_MS = 150;
+export const MAX_BOT_STEP_DELAY_MS = 5000;
+export const SEVEN_WONDERS_SECRET_LOCK_MAX_DELAY_MS = 380;
+
+export function clampServerBotStepDelayMsPure(rawMs: unknown): number {
+  if (typeof rawMs !== "number" || !Number.isFinite(rawMs)) {
+    return DEFAULT_BOT_STEP_DELAY_MS;
+  }
+  return Math.max(
+    MIN_BOT_STEP_DELAY_MS,
+    Math.min(MAX_BOT_STEP_DELAY_MS, Math.round(rawMs))
+  );
+}
 export const WS_HEARTBEAT_INTERVAL_MS = 25_000;
 export const WS_DEAD_PEER_TIMEOUT_MS = 2 * WS_HEARTBEAT_INTERVAL_MS;
 export const WS_TCP_KEEPALIVE_MS = 15_000;

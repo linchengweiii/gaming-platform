@@ -117,6 +117,40 @@ export function bindInGameEvents(
   });
 
   root
+    .querySelector("#btn-toggle-bot-moves")
+    ?.addEventListener("click", () => {
+      ctx.toggleShowBotMoves();
+    });
+
+  root
+    .querySelector("#btn-hide-bot-moves")
+    ?.addEventListener("click", () => {
+      if (ctx.model.showBotMoves) {
+        ctx.toggleShowBotMoves();
+      }
+    });
+
+  root
+    .querySelector("#btn-cycle-bot-pace")
+    ?.addEventListener("click", () => {
+      ctx.cycleBotMoveThrottle();
+    });
+
+  root
+    .querySelector("#btn-toggle-bot-feed-history")
+    ?.addEventListener("click", () => {
+      ctx.toggleBotFeedHistory();
+    });
+
+  root
+    .querySelector("#btn-close-bot-feed-history")
+    ?.addEventListener("click", () => {
+      if (ctx.model.botFeedHistoryExpanded) {
+        ctx.toggleBotFeedHistory();
+      }
+    });
+
+  root
     .querySelector("#btn-toggle-hand-privacy")
     ?.addEventListener("click", () => {
       ctx.model = {

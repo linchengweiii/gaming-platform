@@ -17,11 +17,88 @@ export const GUEST_STORAGE_KEY = "ga_guest_session";
 export const DEVICE_GUESTS_STORAGE_KEY = "ga_device_guests";
 export const LAST_ACTIVE_GUEST_STORAGE_KEY = "ga_last_active_guest_id";
 export const ACTIVE_ROOM_STORAGE_KEY = "ga_active_room_id";
+export const BOT_FEED_VISIBLE_STORAGE_KEY = "ga_bot_move_feed_enabled";
+export const BOT_MOVE_THROTTLE_STORAGE_KEY = "ga_bot_move_throttle_ms";
 
 export const DEFAULT_AUTOPLAY_SPEED_MS = 150;
 export const BOT_RESPONSE_DELAY_MS = 140;
 export const BOT_SEVEN_WONDERS_DRAFT_DELAY_MS = 380;
 export const SPECIAL_BUILD_AUTO_END_DELAY_MS = 160;
+
+export const DEFAULT_SHOW_BOT_MOVES = true;
+export const DEFAULT_BOT_MOVE_THROTTLE_MS = 1200;
+export const MIN_BOT_MOVE_THROTTLE_MS = 150;
+export const MAX_BOT_MOVE_THROTTLE_MS = 5000;
+
+export interface BotMoveThrottlePreset {
+  readonly id: "fast" | "normal" | "slow";
+  readonly label: string;
+  readonly shortLabel: string;
+  readonly delayMs: number;
+  readonly description: string;
+}
+
+export const BOT_MOVE_THROTTLE_PRESETS: readonly BotMoveThrottlePreset[] = [
+  {
+    id: "fast",
+    label: "Fast",
+    shortLabel: "0.35s",
+    delayMs: 350,
+    description: "Snappy bot turns for experienced players.",
+  },
+  {
+    id: "normal",
+    label: "Normal",
+    shortLabel: "1.2s",
+    delayMs: 1200,
+    description: "Balanced throttle so you can follow each bot step.",
+  },
+  {
+    id: "slow",
+    label: "Slow",
+    shortLabel: "2.2s",
+    delayMs: 2200,
+    description: "Unhurried learning pace to study every bot decision.",
+  },
+];
+
+export function clampBotMoveThrottleMsPure(rawMs: unknown): number {
+  if (typeof rawMs !== "number" || !Number.isFinite(rawMs)) {
+    return DEFAULT_BOT_MOVE_THROTTLE_MS;
+  }
+  return Math.max(
+    MIN_BOT_MOVE_THROTTLE_MS,
+    Math.min(MAX_BOT_MOVE_THROTTLE_MS, Math.round(rawMs))
+  );
+}
+
+export function getBotMoveThrottlePresetPure(
+  delayMs: number
+): BotMoveThrottlePreset {
+  const clamped = clampBotMoveThrottleMsPure(delayMs);
+  return BOT_MOVE_THROTTLE_PRESETS.reduce((best, preset) =>
+    Math.abs(preset.delayMs - clamped) < Math.abs(best.delayMs - clamped)
+      ? preset
+      : best
+  );
+}
+
+export function getNextBotMoveThrottlePresetPure(
+  currentDelayMs: number
+): BotMoveThrottlePreset {
+  const current = getBotMoveThrottlePresetPure(currentDelayMs);
+  const idx = BOT_MOVE_THROTTLE_PRESETS.findIndex((p) => p.id === current.id);
+  const nextIdx = (idx + 1) % BOT_MOVE_THROTTLE_PRESETS.length;
+  return BOT_MOVE_THROTTLE_PRESETS[nextIdx]!;
+}
+
+export function formatBotThrottleShortPure(delayMs: number): string {
+  const clamped = clampBotMoveThrottleMsPure(delayMs);
+  const exact = BOT_MOVE_THROTTLE_PRESETS.find((p) => p.delayMs === clamped);
+  if (exact) return exact.shortLabel;
+  const seconds = clamped / 1000;
+  return `${Number.isInteger(seconds) ? seconds : Number(seconds.toFixed(2))}s`;
+}
 export const WS_RECONNECT_DELAY_MS = 1500;
 export const WS_RECONNECT_BASE_DELAY_MS = 500;
 export const WS_RECONNECT_MAX_DELAY_MS = 10_000;

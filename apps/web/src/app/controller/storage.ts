@@ -1,8 +1,11 @@
 import {
   ACTIVE_ROOM_STORAGE_KEY,
+  BOT_FEED_VISIBLE_STORAGE_KEY,
+  BOT_MOVE_THROTTLE_STORAGE_KEY,
   DEVICE_GUESTS_STORAGE_KEY,
   GUEST_STORAGE_KEY,
   LAST_ACTIVE_GUEST_STORAGE_KEY,
+  clampBotMoveThrottleMsPure,
 } from "../../config/app-config.ts";
 import type { GuestSession } from "../types.ts";
 
@@ -127,6 +130,57 @@ export function clearActiveRoomIdFromStorage(): void {
   if (typeof window === "undefined") return;
   try {
     window.sessionStorage?.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function loadShowBotMovesFromStorage(): boolean | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage?.getItem(BOT_FEED_VISIBLE_STORAGE_KEY);
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+  } catch {
+    // Ignore storage errors
+  }
+  return null;
+}
+
+export function saveShowBotMovesToStorage(enabled: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage?.setItem(
+      BOT_FEED_VISIBLE_STORAGE_KEY,
+      enabled ? "true" : "false"
+    );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function loadBotMoveThrottleMsFromStorage(): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage?.getItem(BOT_MOVE_THROTTLE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) {
+      return clampBotMoveThrottleMsPure(parsed);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return null;
+}
+
+export function saveBotMoveThrottleMsToStorage(delayMs: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage?.setItem(
+      BOT_MOVE_THROTTLE_STORAGE_KEY,
+      String(clampBotMoveThrottleMsPure(delayMs))
+    );
   } catch {
     // Ignore storage errors
   }

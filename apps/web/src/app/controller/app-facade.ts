@@ -312,6 +312,24 @@ export function buildMultiGamePlatformAppFacade(
     set autoPlaySpeedMs(v: number) {
       ctx.model = { ...ctx.model, autoPlaySpeedMs: v };
     },
+    get showBotMoves() {
+      return ctx.model.showBotMoves;
+    },
+    set showBotMoves(v: boolean) {
+      ctx.model = { ...ctx.model, showBotMoves: Boolean(v) };
+    },
+    get botFeedHistoryExpanded() {
+      return ctx.model.botFeedHistoryExpanded;
+    },
+    set botFeedHistoryExpanded(v: boolean) {
+      ctx.model = { ...ctx.model, botFeedHistoryExpanded: Boolean(v) };
+    },
+    get botMoveThrottleMs() {
+      return ctx.model.botMoveThrottleMs;
+    },
+    set botMoveThrottleMs(v: number) {
+      ctx.model = { ...ctx.model, botMoveThrottleMs: v };
+    },
     render: () => ctx.render(),
     signInAsGuest: (rawName, existingGuestId) =>
       ctx.signInAsGuest(rawName, existingGuestId),
@@ -350,6 +368,10 @@ export function buildMultiGamePlatformAppFacade(
     toggleAutoRespondBots: () => ctx.toggleAutoRespondBots(),
     toggleAutoPlay: () => ctx.toggleAutoPlay(),
     stopAutoPlay: () => ctx.stopAutoPlay(),
+    toggleShowBotMoves: () => ctx.toggleShowBotMoves(),
+    toggleBotFeedHistory: () => ctx.toggleBotFeedHistory(),
+    setBotMoveThrottleMs: (delayMs) => ctx.setBotMoveThrottleMs(delayMs),
+    cycleBotMoveThrottle: () => ctx.cycleBotMoveThrottle(),
     switchTradeMode: (nextMode) => ctx.switchTradeMode(nextMode),
     setSharedTradeWant: (resource, amount) =>
       ctx.setSharedTradeWant(resource, amount),

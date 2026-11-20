@@ -3,7 +3,16 @@ export type {
   CreateLocalRoomOptions, DropdownOption, DropdownSpec, GuestSession,
   MultiGamePlatformAppConstructor, MultiGamePlatformAppOptions, RoomsMapView, SupportedGameId,
 } from "./app/types.ts";
-export { GAME_TITLE_BY_ID } from "./config/app-config.ts";
+export {
+  BOT_MOVE_THROTTLE_PRESETS,
+  DEFAULT_BOT_MOVE_THROTTLE_MS,
+  DEFAULT_SHOW_BOT_MOVES,
+  GAME_TITLE_BY_ID,
+  clampBotMoveThrottleMsPure,
+  formatBotThrottleShortPure,
+  getBotMoveThrottlePresetPure,
+  getNextBotMoveThrottlePresetPure,
+} from "./config/app-config.ts";
 export { escapeAttr, escapeHtml, formatPhaseLabel, renderDropdown } from "./app/helpers/html-and-dropdown.ts";
 export {
   canControlPlayerOnDevicePure, getActingPlayerIdPure, getActiveRoomPure, getEngineForGamePure,
@@ -47,6 +56,14 @@ export { renderActiveTradeOfferCardPure, renderCatanMapDecisionPopupPure } from 
 export { renderCatanActionDockPure } from "./app/views/catan-action-dock/index.ts";
 export { renderCatanPlayerCardPure } from "./app/views/catan-player-card-view.ts";
 export { renderInGameViewPure } from "./app/views/in-game/index.ts";
+export {
+  classifyBotEventCategoryPure,
+  extractBotMoveFeedPure,
+  getBotPaceDropdownOptionsPure,
+  getEffectiveBotThrottleMsPure,
+  renderBotBannerControlsPure,
+  renderBotMoveFeedBarPure,
+} from "./app/views/in-game/bot-move-feed.ts";
 
 import { MultiGamePlatformApp as MultiGamePlatformAppCtor, createMultiGamePlatformApp } from "./app/controller/create-app.ts";
 import type { MultiGamePlatformApp as MultiGamePlatformAppInterface } from "./app/types.ts";

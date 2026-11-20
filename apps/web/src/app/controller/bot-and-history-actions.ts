@@ -1,4 +1,8 @@
 import {
+  clampBotMoveThrottleMsPure,
+  getNextBotMoveThrottlePresetPure,
+} from "../../config/app-config.ts";
+import {
   canControlPlayerOnDevicePure,
   findActiveRoomPure,
   getActingPlayerIdPure,
@@ -10,7 +14,11 @@ import {
 import { upsertRoomFromSummaryPure } from "../reducers/room-sync-reducers.ts";
 import { stepSetupBotsRecursive } from "../reducers/session-signout-and-match.ts";
 import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
-import type { AppRuntimeContext } from "./context.ts";
+import {
+  type AppRuntimeContext,
+  saveBotMoveThrottleMsToStorage,
+  saveShowBotMovesToStorage,
+} from "./context.ts";
 import { evictDeletedActiveRoom } from "./realtime-ws.ts";
 
 export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
@@ -365,6 +373,87 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     ctx.render();
   };
 
+  const toggleShowBotMoves = (): void => {
+    const next = !ctx.model.showBotMoves;
+    ctx.model = {
+      ...ctx.model,
+      showBotMoves: next,
+      ...(!next ? { botFeedHistoryExpanded: false } : {}),
+    };
+    saveShowBotMovesToStorage(next);
+    ctx.render();
+  };
+
+  const toggleBotFeedHistory = (): void => {
+    ctx.model = {
+      ...ctx.model,
+      botFeedHistoryExpanded: !ctx.model.botFeedHistoryExpanded,
+    };
+    ctx.render();
+  };
+
+  const setBotMoveThrottleMs = (delayMs: number): void => {
+    const clamped = clampBotMoveThrottleMsPure(delayMs);
+    saveBotMoveThrottleMsToStorage(clamped);
+    const room = findActiveRoomPure(ctx.model);
+    if (!room) {
+      ctx.model = { ...ctx.model, botMoveThrottleMs: clamped };
+      ctx.render();
+      return;
+    }
+    const usesServer = roomUsesServerPure(ctx.model, room);
+    ctx.model = updateRoomInModelPure(
+      { ...ctx.model, botMoveThrottleMs: clamped },
+      room.roomId,
+      (r) => ({ ...r, botStepDelayMs: clamped })
+    );
+    if (usesServer) {
+      ctx.connectServerRealtime();
+      void (async () => {
+        try {
+          const res = await ctx.fetchApi(
+            `/api/rooms/${encodeURIComponent(room.roomId)}/bot-speed`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                botStepDelayMs: clamped,
+                requesterId: ctx.model.currentUserId,
+              }),
+            }
+          );
+          if (res.status === 404) {
+            evictDeletedActiveRoom(ctx, room.roomId);
+            return;
+          }
+          if (res.ok) {
+            const data = await res.json();
+            if (data.room) {
+              ctx.model = upsertRoomFromSummaryPure(ctx.model, data.room).model;
+              ctx.renderPreservingFocus();
+            }
+          }
+        } catch {
+          // Ignore transient network errors
+        }
+      })();
+      ctx.render();
+      return;
+    }
+    ctx.render();
+    ctx.scheduleBotAutoResponseIfNeeded();
+  };
+
+  const cycleBotMoveThrottle = (): void => {
+    const room = findActiveRoomPure(ctx.model);
+    const currentDelay =
+      room && roomUsesServerPure(ctx.model, room)
+        ? room.botStepDelayMs
+        : room?.botStepDelayMs ?? ctx.model.botMoveThrottleMs;
+    const nextPreset = getNextBotMoveThrottlePresetPure(currentDelay);
+    setBotMoveThrottleMs(nextPreset.delayMs);
+  };
+
   ctx.stopAutoPlay = stopAutoPlay;
   ctx.stepOneBotMove = stepOneBotMove;
   ctx.finishSetupWithBots = finishSetupWithBots;
@@ -372,4 +461,8 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
   ctx.redoMatch = redoMatch;
   ctx.toggleAutoRespondBots = toggleAutoRespondBots;
   ctx.toggleAutoPlay = toggleAutoPlay;
+  ctx.toggleShowBotMoves = toggleShowBotMoves;
+  ctx.toggleBotFeedHistory = toggleBotFeedHistory;
+  ctx.setBotMoveThrottleMs = setBotMoveThrottleMs;
+  ctx.cycleBotMoveThrottle = cycleBotMoveThrottle;
 }

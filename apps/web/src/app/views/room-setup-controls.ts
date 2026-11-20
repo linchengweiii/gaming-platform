@@ -6,11 +6,13 @@ import {
 import {
   BOT_DIFFICULTY_META,
   SETUP_GAME_DROPDOWN_OPTIONS,
+  getBotMoveThrottlePresetPure,
   getCatanScenarioDropdownOptions,
 } from "../../config/app-config.ts";
 import { escapeAttr, renderDropdown } from "../helpers/html-and-dropdown.ts";
 import { formatRoomHashLabelPure } from "../helpers/room-hash-and-links.ts";
 import type { ClientRoom, DropdownOption } from "../types.ts";
+import { getBotPaceDropdownOptionsPure } from "./in-game/bot-move-feed.ts";
 
 export function renderRoomSetupControlsCardPure(
   room: ClientRoom,
@@ -180,6 +182,26 @@ export function renderRoomSetupControlsCardPure(
           })}
           <p class="t-small muted">${BOT_DIFFICULTY_META[room.botDifficulty].desc}</p>
         </div>
+
+        ${
+          room.botCount > 0 || room.allBots
+            ? (() => {
+                const pacePreset = getBotMoveThrottlePresetPure(
+                  room.botStepDelayMs
+                );
+                return `
+        <div class="ga-field">
+          <label for="setup-sel-bot-pace-btn">Bot move pace</label>
+          ${renderDropdown({
+            id: "setup-sel-bot-pace",
+            value: String(pacePreset.delayMs),
+            options: getBotPaceDropdownOptionsPure(),
+          })}
+          <p class="t-small muted">${pacePreset.description}</p>
+        </div>`;
+              })()
+            : ""
+        }
 
         ${
           room.gameId === "catan"

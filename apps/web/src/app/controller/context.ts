@@ -19,13 +19,17 @@ export {
   clearGuestSessionFromStorage,
   clearLastActiveGuestIdFromStorage,
   loadActiveRoomIdFromStorage,
+  loadBotMoveThrottleMsFromStorage,
   loadDeviceGuestsFromStorage,
   loadLastActiveGuestIdFromStorage,
   loadSavedGuestSessionFromStorage,
+  loadShowBotMovesFromStorage,
   saveActiveRoomIdToStorage,
+  saveBotMoveThrottleMsToStorage,
   saveDeviceGuestsToStorage,
   saveGuestSessionToStorage,
   saveLastActiveGuestIdToStorage,
+  saveShowBotMovesToStorage,
 } from "./storage.ts";
 
 export interface AppRuntimeContext {
@@ -103,6 +107,10 @@ export interface AppRuntimeContext {
   redoMatch: () => void;
   toggleAutoRespondBots: () => void;
   toggleAutoPlay: () => void;
+  toggleShowBotMoves: () => void;
+  toggleBotFeedHistory: () => void;
+  setBotMoveThrottleMs: (delayMs: number) => void;
+  cycleBotMoveThrottle: () => void;
   switchTradeMode: (nextMode: "maritime_trade" | "domestic_trade" | null) => void;
   setSharedTradeWant: (resource: ResourceType, amount: number) => void;
 }
@@ -189,6 +197,10 @@ export function createAppRuntimeContext(
     redoMatch: noop,
     toggleAutoRespondBots: noop,
     toggleAutoPlay: noop,
+    toggleShowBotMoves: noop,
+    toggleBotFeedHistory: noop,
+    setBotMoveThrottleMs: noop,
+    cycleBotMoveThrottle: noop,
     switchTradeMode: noop,
     setSharedTradeWant: noop,
   };

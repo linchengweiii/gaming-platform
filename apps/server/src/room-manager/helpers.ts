@@ -191,6 +191,7 @@ export function toRoomSummaryPure(
     allBots: r.allBots,
     startingPlayerMode: r.startingPlayerMode,
     autoStepBots: r.autoStepBots,
+    botStepDelayMs: r.botStepDelayMs,
     players: r.players.slice(),
     config: { ...r.config },
     canUndo: undoableSteps > 0,

@@ -1,4 +1,7 @@
-import { ONLINE_BOT_WATCHDOG_MS } from "../../config/app-config.ts";
+import {
+  ONLINE_BOT_WATCHDOG_MS,
+  clampBotMoveThrottleMsPure,
+} from "../../config/app-config.ts";
 import {
   findActiveRoomPure,
   getActingPlayerIdPure,
@@ -163,6 +166,8 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
       room.players.find((p) => p.id === actingId);
     if (!actor || !actor.isBot) return;
 
+    const effectiveDelayMs = clampBotMoveThrottleMsPure(room.botStepDelayMs);
+    const watchdogMs = Math.max(ONLINE_BOT_WATCHDOG_MS, effectiveDelayMs + 1500);
     const timer = setTimeout(() => {
       ctx.onlineBotWatchdogTimer = null;
       ctx.connectServerRealtime();
@@ -174,7 +179,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
       void syncActiveServerRoomState().then(() => {
         scheduleOnlineBotWatchdogIfNeeded();
       });
-    }, ONLINE_BOT_WATCHDOG_MS);
+    }, watchdogMs);
     (timer as any).unref?.();
     ctx.onlineBotWatchdogTimer = timer;
   };
@@ -315,6 +320,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
                 botCount: latest.botCount,
                 allBots: latest.allBots,
                 botDifficulty: latest.botDifficulty,
+                botStepDelayMs: latest.botStepDelayMs,
                 startingPlayerMode: latest.startingPlayerMode,
                 config: latest.config,
               }),

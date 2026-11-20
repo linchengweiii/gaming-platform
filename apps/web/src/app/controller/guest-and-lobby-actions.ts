@@ -163,6 +163,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
               ownerId: ctx.model.currentUserId,
               hostName: ctx.model.currentUserName,
               botCount: 0,
+              botStepDelayMs: ctx.model.botMoveThrottleMs,
               startingPlayerMode: "random",
               autoStart: false,
             }),

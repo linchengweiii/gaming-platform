@@ -13,10 +13,12 @@ import {
 } from "@gaming-platform/catan";
 import {
   DEFAULT_BOT_DIFFICULTY,
+  DEFAULT_BOT_STEP_DELAY_MS,
   DEFAULT_CATAN_ROOM_PRESET,
   DEFAULT_GAME_ID,
   DEFAULT_STARTING_PLAYER_MODE,
   MAX_GUEST_DISPLAY_NAME_LENGTH,
+  clampServerBotStepDelayMsPure,
 } from "../config.ts";
 import {
   computeRoomHashPure,
@@ -103,6 +105,10 @@ export function createRoomPure(
     allBots: Boolean(options.allBots),
     startingPlayerMode: options.startingPlayerMode ?? DEFAULT_STARTING_PLAYER_MODE,
     autoStepBots: options.autoStepBots ?? true,
+    botStepDelayMs:
+      options.botStepDelayMs !== undefined
+        ? clampServerBotStepDelayMsPure(options.botStepDelayMs)
+        : DEFAULT_BOT_STEP_DELAY_MS,
     players: [],
     config: defaultConfig,
     seed: options.seed ?? `${roomId}-${nowMs}`,
@@ -241,6 +247,10 @@ export function updateRoomSetupPure(
       : room.startingPlayerMode;
 
   const nextSeed = updates.seed ? updates.seed : room.seed;
+  const nextBotStepDelayMs =
+    updates.botStepDelayMs !== undefined
+      ? clampServerBotStepDelayMsPure(updates.botStepDelayMs)
+      : room.botStepDelayMs;
   const nextAllBots =
     updates.allBots !== undefined ? updates.allBots : room.allBots;
   const nextIsPrivate =
@@ -313,6 +323,7 @@ export function updateRoomSetupPure(
     config: nextConfig,
     botDifficulty: nextBotDifficulty,
     startingPlayerMode: nextStartingPlayerMode,
+    botStepDelayMs: nextBotStepDelayMs,
     seed: nextSeed,
     allBots: nextAllBots,
     humanPlayers: nextHumanPlayers,

@@ -8,7 +8,10 @@ import {
   undoSessionForPlayerPure,
 } from "@gaming-platform/core";
 import { CatanEngine, getNextActingPlayerId } from "@gaming-platform/catan";
-import { DEFAULT_CATAN_SETUP_STEP_GUARD } from "../config.ts";
+import {
+  DEFAULT_CATAN_SETUP_STEP_GUARD,
+  clampServerBotStepDelayMsPure,
+} from "../config.ts";
 import {
   canViewerControlActorPure,
   getRoomActingPlayerId,
@@ -330,5 +333,17 @@ export function setRoomAutoStepBotsPure(
   return setRoomRecordInState(managerState, {
     ...room,
     autoStepBots: Boolean(enabled),
+  });
+}
+
+export function setRoomBotStepDelayPure(
+  managerState: RoomManagerState,
+  roomId: string,
+  delayMs: number
+): RoomManagerState {
+  const room = getRoomRecordPure(managerState, roomId);
+  return setRoomRecordInState(managerState, {
+    ...room,
+    botStepDelayMs: clampServerBotStepDelayMsPure(delayMs),
   });
 }
