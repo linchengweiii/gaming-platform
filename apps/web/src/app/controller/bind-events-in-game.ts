@@ -150,6 +150,33 @@ export function bindInGameEvents(
       }
     });
 
+  root.querySelectorAll("[data-toggle-fullscreen]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      ctx.toggleBoardFullscreen();
+    });
+  });
+
+  root
+    .querySelector("#btn-toggle-fullscreen-sidebar")
+    ?.addEventListener("click", () => {
+      ctx.toggleFullscreenSidebar();
+    });
+
+  const closeFullscreenSidebar = (): void => {
+    if (ctx.model.fullscreenSidebarOpen) {
+      ctx.toggleFullscreenSidebar();
+    }
+  };
+
+  root
+    .querySelector("#btn-close-fullscreen-sidebar")
+    ?.addEventListener("click", closeFullscreenSidebar);
+
+  root
+    .querySelector("#ga-fullscreen-sidebar-backdrop")
+    ?.addEventListener("click", closeFullscreenSidebar);
+
   root
     .querySelector("#btn-toggle-hand-privacy")
     ?.addEventListener("click", () => {

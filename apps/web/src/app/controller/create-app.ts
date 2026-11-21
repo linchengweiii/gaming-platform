@@ -9,6 +9,7 @@ import { buildMultiGamePlatformAppFacade } from "./app-facade.ts";
 import { registerGlobalCatanMapShortcuts } from "./bind-events-catan-viewport.ts";
 import { registerWindowHashChangeListener } from "./bind-events-other-games.ts";
 import { attachCatanUiActions } from "./catan-ui-actions.ts";
+import { attachFullscreenActions } from "./fullscreen-actions.ts";
 import {
   createAppRuntimeContext,
   loadActiveRoomIdFromStorage,
@@ -102,10 +103,12 @@ export function createMultiGamePlatformApp(
   attachGuestAndLobbyActions(ctx);
   attachMatchAndBotActions(ctx);
   attachCatanUiActions(ctx);
+  const fullscreenController = attachFullscreenActions(ctx);
   attachRenderHandlers(ctx);
 
   registerGlobalDropdownDismiss(root);
   registerGlobalCatanMapShortcuts(ctx);
+  fullscreenController.registerGlobalListeners();
   ctx.render();
   registerWindowHashChangeListener(ctx);
 

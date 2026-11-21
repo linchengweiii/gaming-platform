@@ -46,6 +46,7 @@ import {
   t,
 } from "../../i18n/index.ts";
 import { escapeAttr } from "../helpers/html-and-dropdown.ts";
+import { renderMapFullscreenButtonPure } from "./in-game/fullscreen-controls.ts";
 
 export function renderCostPipStripPure(
   cost: Partial<ResourceMap>,
@@ -379,7 +380,8 @@ export function renderCatanMapDiceHudPure(
 export function renderCatanMapZoomControlsPure(
   state: CatanState,
   viewport: CatanMapViewport,
-  locale: SupportedLocale = "en"
+  locale: SupportedLocale = "en",
+  isFullscreen = false
 ): string {
   const baseVb = getCatanBoardViewBox(state);
   const clamped = clampCatanMapViewportPure(viewport, baseVb);
@@ -400,7 +402,7 @@ export function renderCatanMapZoomControlsPure(
       }>${formatCatanZoomPercentPure(clamped.zoom)}</button>
       <button type="button" id="btn-map-zoom-in" class="map-zoom-btn" aria-label="${escapeAttr(t(locale, "catan.zoomInAria"))}" title="${escapeAttr(t(locale, "catan.zoomInTitle"))}" ${
         atMax ? "disabled" : ""
-      }>+</button>
+      }>+</button>${renderMapFullscreenButtonPure(isFullscreen, locale)}
     </div>
   `;
 }

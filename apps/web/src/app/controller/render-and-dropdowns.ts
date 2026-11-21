@@ -38,6 +38,7 @@ export function registerGlobalDropdownDismiss(root: HTMLElement): void {
     if (e.key === "Escape") {
       const openDropdowns = root.querySelectorAll(".ga-dropdown.is-open");
       if (openDropdowns.length > 0) {
+        e.preventDefault();
         openDropdowns.forEach((dd) => {
           const trigger = dd.querySelector(
             ".ga-dropdown__trigger"
@@ -51,6 +52,7 @@ export function registerGlobalDropdownDismiss(root: HTMLElement): void {
         "#btn-close-guide"
       ) as HTMLButtonElement | null;
       if (closeGuideBtn) {
+        e.preventDefault();
         closeGuideBtn.click();
       }
     }
@@ -231,6 +233,18 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
       ctx.model.isAuthenticated &&
       ctx.model.viewMode === "in_game" &&
       Boolean(activeRoom && getRoomStatePure(ctx.model, activeRoom));
+    if (
+      !inActiveGame &&
+      (ctx.model.boardFullscreen || ctx.model.fullscreenSidebarOpen)
+    ) {
+      ctx.model = {
+        ...ctx.model,
+        boardFullscreen: false,
+        fullscreenSidebarOpen: false,
+      };
+      ctx.exitNativeFullscreenIfOwned();
+    }
+    const isBoardFullscreen = inActiveGame && ctx.model.boardFullscreen;
     if (typeof document !== "undefined") {
       if (document.documentElement) {
         document.documentElement.lang = getLocaleMeta(ctx.model.locale).htmlLang;
@@ -240,6 +254,7 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
       }
       if (document.body?.classList) {
         document.body.classList.toggle("ga-body--in-game", inActiveGame);
+        document.body.classList.toggle("ga-body--fullscreen", isBoardFullscreen);
       }
     }
 

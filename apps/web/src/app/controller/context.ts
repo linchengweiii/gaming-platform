@@ -121,6 +121,10 @@ export interface AppRuntimeContext {
   toggleBotFeedHistory: () => void;
   setBotMoveThrottleMs: (delayMs: number) => void;
   cycleBotMoveThrottle: () => void;
+  toggleBoardFullscreen: () => void;
+  setBoardFullscreen: (enabled: boolean) => void;
+  toggleFullscreenSidebar: () => void;
+  exitNativeFullscreenIfOwned: () => void;
   switchTradeMode: (nextMode: "maritime_trade" | "domestic_trade" | null) => void;
   setSharedTradeWant: (resource: ResourceType, amount: number) => void;
 }
@@ -212,6 +216,10 @@ export function createAppRuntimeContext(
     toggleBotFeedHistory: noop,
     setBotMoveThrottleMs: noop,
     cycleBotMoveThrottle: noop,
+    toggleBoardFullscreen: noop,
+    setBoardFullscreen: noop,
+    toggleFullscreenSidebar: noop,
+    exitNativeFullscreenIfOwned: noop,
     switchTradeMode: noop,
     setSharedTradeWant: noop,
   };
