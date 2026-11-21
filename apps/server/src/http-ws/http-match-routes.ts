@@ -81,6 +81,7 @@ export async function handleRoomMatchSubRoute(
       rawState,
       authPlayerId
     );
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
     hub.scheduleRoomBotTurn(roomId);
@@ -114,6 +115,7 @@ export async function handleRoomMatchSubRoute(
       nextState,
       authPlayerId
     );
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     if (room.status !== prevStatus) {
       hub.broadcastLobbyRooms();
@@ -171,6 +173,7 @@ export async function handleRoomMatchSubRoute(
       result.state,
       authPlayerId
     );
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     if (room.status !== prevStatus) {
       hub.broadcastLobbyRooms();
@@ -197,6 +200,7 @@ export async function handleRoomMatchSubRoute(
       throw createHttpError(403, "Only seated players can toggle auto-bots");
     }
     const room = roomManager.setRoomAutoStepBots(roomId, Boolean(body.enabled));
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     if (room.autoStepBots) {
       hub.scheduleRoomBotTurn(roomId);
@@ -224,6 +228,7 @@ export async function handleRoomMatchSubRoute(
       throw createHttpError(400, "botStepDelayMs must be a finite number");
     }
     const room = roomManager.setRoomBotStepDelay(roomId, rawDelay);
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     if (room.autoStepBots && room.status === "in_progress") {
       hub.scheduleRoomBotTurn(roomId);
@@ -259,6 +264,7 @@ export async function handleRoomMatchSubRoute(
       nextState,
       authPlayerId
     );
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     if (room.status !== prevStatus) {
       hub.broadcastLobbyRooms();
@@ -290,6 +296,7 @@ export async function handleRoomMatchSubRoute(
       nextState,
       authPlayerId
     );
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
     hub.scheduleRoomBotTurn(roomId);
@@ -319,6 +326,7 @@ export async function handleRoomMatchSubRoute(
       nextState,
       authPlayerId
     );
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
     hub.scheduleRoomBotTurn(roomId);

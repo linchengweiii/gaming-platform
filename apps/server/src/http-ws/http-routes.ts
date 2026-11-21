@@ -130,6 +130,7 @@ export async function handleApiRequest(
       rawState,
       authPlayerId
     );
+    hub.touchRoomActivity(room.roomId);
     hub.refreshRoomDisconnectClock(room.roomId);
     hub.broadcastLobbyRooms();
     if (room.status === "in_progress") {
@@ -169,6 +170,15 @@ export async function handleApiRequest(
     const viewerId = guestSessions.verifyToken(
       guestSessions.extractTokenFromReq(req)
     );
+    if (
+      viewerId &&
+      (room.ownerId === viewerId ||
+        room.humanPlayers.some(
+          (p) => p.id === viewerId || p.controllerId === viewerId
+        ))
+    ) {
+      hub.touchRoomActivity(roomId);
+    }
     const state = room.session?.getState() ?? null;
     const { actingId: actingPlayerId, view } = buildRedactedStatePayload(
       roomManager,
@@ -198,6 +208,7 @@ export async function handleApiRequest(
         hub.evictPlayerFromRoom(roomId, prevId);
       }
     }
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
     sendJson(res, 200, {
@@ -218,6 +229,7 @@ export async function handleApiRequest(
       body.playerName ?? ""
     );
     const room = roomManager.getRoom(roomId);
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
     sendJson(res, 200, {
@@ -247,6 +259,7 @@ export async function handleApiRequest(
     if (trimmedTargetId && wasSeated && !stillSeated) {
       hub.evictPlayerFromRoom(roomId, trimmedTargetId);
     }
+    hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
     sendJson(res, 200, {
@@ -283,6 +296,7 @@ export async function handleApiRequest(
       rawState,
       viewerId
     );
+    hub.touchRoomActivity(roomId);
     hub.refreshRoomDisconnectClock(roomId);
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();

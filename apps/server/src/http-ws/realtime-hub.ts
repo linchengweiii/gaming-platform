@@ -2,11 +2,9 @@ import type http from "node:http";
 import type { Duplex } from "node:stream";
 import {
   ABANDONED_ROOM_IDLE_MS,
-  MAX_WS_PAYLOAD_BYTES,
   SEVEN_WONDERS_SECRET_LOCK_MAX_DELAY_MS,
   WS_DEAD_PEER_TIMEOUT_MS,
   WS_HEARTBEAT_INTERVAL_MS,
-  WS_TCP_KEEPALIVE_MS,
   clampServerBotStepDelayMsPure,
 } from "../config.ts";
 import {
@@ -21,14 +19,10 @@ import { handleClientJsonMessage } from "./ws-client-messages.ts";
 import {
   type RealtimeHub,
   type WsClient,
+  type WsTransport,
+  attachDuplexWsUpgrade,
   createPresenceTracker,
-  sendWsFrameSafe,
 } from "./ws-hub-types-and-presence.ts";
-import {
-  computeWsAcceptKeyPure,
-  decodeWsFramesStreamPure,
-  encodeWsControlFramePure,
-} from "./ws-protocol.ts";
 
 export type { RealtimeHub } from "./ws-hub-types-and-presence.ts";
 
@@ -68,7 +62,7 @@ export function createRealtimeHub(
   function notifyRoomClosed(roomId: string): void {
     Object.values(wsClients).forEach((client) => {
       if (client.roomId === roomId) {
-        sendWsFrameSafe(client.socket, { type: "ROOM_CLOSED", roomId });
+        client.transport.sendJson({ type: "ROOM_CLOSED", roomId });
         upsertWsClient({ ...client, roomId: null });
       }
     });
@@ -78,7 +72,7 @@ export function createRealtimeHub(
   function signOutGuestConnections(playerId: string): void {
     Object.values(wsClients).forEach((client) => {
       if (client.playerId === playerId) {
-        sendWsFrameSafe(client.socket, {
+        client.transport.sendJson({
           type: "GUEST_SIGNED_OUT",
           playerId,
         });
@@ -92,7 +86,7 @@ export function createRealtimeHub(
     const rooms = roomManager
       .listRooms(undefined, client.playerId)
       .map(enrichSummaryWithPresence);
-    sendWsFrameSafe(client.socket, { type: "LOBBY_ROOMS", rooms });
+    client.transport.sendJson({ type: "LOBBY_ROOMS", rooms });
   }
 
   function broadcastLobbyRooms(): void {
@@ -130,7 +124,7 @@ export function createRealtimeHub(
           state && actingId && effectiveViewerId
             ? engine.getLegalActions(state, effectiveViewerId)
             : [];
-        sendWsFrameSafe(client.socket, {
+        client.transport.sendJson({
           type: "ROOM_STATE",
           roomId,
           room: summary,
@@ -168,22 +162,18 @@ export function createRealtimeHub(
     timeoutMs = WS_DEAD_PEER_TIMEOUT_MS
   ): string[] {
     const evictedIds: string[] = [];
-    const pingFrame = encodeWsControlFramePure(0x09);
     Object.values(wsClients).forEach((client) => {
-      if (client.socket.destroyed || nowMs - client.lastSeenMs > timeoutMs) {
+      if (
+        client.transport.isClosed() ||
+        nowMs - client.lastSeenMs > timeoutMs
+      ) {
         evictedIds.push(client.id);
         removeWsClient(client.id, nowMs);
-        client.socket.destroy();
+        client.transport.close();
         return;
       }
-      if (client.socket.writable) {
-        try {
-          client.socket.write(pingFrame);
-        } catch {
-          client.socket.destroy();
-          return;
-        }
-        sendWsFrameSafe(client.socket, {
+      if (client.transport.sendPing()) {
+        client.transport.sendJson({
           type: "SERVER_HEARTBEAT",
           ts: nowMs,
         });
@@ -201,7 +191,7 @@ export function createRealtimeHub(
     Object.values(wsClients).forEach((client) => {
       if (client.playerId === targetPlayerId && client.roomId === roomId) {
         upsertWsClient({ ...client, roomId: null });
-        sendWsFrameSafe(client.socket, {
+        client.transport.sendJson({
           type: "ROOM_REMOVED",
           roomId,
           reason: "You were removed from the room by the host.",
@@ -224,7 +214,12 @@ export function createRealtimeHub(
     for (const roomId of candidateRoomIds) {
       refreshRoomDisconnectClock(roomId, nowMs);
       const refreshedSince = presence.roomAllDisconnectedSince.get(roomId);
-      if (refreshedSince !== undefined && nowMs - refreshedSince >= maxIdleMs) {
+      const lastActivity = presence.roomLastActivityMs.get(roomId) ?? 0;
+      const idleSince =
+        refreshedSince !== undefined
+          ? Math.max(refreshedSince, lastActivity)
+          : undefined;
+      if (idleSince !== undefined && nowMs - idleSince >= maxIdleMs) {
         if (roomManager.closeRoom(roomId)) {
           notifyRoomClosed(roomId);
           swept.push(roomId);
@@ -303,58 +298,29 @@ export function createRealtimeHub(
     scheduleRoomBotTurn,
   };
 
-  function handleUpgrade(
-    req: http.IncomingMessage,
-    socket: Duplex,
-    head?: Buffer
-  ): void {
-    const clientId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    socket.on("close", () => removeWsClient(clientId));
-    socket.on("error", () => {
-      removeWsClient(clientId);
-      socket.destroy();
-    });
-    (socket as any).setKeepAlive?.(true, WS_TCP_KEEPALIVE_MS);
-
-    const key = req.headers["sec-websocket-key"];
-    if (!key || typeof key !== "string") {
-      socket.destroy();
-      return;
-    }
-
-    const accept = computeWsAcceptKeyPure(key);
+  function resolveInitialPlayerId(rawUrl: string): string | null {
     try {
-      socket.write(
-        [
-          "HTTP/1.1 101 Switching Protocols",
-          "Upgrade: websocket",
-          "Connection: Upgrade",
-          `Sec-WebSocket-Accept: ${accept}`,
-          "\r\n",
-        ].join("\r\n")
-      );
+      const u = new URL(rawUrl || "/", "http://localhost");
+      const token = u.searchParams.get("token")?.trim() || null;
+      const verified = guestSessions.verifyToken(token);
+      if (!verified) return null;
+      const claimed = u.searchParams.get("playerId")?.trim() || null;
+      if (claimed && claimed !== verified) return null;
+      return verified;
     } catch {
-      socket.destroy();
-      return;
+      return null;
     }
+  }
 
-    const initialPlayerId = (() => {
-      try {
-        const u = new URL(req.url ?? "/", "http://localhost");
-        const token = u.searchParams.get("token")?.trim() || null;
-        const verified = guestSessions.verifyToken(token);
-        if (!verified) return null;
-        const claimed = u.searchParams.get("playerId")?.trim() || null;
-        if (claimed && claimed !== verified) return null;
-        return verified;
-      } catch {
-        return null;
-      }
-    })();
-
+  function registerWsClient(
+    clientId: string,
+    rawUrl: string,
+    transport: WsTransport
+  ): WsClient {
+    const initialPlayerId = resolveInitialPlayerId(rawUrl);
     const initialClient: WsClient = {
       id: clientId,
-      socket,
+      transport,
       roomId: null,
       playerId: initialPlayerId,
       lastSeenMs: Date.now(),
@@ -369,81 +335,68 @@ export function createRealtimeHub(
       });
     }
     sendLobbySnapshotToClient(initialClient);
+    return initialClient;
+  }
 
-    let readBuffer: Buffer = Buffer.alloc(0);
-    let pendingFragments: readonly Buffer[] = [];
+  function attachNativeWsClient(
+    rawUrl: string,
+    transport: WsTransport
+  ): string {
+    const clientId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    registerWsClient(clientId, rawUrl, transport);
+    return clientId;
+  }
 
-    const processChunk = (chunk: Buffer): void => {
-      const liveClient = wsClients[clientId];
-      if (liveClient) {
-        upsertWsClient({ ...liveClient, lastSeenMs: Date.now() });
-      }
-      try {
-        readBuffer =
-          readBuffer.length > 0 ? Buffer.concat([readBuffer, chunk]) : chunk;
-        if (readBuffer.length > MAX_WS_PAYLOAD_BYTES * 2) {
-          throw new Error("WebSocket receive buffer exceeded limit");
-        }
-        const decoded = decodeWsFramesStreamPure(
-          readBuffer,
-          MAX_WS_PAYLOAD_BYTES,
-          pendingFragments
-        );
-        readBuffer = decoded.remainder;
-        pendingFragments = decoded.pendingFragments;
-
-        for (const frame of decoded.frames) {
-          if (frame.opcode === 0x08) {
-            removeWsClient(clientId);
-            if (!socket.destroyed && socket.writable) {
-              socket.write(encodeWsControlFramePure(0x08));
-            }
-            socket.destroy();
-            return;
-          }
-          if (frame.opcode === 0x09) {
-            if (!socket.destroyed && socket.writable) {
-              socket.write(encodeWsControlFramePure(0x0a, frame.payload));
-            }
-            continue;
-          }
-          if (frame.opcode === 0x0a) {
-            continue;
-          }
-          if (frame.opcode === 0x01 && frame.text !== undefined) {
-            try {
-              const msg = JSON.parse(frame.text);
-              handleClientJsonMessage(messageDeps, clientId, msg);
-            } catch (msgErr: any) {
-              sendWsFrameSafe(socket, {
-                type: "ERROR",
-                error: msgErr?.message ?? String(msgErr),
-              });
-            }
-          }
-        }
-      } catch {
-        removeWsClient(clientId);
-        socket.destroy();
-      }
-    };
-
-    socket.on("data", processChunk);
-    if (head && head.length > 0) {
-      processChunk(head);
+  function touchNativeWsClient(clientId: string): void {
+    const liveClient = wsClients[clientId];
+    if (liveClient) {
+      upsertWsClient({ ...liveClient, lastSeenMs: Date.now() });
     }
+  }
+
+  function handleNativeWsMessage(clientId: string, text: string): void {
+    touchNativeWsClient(clientId);
+    const liveClient = wsClients[clientId];
+    if (!liveClient) return;
+    try {
+      const msg = JSON.parse(text);
+      handleClientJsonMessage(messageDeps, clientId, msg);
+    } catch (msgErr: any) {
+      liveClient.transport.sendJson({
+        type: "ERROR",
+        error: msgErr?.message ?? String(msgErr),
+      });
+    }
+  }
+
+  function detachNativeWsClient(clientId: string): void {
+    removeWsClient(clientId);
+  }
+
+  function handleUpgrade(
+    req: http.IncomingMessage,
+    socket: Duplex,
+    head?: Buffer
+  ): void {
+    attachDuplexWsUpgrade(req, socket, head, {
+      onAttach: attachNativeWsClient,
+      onTouch: touchNativeWsClient,
+      onMessage: handleNativeWsMessage,
+      onDetach: detachNativeWsClient,
+    });
   }
 
   function shutdown(): void {
     clearInterval(heartbeatTimer);
     roomBotTimers.forEach((timer) => clearTimeout(timer));
     roomBotTimers.clear();
-    Object.values(wsClients).forEach((client) => client.socket.destroy());
+    Object.values(wsClients).forEach((client) => client.transport.close());
     wsClients = {};
   }
 
   return {
     enrichSummaryWithPresence,
+    touchRoomActivity: presence.touchRoomActivity,
     refreshRoomDisconnectClock,
     removePlayerRoomPresence: presence.removePlayerRoomPresence,
     evictPlayerFromRoom,
@@ -457,6 +410,10 @@ export function createRealtimeHub(
     clearRoomBotTimer,
     scheduleRoomBotTurn,
     getConnectedPlayerIds: () => presence.getConnectedPlayerIds(wsClients),
+    attachNativeWsClient,
+    handleNativeWsMessage,
+    touchNativeWsClient,
+    detachNativeWsClient,
     handleUpgrade,
     shutdown,
   };

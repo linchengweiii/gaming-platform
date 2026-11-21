@@ -12,6 +12,7 @@ import {
   type GuestSessionStore,
   createGuestSessionStore,
 } from "./guest-sessions.ts";
+import { attachBunNativeTransport } from "./bun-http-bridge.ts";
 import { handleApiRequest } from "./http-routes.ts";
 import { createRealtimeHub } from "./realtime-hub.ts";
 import { sendJson, tryServeStaticFile } from "./viewer-and-static.ts";
@@ -66,10 +67,13 @@ export function createPlatformServer(): {
     }
   });
 
-  // RFC 6455 WebSocket upgrade handler (zero external runtime dependency)
+  // RFC 6455 WebSocket upgrade handler (Node.js raw socket + synthetic test upgrades)
   server.on("upgrade", (req, socket, head) => {
     hub.handleUpgrade(req, socket, head);
   });
+
+  // Under Bun, node:http upgrade passes a no-op socket; use Bun.serve native HTTP + WebSockets
+  attachBunNativeTransport(server, roomManager, hub, guestSessions);
 
   const sweepTimer = setInterval(() => {
     hub.sweepAbandonedRooms();
