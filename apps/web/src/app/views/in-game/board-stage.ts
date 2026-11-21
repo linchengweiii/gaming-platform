@@ -43,6 +43,7 @@ import {
   renderBotBannerControlsPure,
   renderBotMoveFeedBarPure,
 } from "./bot-move-feed.ts";
+import { renderFullscreenBannerControlsPure } from "./fullscreen-controls.ts";
 import type { InGameComputedContext } from "./view-state.ts";
 
 export function renderInGameBoardStagePure(
@@ -214,7 +215,10 @@ export function renderInGameBoardStagePure(
                 }</button>
                 <button type="button" id="btn-redo" class="btn btn--secondary btn--sm" ${
                   !canRedo ? "disabled" : ""
-                }>${escapeAttr(t(locale, "common.redo"))}</button>
+                }>${escapeAttr(t(locale, "common.redo"))}</button>${renderFullscreenBannerControlsPure(
+                  model,
+                  locale
+                )}
                 ${
                   model.debugMode
                     ? `${
@@ -279,7 +283,8 @@ ${botMoveFeedBarHtml}
                     ${renderCatanMapZoomControlsPure(
                       state as CatanState,
                       model.catanMapViewport,
-                      locale
+                      locale,
+                      model.boardFullscreen
                     )}
                     ${renderCatanBoardSvg(
                       state as CatanState,

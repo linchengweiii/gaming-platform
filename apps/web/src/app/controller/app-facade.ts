@@ -301,6 +301,21 @@ export function buildMultiGamePlatformAppFacade(
     set mapBuildMenuExpanded(v: boolean) {
       ctx.model = { ...ctx.model, mapBuildMenuExpanded: Boolean(v) };
     },
+    get boardFullscreen() {
+      return ctx.model.boardFullscreen;
+    },
+    set boardFullscreen(v: boolean) {
+      ctx.setBoardFullscreen(Boolean(v));
+    },
+    get fullscreenSidebarOpen() {
+      return ctx.model.fullscreenSidebarOpen;
+    },
+    set fullscreenSidebarOpen(v: boolean) {
+      ctx.model = {
+        ...ctx.model,
+        fullscreenSidebarOpen: ctx.model.boardFullscreen ? Boolean(v) : false,
+      };
+    },
     get debugMode() {
       return ctx.model.debugMode;
     },
@@ -380,6 +395,9 @@ export function buildMultiGamePlatformAppFacade(
     toggleBotFeedHistory: () => ctx.toggleBotFeedHistory(),
     setBotMoveThrottleMs: (delayMs) => ctx.setBotMoveThrottleMs(delayMs),
     cycleBotMoveThrottle: () => ctx.cycleBotMoveThrottle(),
+    toggleBoardFullscreen: () => ctx.toggleBoardFullscreen(),
+    setBoardFullscreen: (enabled) => ctx.setBoardFullscreen(enabled),
+    toggleFullscreenSidebar: () => ctx.toggleFullscreenSidebar(),
     switchTradeMode: (nextMode) => ctx.switchTradeMode(nextMode),
     setSharedTradeWant: (resource, amount) =>
       ctx.setSharedTradeWant(resource, amount),

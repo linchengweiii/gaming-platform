@@ -202,6 +202,8 @@ export interface AppModel {
   readonly guideModalGameId: SupportedGameId | null;
   readonly sidebarSettingsExpanded: boolean;
   readonly mapBuildMenuExpanded: boolean;
+  readonly boardFullscreen: boolean;
+  readonly fullscreenSidebarOpen: boolean;
   readonly debugMode: boolean;
   readonly autoPlayBots: boolean;
   readonly autoRespondBotsToHuman: boolean;
@@ -293,6 +295,8 @@ export interface MultiGamePlatformApp {
   autoPlayBots: boolean;
   sidebarSettingsExpanded: boolean;
   mapBuildMenuExpanded: boolean;
+  boardFullscreen: boolean;
+  fullscreenSidebarOpen: boolean;
   debugMode: boolean;
   autoRespondBotsToHuman: boolean;
   autoPlaySpeedMs: number;
@@ -342,6 +346,9 @@ export interface MultiGamePlatformApp {
   toggleBotFeedHistory(): void;
   setBotMoveThrottleMs(delayMs: number): void;
   cycleBotMoveThrottle(): void;
+  toggleBoardFullscreen(): void;
+  setBoardFullscreen(enabled: boolean): void;
+  toggleFullscreenSidebar(): void;
   switchTradeMode(nextMode: "maritime_trade" | "domestic_trade" | null): void;
   setSharedTradeWant(resource: ResourceType, amount: number): void;
 }

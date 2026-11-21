@@ -203,6 +203,8 @@ export function createInitialAppModelPure(
     guideModalGameId: null,
     sidebarSettingsExpanded: false,
     mapBuildMenuExpanded: false,
+    boardFullscreen: false,
+    fullscreenSidebarOpen: false,
     debugMode:
       options?.debugMode !== undefined
         ? Boolean(options.debugMode)

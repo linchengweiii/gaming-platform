@@ -25,6 +25,7 @@ import { escapeAttr } from "../../helpers/html-and-dropdown.ts";
 import type { ClientRoom } from "../../types.ts";
 import { renderCatanPlayerCardPure } from "../catan-player-card-view.ts";
 import { extractBotMoveFeedPure } from "./bot-move-feed.ts";
+import { renderFullscreenSidebarHeaderPure } from "./fullscreen-controls.ts";
 import type { InGameComputedContext } from "./view-state.ts";
 
 export function renderInGameSidebarPure(
@@ -35,6 +36,7 @@ export function renderInGameSidebarPure(
   const locale = model.locale;
 
   return `          <aside class="ga-sidebar">
+            ${model.boardFullscreen ? renderFullscreenSidebarHeaderPure(locale) : ""}
             <div class="ga-standings-section">
               <div class="ga-sidebar__head">
                 <span>${escapeAttr(t(locale, "inGame.standings", { count: state.players.length }))}</span>

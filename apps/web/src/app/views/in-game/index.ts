@@ -19,12 +19,23 @@ export function renderInGameViewPure(
   const boardStageHtml = renderInGameBoardStagePure(room, ctx);
   const sidebarHtml = renderInGameSidebarPure(room, ctx);
 
+  const isFullscreen = ctx.model.boardFullscreen;
+  const isFullscreenSidebarOpen = isFullscreen && ctx.model.fullscreenSidebarOpen;
+  const canvasClasses = isFullscreen
+    ? isFullscreenSidebarOpen
+      ? "ga-game-canvas is-fullscreen is-fullscreen-sidebar-open"
+      : "ga-game-canvas is-fullscreen"
+    : "ga-game-canvas";
+  const sidebarBackdropHtml = isFullscreenSidebarOpen
+    ? `\n          <div id="ga-fullscreen-sidebar-backdrop" class="ga-fullscreen-sidebar-backdrop" aria-hidden="true"></div>`
+    : "";
+
   const html = `
-      <div class="ga-game-canvas">
+      <div class="${canvasClasses}">
         ${renderRoomHeaderPure(ctx.model, room, "game")}
 
         <div class="ga-room-shell ga-room-shell--game">
-${boardStageHtml}
+${boardStageHtml}${sidebarBackdropHtml}
 
 ${sidebarHtml}
         </div>

@@ -301,6 +301,15 @@ export const ZH_TW_COMMON_MESSAGES: Readonly<
   "inGame.editSetupNextGame": "編輯下一局設定",
   "inGame.matchLog": "對戰紀錄",
   "inGame.configureNextGame": "設定下一場",
+  "inGame.fullscreenEnter": "全螢幕",
+  "inGame.fullscreenExit": "離開全螢幕",
+  "inGame.fullscreenEnterTitle":
+    "全螢幕模式 — 隱藏頁首與側邊欄以放大盤面（快速鍵 F）",
+  "inGame.fullscreenExitTitle": "離開全螢幕模式（按 F 或 Esc）",
+  "inGame.fullscreenInfo": "資訊",
+  "inGame.fullscreenInfoTitle": "展開或收合玩家戰績、銀行與對戰紀錄",
+  "inGame.fullscreenDrawerTitle": "對戰資訊",
+  "inGame.fullscreenDrawerCloseAria": "關閉對戰資訊面板",
 
   // Tutorials & Reference Guides chrome
   "tutorial.ariaLabel": "{game}互動教學",

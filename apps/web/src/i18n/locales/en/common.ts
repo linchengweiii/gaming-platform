@@ -317,6 +317,15 @@ export const EN_COMMON_MESSAGES = {
   "inGame.editSetupNextGame": "Edit setup for next game",
   "inGame.matchLog": "Match log",
   "inGame.configureNextGame": "Configure next game",
+  "inGame.fullscreenEnter": "Full screen",
+  "inGame.fullscreenExit": "Exit full screen",
+  "inGame.fullscreenEnterTitle":
+    "Full screen mode — hide header & sidebar for a bigger board (F)",
+  "inGame.fullscreenExitTitle": "Exit full screen mode (F or Esc)",
+  "inGame.fullscreenInfo": "Info",
+  "inGame.fullscreenInfoTitle": "Show or hide standings, bank & match log",
+  "inGame.fullscreenDrawerTitle": "Match info",
+  "inGame.fullscreenDrawerCloseAria": "Close match info drawer",
 
   // Tutorials & Reference Guides chrome
   "tutorial.ariaLabel": "{game} interactive tutorial",

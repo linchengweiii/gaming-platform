@@ -1,0 +1,382 @@
+/* ============================================================================
+ * Full Screen / Focus Board Mode (Desktop, Tablet & Mobile)
+ * Hides navigation chrome, sidebar, and low-priority clutter to maximize board area.
+ * ========================================================================== */
+
+.ga-btn-fullscreen,
+.ga-btn-fullscreen-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ga-fullscreen-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.map-zoom-divider {
+  width: 1px;
+  height: 18px;
+  margin-inline: 2px;
+  background: var(--line-strong);
+  flex: none;
+}
+
+.map-zoom-btn--fullscreen.is-active {
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(56, 189, 248, 0.42);
+}
+
+/* ---------------------------------------------------------------- Viewport Lock & Distraction-Free Shell */
+html:has(.ga-game-canvas.is-fullscreen),
+body.ga-body--fullscreen,
+body:has(.ga-game-canvas.is-fullscreen) {
+  height: 100svh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+#app:has(.ga-game-canvas.is-fullscreen) {
+  height: 100svh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.ga-game-canvas.is-fullscreen {
+  height: 100svh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ga-game-canvas.is-fullscreen .ga-nav--room,
+.ga-game-canvas.is-fullscreen .ga-bot-feed,
+.ga-game-canvas.is-fullscreen #btn-toggle-bot-moves,
+.ga-game-canvas.is-fullscreen #btn-cycle-bot-pace,
+.ga-game-canvas.is-fullscreen .board-banner__status .ga-chip--ok {
+  display: none;
+}
+
+.ga-game-canvas.is-fullscreen .ga-room-shell--game {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  overflow: hidden;
+  position: relative;
+}
+
+.ga-game-canvas.is-fullscreen .board-container {
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- Slide-Over Match Info Drawer */
+.ga-game-canvas.is-fullscreen .ga-sidebar {
+  display: none;
+}
+
+.ga-fullscreen-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 44;
+  background: rgba(6, 8, 12, 0.56);
+  backdrop-filter: blur(2px);
+}
+
+.ga-fullscreen-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-strong);
+  flex: none;
+}
+
+.ga-fullscreen-drawer-head__title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.ga-fullscreen-drawer-head__close {
+  min-width: 28px;
+  padding-inline: 8px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.ga-game-canvas.is-fullscreen.is-fullscreen-sidebar-open .ga-sidebar {
+  display: flex;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(392px, 92vw);
+  height: 100dvh;
+  max-height: 100dvh;
+  z-index: 46;
+  border-radius: 0;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 1px solid var(--line-strong);
+  box-shadow: -16px 0 40px rgba(0, 0, 0, 0.62);
+  padding: max(12px, env(safe-area-inset-top, 12px))
+    max(14px, env(safe-area-inset-right, 14px))
+    max(14px, env(safe-area-inset-bottom, 14px)) 14px;
+  overflow: hidden;
+}
+
+.ga-game-canvas.is-fullscreen.is-fullscreen-sidebar-open .ga-standings-section {
+  flex: 0 0 auto;
+  max-height: 55%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ga-game-canvas.is-fullscreen.is-fullscreen-sidebar-open .ga-standings-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ga-game-canvas.is-fullscreen.is-fullscreen-sidebar-open .ga-sidebar__secondary {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ---------------------------------------------------------------- Desktop Full Screen (>= 1024px) */
+@media (min-width: 1024px) {
+  .ga-game-canvas.is-fullscreen .board-banner {
+    height: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    flex: 0 0 40px;
+    padding: 0 12px;
+  }
+
+  .ga-game-canvas.is-fullscreen .board-svg-wrap {
+    padding: 4px 8px;
+  }
+
+  .ga-game-canvas.is-fullscreen .action-dock {
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    flex: 0 0 44px;
+    padding: 0 14px;
+  }
+
+  /* Slimmer Catan hand tray gives the hex map extra vertical room while keeping cards clear */
+  .ga-game-canvas.is-fullscreen .visual-hand-tray,
+  .ga-game-canvas.is-fullscreen .ga-hand-privacy-card {
+    height: 152px;
+    min-height: 152px;
+    max-height: 152px;
+    flex: 0 0 152px;
+  }
+
+  .ga-game-canvas.is-fullscreen .visual-hand-tray {
+    padding: 8px 14px 10px;
+    gap: 6px;
+  }
+
+  .ga-game-canvas.is-fullscreen .hand-tray-header {
+    height: 24px;
+    min-height: 24px;
+    flex: 0 0 24px;
+    padding-block: 0;
+  }
+
+  .ga-game-canvas.is-fullscreen .playing-card-art svg {
+    max-height: 28px;
+  }
+
+  .ga-game-canvas.is-fullscreen
+    .board-container:not(.board-container--neutral)
+    .action-dock
+    > .sub-modal:not(.sub-modal--trade-offer):not(.sub-modal--keep-hand) {
+    bottom: -152px;
+    min-height: 152px;
+  }
+
+  /* Bigger, clearer cards & boards on neutral games in full screen */
+  .ga-game-canvas.is-fullscreen .sp-board,
+  .ga-game-canvas.is-fullscreen .az-board {
+    padding: 18px 28px;
+    gap: 16px;
+  }
+
+  .ga-game-canvas.is-fullscreen .sp-noble-card {
+    min-width: 164px;
+    padding: 10px 14px;
+  }
+
+  .ga-game-canvas.is-fullscreen .sp-deck-card {
+    width: 112px;
+    min-height: 156px;
+  }
+
+  .ga-game-canvas.is-fullscreen .sp-dev-card {
+    width: 158px;
+    min-height: 156px;
+    padding: 11px 12px;
+  }
+
+  .ga-game-canvas.is-fullscreen .az-factory {
+    width: 110px;
+    height: 110px;
+    gap: 6px;
+  }
+
+  .ga-game-canvas.is-fullscreen .az-palace-card {
+    padding: 16px 22px;
+  }
+
+  .ga-game-canvas.is-fullscreen .sw-board {
+    max-width: 1560px;
+    margin-inline: auto;
+    padding: 18px 28px;
+  }
+}
+
+/* ---------------------------------------------------------------- Tablet & Mobile Full Screen (<= 1023px) */
+@media (max-width: 1023px) {
+  .ga-game-canvas.is-fullscreen .board-banner {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: max(4px, env(safe-area-inset-top, 4px))
+      max(8px, env(safe-area-inset-right, 8px)) 4px
+      max(8px, env(safe-area-inset-left, 8px));
+    overflow: hidden;
+  }
+
+  .ga-game-canvas.is-fullscreen .board-banner__status {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+
+  .ga-game-canvas.is-fullscreen .board-banner__controls {
+    flex: 0 0 auto;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+
+  .ga-game-canvas.is-fullscreen .board-banner__status::-webkit-scrollbar,
+  .ga-game-canvas.is-fullscreen .board-banner__controls::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Uncap Catan board height so the island map stretches to fill the full screen */
+  .ga-game-canvas.is-fullscreen
+    .board-container:not(.board-container--neutral)
+    .board-svg-wrap {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    padding: 2px;
+    overflow: hidden;
+  }
+
+  .ga-game-canvas.is-fullscreen
+    .board-container:not(.board-container--neutral)
+    .board-svg {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    max-width: 100%;
+    display: block;
+  }
+
+  /* Neutral boards scroll smoothly across the entire full-screen viewport */
+  .ga-game-canvas.is-fullscreen .board-container--neutral .board-svg-wrap {
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
+    max-height: none;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .ga-game-canvas.is-fullscreen .action-dock {
+    flex: 0 0 auto;
+    padding: 6px max(8px, env(safe-area-inset-right, 8px)) 6px
+      max(8px, env(safe-area-inset-left, 8px));
+  }
+
+  .ga-game-canvas.is-fullscreen .action-dock > .sub-modal {
+    max-height: min(46dvh, 300px);
+    overflow-y: auto;
+  }
+
+  .ga-game-canvas.is-fullscreen
+    .board-container--neutral
+    .action-dock {
+    padding-bottom: max(6px, env(safe-area-inset-bottom, 6px));
+  }
+
+  .ga-game-canvas.is-fullscreen .visual-hand-tray,
+  .ga-game-canvas.is-fullscreen .ga-hand-privacy-card {
+    flex: 0 0 auto;
+    padding: 6px max(8px, env(safe-area-inset-right, 8px))
+      max(8px, env(safe-area-inset-bottom, 8px))
+      max(8px, env(safe-area-inset-left, 8px));
+    gap: 4px;
+  }
+}
+
+@media (max-width: 639px) {
+  .map-dice-hud {
+    max-width: calc(100% - 168px);
+  }
+}
+
+@media (max-width: 480px) {
+  .ga-game-canvas.is-fullscreen .ga-btn-fullscreen span,
+  .ga-game-canvas.is-fullscreen .ga-btn-fullscreen-info span {
+    display: none;
+  }
+
+  .ga-game-canvas.is-fullscreen .ga-btn-fullscreen,
+  .ga-game-canvas.is-fullscreen .ga-btn-fullscreen-info {
+    padding-inline: 7px;
+  }
+}
