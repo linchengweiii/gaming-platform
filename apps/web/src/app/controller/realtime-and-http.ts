@@ -58,6 +58,10 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
     ctx.navEpoch += 1;
     ctx.stopAutoPlay();
     cancelPendingSetupSync();
+    if (ctx.wsFallbackSyncTimer) {
+      clearTimeout(ctx.wsFallbackSyncTimer);
+      ctx.wsFallbackSyncTimer = null;
+    }
     clearActiveRoomIdFromStorage();
     ctx.syncUrlRoomHash(null);
     ctx.sendWsMessage({ type: "UNSUBSCRIBE_ROOM" });
@@ -140,6 +144,7 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
   };
 
   const scheduleOnlineBotWatchdogIfNeeded = (): void => {
+    ctx.scheduleWsFallbackSyncIfNeeded();
     if (ctx.onlineBotWatchdogTimer) {
       clearTimeout(ctx.onlineBotWatchdogTimer);
       ctx.onlineBotWatchdogTimer = null;

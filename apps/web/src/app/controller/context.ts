@@ -49,6 +49,7 @@ export interface AppRuntimeContext {
   wsPingTimer: ReturnType<typeof setInterval> | null;
   wsReconnectAttempt: number;
   lastWsActivityMs: number;
+  wsFallbackSyncTimer: ReturnType<typeof setTimeout> | null;
   onlineBotWatchdogTimer: ReturnType<typeof setTimeout> | null;
   setupSyncTimer: ReturnType<typeof setTimeout> | null;
   setupSyncPromise: Promise<void> | null;
@@ -82,6 +83,7 @@ export interface AppRuntimeContext {
   sendWsMessage: (msg: Record<string, unknown>) => void;
   connectServerRealtime: (forceReconnect?: boolean) => void;
   scheduleWsReconnect: () => void;
+  scheduleWsFallbackSyncIfNeeded: () => void;
   syncActiveServerRoomState: () => Promise<void>;
   scheduleOnlineBotWatchdogIfNeeded: () => void;
   fetchLobbyRooms: () => Promise<void>;
@@ -148,6 +150,7 @@ export function createAppRuntimeContext(
     wsPingTimer: null,
     wsReconnectAttempt: 0,
     lastWsActivityMs: 0,
+    wsFallbackSyncTimer: null,
     onlineBotWatchdogTimer: null,
     setupSyncTimer: null,
     setupSyncPromise: null,
@@ -177,6 +180,7 @@ export function createAppRuntimeContext(
     sendWsMessage: noop,
     connectServerRealtime: noop,
     scheduleWsReconnect: noop,
+    scheduleWsFallbackSyncIfNeeded: noop,
     syncActiveServerRoomState: noopAsync,
     scheduleOnlineBotWatchdogIfNeeded: noop,
     fetchLobbyRooms: noopAsync,
