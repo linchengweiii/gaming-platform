@@ -16,7 +16,15 @@ __pycache__/
 .pytest_cache/
 
 # Agent / Local Skill Metadata & Unused Starter Demo Packs
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/ponytail/
+!.agents/skills/ponytail-audit/
+!.agents/skills/ponytail-debt/
+!.agents/skills/ponytail-gain/
+!.agents/skills/ponytail-help/
+!.agents/skills/ponytail-review/
 .taste-skill/
 apps/web/public/assets/*
 !apps/web/public/assets/system.css
