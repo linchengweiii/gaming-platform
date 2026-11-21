@@ -161,6 +161,7 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
         : "";
     const socket = new WebSocket(`${proto}//${window.location.host}${wsQuery}`);
     ctx.ws = socket;
+    let wsAuthRecoveryAttempted = false;
 
     socket.addEventListener("open", () => {
       if (ctx.ws !== socket) return;
@@ -209,6 +210,49 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
       try {
         const msg = JSON.parse(String(ev.data));
         if (msg.type === "SERVER_HEARTBEAT" || msg.type === "PONG") {
+          return;
+        }
+        if (
+          msg.type === "ERROR" &&
+          (msg.code === "INVALID_GUEST_TOKEN" ||
+            (typeof msg.error === "string" &&
+              msg.error.includes("guest session token"))) &&
+          ctx.model.isAuthenticated &&
+          ctx.model.currentUserId &&
+          !wsAuthRecoveryAttempted
+        ) {
+          wsAuthRecoveryAttempted = true;
+          const targetId = ctx.model.currentUserId;
+          ctx.clearGuestToken(targetId);
+          void ctx.ensureGuestToken(targetId).then((freshToken) => {
+            if (
+              !freshToken ||
+              ctx.ws !== socket ||
+              socket.readyState !== WebSocket.OPEN ||
+              ctx.model.currentUserId !== targetId
+            ) {
+              return;
+            }
+            sendWsMessage({
+              type: "IDENTIFY_PLAYER",
+              playerId: targetId,
+              token: freshToken,
+            });
+            const active = ctx.model.rooms[ctx.model.activeRoomId];
+            if (
+              (ctx.model.viewMode === "room_setup" ||
+                ctx.model.viewMode === "in_game") &&
+              active &&
+              !active.isOfflineLocal
+            ) {
+              sendWsMessage({
+                type: "SUBSCRIBE_ROOM",
+                roomId: active.roomId,
+                playerId: targetId,
+                token: freshToken,
+              });
+            }
+          });
           return;
         }
         if (

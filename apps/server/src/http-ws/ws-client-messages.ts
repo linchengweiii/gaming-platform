@@ -1,9 +1,8 @@
 import type { PlatformRoomManager, RoomInstance } from "../room-manager.ts";
 import type { GuestSessionStore } from "./guest-sessions.ts";
-import {
-  type WsClient,
-  type createPresenceTracker,
-  sendWsFrameSafe,
+import type {
+  WsClient,
+  createPresenceTracker,
 } from "./ws-hub-types-and-presence.ts";
 
 export interface WsMessageHandlerDeps {
@@ -41,7 +40,7 @@ export function handleClientJsonMessage(
   if (!curClient || !msg || typeof msg.type !== "string") return;
 
   if (msg.type === "PING") {
-    sendWsFrameSafe(curClient.socket, { type: "PONG", ts: Date.now() });
+    curClient.transport.sendJson({ type: "PONG", ts: Date.now() });
     return;
   }
 
@@ -77,8 +76,9 @@ export function handleClientJsonMessage(
           deps.refreshRoomDisconnectClock(rid);
           deps.broadcastRoomState(rid);
         });
-        sendWsFrameSafe(curClient.socket, {
+        curClient.transport.sendJson({
           type: "ERROR",
+          code: "INVALID_GUEST_TOKEN",
           error: "Invalid guest session token",
         });
         if (prevPlayerId !== null) deps.broadcastLobbyRooms();
@@ -143,16 +143,18 @@ export function handleClientJsonMessage(
     if (rawToken) {
       const verifiedId = deps.guestSessions.verifyToken(rawToken);
       if (!verifiedId || (claimedPlayerId && verifiedId !== claimedPlayerId)) {
-        sendWsFrameSafe(curClient.socket, {
+        curClient.transport.sendJson({
           type: "ERROR",
+          code: "INVALID_GUEST_TOKEN",
           error: "Invalid guest session token",
         });
         return;
       }
       nextPlayerId = verifiedId;
     } else if (claimedPlayerId && claimedPlayerId !== curClient.playerId) {
-      sendWsFrameSafe(curClient.socket, {
+      curClient.transport.sendJson({
         type: "ERROR",
+        code: "INVALID_GUEST_TOKEN",
         error: "Valid guest session token required to switch identity",
       });
       return;
@@ -211,7 +213,7 @@ export function handleClientJsonMessage(
       if (prevRoomId || prevPlayerId !== nextPlayerId) {
         deps.broadcastLobbyRooms();
       }
-      sendWsFrameSafe(curClient.socket, {
+      curClient.transport.sendJson({
         type: "ROOM_CLOSED",
         roomId: requestedRoomId,
       });
@@ -259,6 +261,7 @@ export function handleClientJsonMessage(
     }
     const prevStatus = room.status;
     deps.roomManager.dispatchAction(curClient.roomId, msg.playerId, msg.action);
+    deps.presence.touchRoomActivity(curClient.roomId);
     deps.broadcastRoomState(curClient.roomId);
     if (room.status !== prevStatus) {
       deps.broadcastLobbyRooms();
@@ -277,6 +280,7 @@ export function handleClientJsonMessage(
     }
     const prevStatus = room.status;
     deps.roomManager.stepBot(curClient.roomId, { onlyBots: true });
+    deps.presence.touchRoomActivity(curClient.roomId);
     deps.broadcastRoomState(curClient.roomId);
     if (room.status !== prevStatus) {
       deps.broadcastLobbyRooms();

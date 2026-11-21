@@ -213,6 +213,31 @@ export function attachGuestTokenAndFetchHelpers(ctx: AppRuntimeContext): void {
       clearGuestToken(targetGuestId);
       const refreshed = await ensureGuestToken(targetGuestId);
       if (refreshed && refreshed !== token) {
+        if (
+          targetGuestId === ctx.model.currentUserId &&
+          ctx.ws &&
+          ctx.ws.readyState === WebSocket.OPEN
+        ) {
+          ctx.sendWsMessage({
+            type: "IDENTIFY_PLAYER",
+            playerId: targetGuestId,
+            token: refreshed,
+          });
+          const active = ctx.model.rooms[ctx.model.activeRoomId];
+          if (
+            (ctx.model.viewMode === "room_setup" ||
+              ctx.model.viewMode === "in_game") &&
+            active &&
+            !active.isOfflineLocal
+          ) {
+            ctx.sendWsMessage({
+              type: "SUBSCRIBE_ROOM",
+              roomId: active.roomId,
+              playerId: targetGuestId,
+              token: refreshed,
+            });
+          }
+        }
         return fetchWithTimeout(input, {
           ...init,
           headers: withGuestTokenHeaderPure(init?.headers, refreshed),
