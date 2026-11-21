@@ -1,6 +1,7 @@
 import {
   WS_CLIENT_PING_INTERVAL_MS,
   WS_CLIENT_STALE_TIMEOUT_MS,
+  WS_DISCONNECTED_FALLBACK_SYNC_MS,
   computeWsReconnectDelayPure,
 } from "../../config/app-config.ts";
 import {
@@ -50,6 +51,48 @@ export function evictDeletedActiveRoom(
 }
 
 export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
+  const clearWsFallbackSyncTimer = (): void => {
+    if (ctx.wsFallbackSyncTimer) {
+      clearTimeout(ctx.wsFallbackSyncTimer);
+      ctx.wsFallbackSyncTimer = null;
+    }
+  };
+
+  const scheduleWsFallbackSyncIfNeeded = (): void => {
+    if (
+      !ctx.model.useServerBackend ||
+      ctx.model.staticHostOnly ||
+      !ctx.model.isAuthenticated
+    ) {
+      clearWsFallbackSyncTimer();
+      return;
+    }
+    const active = ctx.model.rooms[ctx.model.activeRoomId];
+    if (
+      (ctx.model.viewMode !== "room_setup" &&
+        ctx.model.viewMode !== "in_game") ||
+      !active ||
+      active.isOfflineLocal
+    ) {
+      clearWsFallbackSyncTimer();
+      return;
+    }
+    if (ctx.ws && ctx.ws.readyState === WebSocket.OPEN) {
+      clearWsFallbackSyncTimer();
+      return;
+    }
+    if (ctx.wsFallbackSyncTimer) return;
+    const timer = setTimeout(() => {
+      ctx.wsFallbackSyncTimer = null;
+      if (ctx.ws && ctx.ws.readyState === WebSocket.OPEN) return;
+      void ctx.syncActiveServerRoomState().finally(() => {
+        scheduleWsFallbackSyncIfNeeded();
+      });
+    }, WS_DISCONNECTED_FALLBACK_SYNC_MS);
+    (timer as any).unref?.();
+    ctx.wsFallbackSyncTimer = timer;
+  };
+
   const sendWsMessage = (msg: Record<string, unknown>): void => {
     if (!ctx.ws || ctx.ws.readyState !== WebSocket.OPEN) return;
     let payload: Record<string, unknown> = msg;
@@ -162,11 +205,13 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
     const socket = new WebSocket(`${proto}//${window.location.host}${wsQuery}`);
     ctx.ws = socket;
     let wsAuthRecoveryAttempted = false;
+    scheduleWsFallbackSyncIfNeeded();
 
     socket.addEventListener("open", () => {
       if (ctx.ws !== socket) return;
       ctx.wsReconnectAttempt = 0;
       ctx.lastWsActivityMs = Date.now();
+      clearWsFallbackSyncTimer();
       const wasUnreachable = !ctx.model.serverReachable;
       ctx.model = {
         ...ctx.model,
@@ -251,6 +296,7 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
                 playerId: targetId,
                 token: freshToken,
               });
+              void ctx.syncActiveServerRoomState();
             }
           });
           return;
@@ -366,6 +412,7 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
       ctx.ws = null;
       if (ctx.model.isAuthenticated && ctx.model.useServerBackend) {
         scheduleWsReconnect();
+        scheduleWsFallbackSyncIfNeeded();
       }
     });
   };
@@ -441,5 +488,6 @@ export function attachRealtimeWsActions(ctx: AppRuntimeContext): void {
 
   ctx.sendWsMessage = sendWsMessage;
   ctx.scheduleWsReconnect = scheduleWsReconnect;
+  ctx.scheduleWsFallbackSyncIfNeeded = scheduleWsFallbackSyncIfNeeded;
   ctx.connectServerRealtime = connectServerRealtime;
 }

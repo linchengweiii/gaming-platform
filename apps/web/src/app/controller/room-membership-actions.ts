@@ -92,14 +92,8 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
               latestRoom = upserted.room;
             }
 
-            ctx.connectServerRealtime();
             saveActiveRoomIdToStorage(latestRoom.roomId);
             ctx.syncUrlRoomHash(latestRoom.roomId);
-            ctx.sendWsMessage({
-              type: "SUBSCRIBE_ROOM",
-              roomId: latestRoom.roomId,
-              playerId: ctx.model.currentUserId,
-            });
             ctx.model = resetSubModesPure({
               ...ctx.model,
               lobbyGameFilter: latestRoom.gameId,
@@ -112,6 +106,12 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
                 latestRoom.roomId !== ctx.model.activeRoomId
                   ? DEFAULT_CATAN_MAP_VIEWPORT
                   : ctx.model.catanMapViewport,
+            });
+            ctx.connectServerRealtime();
+            ctx.sendWsMessage({
+              type: "SUBSCRIBE_ROOM",
+              roomId: latestRoom.roomId,
+              playerId: ctx.model.currentUserId,
             });
             ctx.render();
           } catch {
@@ -198,13 +198,7 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
           }
 
           if (ctx.navEpoch !== capturedEpoch) return;
-          ctx.connectServerRealtime();
           ctx.syncUrlRoomHash(latestRoom.roomId);
-          ctx.sendWsMessage({
-            type: "SUBSCRIBE_ROOM",
-            roomId: latestRoom.roomId,
-            playerId: ctx.model.currentUserId,
-          });
           ctx.model = resetSubModesPure({
             ...ctx.model,
             lobbyGameFilter: latestRoom.gameId,
@@ -213,6 +207,12 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
             inspectingSetupDuringMatch: false,
             viewMode:
               latestRoom.status === "in_progress" ? "in_game" : "room_setup",
+          });
+          ctx.connectServerRealtime();
+          ctx.sendWsMessage({
+            type: "SUBSCRIBE_ROOM",
+            roomId: latestRoom.roomId,
+            playerId: ctx.model.currentUserId,
           });
           ctx.render();
         } catch (err: any) {
