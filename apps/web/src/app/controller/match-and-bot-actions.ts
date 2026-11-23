@@ -235,10 +235,6 @@ export function attachMatchAndBotActions(ctx: AppRuntimeContext): void {
 
     if (!room.session) return;
     try {
-      const prevActorId = getActingPlayerIdPure(
-        room.gameId,
-        room.session.getState()
-      );
       const result = room.session.dispatch(playerId, action);
       if (result.state.phase === "GAME_OVER") {
         ctx.model = updateRoomInModelPure(ctx.model, room.roomId, (r) => ({

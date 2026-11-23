@@ -1,15 +1,6 @@
 import type { BotDifficulty } from "@gaming-platform/core";
-import {
-  type CommodityMap,
-  type ResourceMap,
-  SCENARIO_CATALOG,
-  SELECTABLE_SCENARIO_IDS,
-  emptyCommodities,
-  emptyResources,
-} from "@gaming-platform/catan";
 import type {
   CreateLocalRoomOptions,
-  DropdownOption,
   SupportedGameId,
 } from "../app/types.ts";
 
@@ -22,7 +13,6 @@ export const BOT_MOVE_THROTTLE_STORAGE_KEY = "ga_bot_move_throttle_ms";
 export const LOCALE_STORAGE_KEY = "ga_locale";
 
 export const DEFAULT_AUTOPLAY_SPEED_MS = 150;
-export const BOT_RESPONSE_DELAY_MS = 140;
 export const BOT_SEVEN_WONDERS_DRAFT_DELAY_MS = 380;
 export const SPECIAL_BUILD_AUTO_END_DELAY_MS = 160;
 
@@ -100,7 +90,6 @@ export function formatBotThrottleShortPure(delayMs: number): string {
   const seconds = clamped / 1000;
   return `${Number.isInteger(seconds) ? seconds : Number(seconds.toFixed(2))}s`;
 }
-export const WS_RECONNECT_DELAY_MS = 1500;
 export const WS_RECONNECT_BASE_DELAY_MS = 500;
 export const WS_RECONNECT_MAX_DELAY_MS = 10_000;
 export const WS_CLIENT_PING_INTERVAL_MS = 20_000;
@@ -162,21 +151,6 @@ export const TUTORIAL_GAME_SHORT_TITLE_BY_ID: Readonly<
   azul: "Azul",
   seven_wonders: "7 Wonders",
 };
-
-export const SETUP_GAME_DROPDOWN_OPTIONS: readonly DropdownOption[] = [
-  {
-    value: "catan",
-    label: "Settlers of Catan",
-    meta: "2–6P",
-  },
-  { value: "splendor", label: "Splendor", meta: "2–4P" },
-  { value: "azul", label: "Azul", meta: "2–4P" },
-  {
-    value: "seven_wonders",
-    label: "7 Wonders",
-    meta: "3–7P",
-  },
-];
 
 export const BOT_DIFFICULTY_META: Record<
   BotDifficulty,
@@ -260,22 +234,3 @@ export const INITIAL_LOBBY_ROOM_SEEDS: readonly CreateLocalRoomOptions[] = [
     autoStart: false,
   },
 ];
-
-export function createEmptyTradeResources(): ResourceMap {
-  return emptyResources();
-}
-
-export function createEmptyTradeCommodities(): CommodityMap {
-  return emptyCommodities();
-}
-
-export function getCatanScenarioDropdownOptions(): DropdownOption[] {
-  return SELECTABLE_SCENARIO_IDS.map((id) => {
-    const sc = SCENARIO_CATALOG[id];
-    return {
-      value: sc.id,
-      label: sc.name,
-      meta: `${sc.minPlayers}–${sc.maxPlayers}P`,
-    };
-  });
-}

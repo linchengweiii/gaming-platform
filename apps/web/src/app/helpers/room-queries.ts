@@ -65,13 +65,6 @@ export function roomUsesServerPure(
   return model.useServerBackend && !room.isOfflineLocal;
 }
 
-export function getRoomByIdPure(
-  model: Readonly<AppModel>,
-  roomId: string
-): ClientRoom | undefined {
-  return model.rooms[roomId];
-}
-
 export function getRoomListPure(
   model: Readonly<AppModel>
 ): readonly ClientRoom[] {

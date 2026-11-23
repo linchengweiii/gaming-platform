@@ -25,7 +25,7 @@ export {
 export { escapeAttr, escapeHtml, formatPhaseLabel, renderDropdown } from "./app/helpers/html-and-dropdown.ts";
 export {
   canControlPlayerOnDevicePure, getActingPlayerIdPure, getActiveRoomPure, getEngineForGamePure,
-  getRoomBoundsPure, getRoomByIdPure, getRoomListPure, getRoomStatePure, rebuildRoomSeatsPure,
+  getRoomBoundsPure, getRoomListPure, getRoomStatePure, rebuildRoomSeatsPure,
   removeRoomFromModelPure, roomUsesServerPure, setRoomInModelPure, updateRoomInModelPure,
   upsertDeviceGuestListPure,
 } from "./app/helpers/room-queries.ts";

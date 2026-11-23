@@ -21,64 +21,28 @@ import {
   handleCatanPlayProgressCardClick,
 } from "./catan-ui-actions.ts";
 import type { AppRuntimeContext } from "./context.ts";
+import { onClick, onDataClick, patchModelAndRender } from "./dom-events.ts";
 
 export function bindReadOnlyCatanSpotInspect(ctx: AppRuntimeContext): void {
   const { root } = ctx;
+  onClick(root, "#btn-close-spot-popover", () =>
+    patchModelAndRender(ctx, { selectedBoardSpot: null })
+  );
 
-  root
-    .querySelector("#btn-close-spot-popover")
-    ?.addEventListener("click", () => {
-      ctx.model = { ...ctx.model, selectedBoardSpot: null };
-      ctx.render();
-    });
-
-  root.querySelectorAll("[data-spot-hex]").forEach((el) => {
-    el.addEventListener("click", (e) => {
+  for (const [attr, kind] of [
+    ["data-spot-hex", "hex"],
+    ["data-spot-vertex", "vertex"],
+    ["data-spot-edge", "edge"],
+  ] as const) {
+    onDataClick(root, attr, (id, _el, e) => {
       e.stopPropagation();
-      const hexId = el.getAttribute("data-spot-hex")!;
-      ctx.model = {
-        ...ctx.model,
+      const cur = ctx.model.selectedBoardSpot;
+      patchModelAndRender(ctx, {
         selectedBoardSpot:
-          ctx.model.selectedBoardSpot?.kind === "hex" &&
-          ctx.model.selectedBoardSpot.id === hexId
-            ? null
-            : { kind: "hex", id: hexId },
-      };
-      ctx.render();
+          cur?.kind === kind && cur.id === id ? null : { kind, id },
+      });
     });
-  });
-
-  root.querySelectorAll("[data-spot-vertex]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const vertexId = el.getAttribute("data-spot-vertex")!;
-      ctx.model = {
-        ...ctx.model,
-        selectedBoardSpot:
-          ctx.model.selectedBoardSpot?.kind === "vertex" &&
-          ctx.model.selectedBoardSpot.id === vertexId
-            ? null
-            : { kind: "vertex", id: vertexId },
-      };
-      ctx.render();
-    });
-  });
-
-  root.querySelectorAll("[data-spot-edge]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const edgeId = el.getAttribute("data-spot-edge")!;
-      ctx.model = {
-        ...ctx.model,
-        selectedBoardSpot:
-          ctx.model.selectedBoardSpot?.kind === "edge" &&
-          ctx.model.selectedBoardSpot.id === edgeId
-            ? null
-            : { kind: "edge", id: edgeId },
-      };
-      ctx.render();
-    });
-  });
+  }
 }
 
 export function bindCatanEvents(
@@ -93,144 +57,96 @@ export function bindCatanEvents(
     return;
   }
 
-  root.querySelectorAll("[data-close-submodal]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      ctx.model = {
-        ...ctx.model,
-        selectedBoardSpot: null,
-        buildMode: null,
-        mapBuildMenuExpanded: false,
-        selectedProgressCardId: null,
-        inventorHex1: null,
-        smithVertex1: null,
-        deserterTargetPlayerId: null,
-      };
-      ctx.render();
-    });
-  });
+  onDataClick(root, "data-close-submodal", () =>
+    patchModelAndRender(ctx, {
+      selectedBoardSpot: null,
+      buildMode: null,
+      mapBuildMenuExpanded: false,
+      selectedProgressCardId: null,
+      inventorHex1: null,
+      smithVertex1: null,
+      deserterTargetPlayerId: null,
+    })
+  );
 
-  root.querySelector(".board-svg")?.addEventListener("click", () => {
+  onClick(root, ".board-svg", () => {
     if (ctx.model.mapBuildMenuExpanded || ctx.model.selectedBoardSpot) {
-      ctx.model = {
-        ...ctx.model,
+      patchModelAndRender(ctx, {
         mapBuildMenuExpanded: false,
         selectedBoardSpot: null,
-      };
-      ctx.render();
+      });
     }
   });
 
-  root.querySelectorAll("[data-hand-res-card]").forEach((cardEl) => {
-    cardEl.addEventListener("click", () => {
-      const g = cardEl.getAttribute("data-hand-res-card") as TradeGoodType;
-      handleCatanHandCardClick(ctx, state, actingPlayerId, g);
-    });
-  });
+  onDataClick(root, "data-hand-res-card", (g) =>
+    handleCatanHandCardClick(ctx, state, actingPlayerId, g as TradeGoodType)
+  );
+  onDataClick(root, "data-play-progress-card", (cardId) =>
+    handleCatanPlayProgressCardClick(ctx, state, actingPlayerId, cardId)
+  );
 
-  root.querySelectorAll("[data-play-progress-card]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const cardId = btn.getAttribute("data-play-progress-card")!;
-      handleCatanPlayProgressCardClick(ctx, state, actingPlayerId, cardId);
-    });
-  });
+  onClick(root, "#btn-hand-play-knight", () =>
+    ctx.dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" })
+  );
+  onClick(root, "#btn-hand-play-roadbuild", () =>
+    ctx.dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" })
+  );
+  onClick(root, "#btn-hand-play-yop", () =>
+    patchModelAndRender(ctx, { buildMode: "year_of_plenty" })
+  );
+  onClick(root, "#btn-hand-play-mono", () =>
+    patchModelAndRender(ctx, { buildMode: "monopoly" })
+  );
+  onClick(root, "#btn-close-spot-popover", () =>
+    patchModelAndRender(ctx, { selectedBoardSpot: null })
+  );
 
-  root
-    .querySelector("#btn-hand-play-knight")
-    ?.addEventListener("click", () => {
-      ctx.dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" });
-    });
-  root
-    .querySelector("#btn-hand-play-roadbuild")
-    ?.addEventListener("click", () => {
-      ctx.dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
-    });
-  root.querySelector("#btn-hand-play-yop")?.addEventListener("click", () => {
-    ctx.model = { ...ctx.model, buildMode: "year_of_plenty" };
-    ctx.render();
-  });
-  root.querySelector("#btn-hand-play-mono")?.addEventListener("click", () => {
-    ctx.model = { ...ctx.model, buildMode: "monopoly" };
-    ctx.render();
-  });
+  onDataClick(root, "data-spot-action", (act, btn) =>
+    handleCatanPopoverSpotAction(
+      ctx,
+      actingPlayerId,
+      act,
+      btn.getAttribute("data-spot-id") ?? "",
+      btn.getAttribute("data-chase-vertex"),
+      btn.getAttribute("data-chase-target")
+    )
+  );
 
-  root
-    .querySelector("#btn-close-spot-popover")
-    ?.addEventListener("click", () => {
-      ctx.model = { ...ctx.model, selectedBoardSpot: null };
-      ctx.render();
-    });
-
-  root.querySelectorAll("[data-spot-action]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const act = btn.getAttribute("data-spot-action")!;
-      const spotId = btn.getAttribute("data-spot-id") ?? "";
-      handleCatanPopoverSpotAction(
-        ctx,
-        actingPlayerId,
-        act,
-        spotId,
-        btn.getAttribute("data-chase-vertex"),
-        btn.getAttribute("data-chase-target")
-      );
-    });
-  });
-
-  root.querySelectorAll("[data-spot-hex]").forEach((el) => {
-    el.addEventListener("click", (e) => {
+  for (const [attr, handler] of [
+    ["data-spot-hex", handleCatanHexSpotClick],
+    ["data-spot-vertex", handleCatanVertexSpotClick],
+    ["data-spot-edge", handleCatanEdgeSpotClick],
+  ] as const) {
+    onDataClick(root, attr, (id, _el, e) => {
       e.stopPropagation();
       ctx.model = { ...ctx.model, mapBuildMenuExpanded: false };
-      const hexId = el.getAttribute("data-spot-hex")!;
-      handleCatanHexSpotClick(ctx, state, actingPlayerId, hexId);
+      handler(ctx, state, actingPlayerId, id);
     });
-  });
-
-  root.querySelectorAll("[data-spot-vertex]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      ctx.model = { ...ctx.model, mapBuildMenuExpanded: false };
-      const vertexId = el.getAttribute("data-spot-vertex")!;
-      handleCatanVertexSpotClick(ctx, state, actingPlayerId, vertexId);
-    });
-  });
-
-  root.querySelectorAll("[data-spot-edge]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      ctx.model = { ...ctx.model, mapBuildMenuExpanded: false };
-      const edgeId = el.getAttribute("data-spot-edge")!;
-      handleCatanEdgeSpotClick(ctx, state, actingPlayerId, edgeId);
-    });
-  });
+  }
 
   bindCatanPhasesAndCkEvents(ctx, state, actingPlayerId);
   bindCatanTradeEvents(ctx, state, actingPlayerId);
 
-  root.querySelector("#btn-buy-dev")?.addEventListener("click", () => {
+  onClick(root, "#btn-buy-dev", () => {
     ctx.model = { ...ctx.model, mapBuildMenuExpanded: false };
     ctx.dispatch(actingPlayerId, { type: "BUY_DEV_CARD" });
   });
-
-  root.querySelector("#btn-play-knight")?.addEventListener("click", () => {
-    ctx.dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" });
-  });
-
-  root.querySelector("#btn-play-roadbuild")?.addEventListener("click", () => {
-    ctx.dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" });
-  });
+  onClick(root, "#btn-play-knight", () =>
+    ctx.dispatchUiAction(actingPlayerId, { type: "PLAY_KNIGHT" })
+  );
+  onClick(root, "#btn-play-roadbuild", () =>
+    ctx.dispatchUiAction(actingPlayerId, { type: "PLAY_ROAD_BUILDING" })
+  );
 
   const pickValidYopPair = (
     preferred1: ResourceType,
     preferred2: ResourceType
   ): { yopRes1: ResourceType; yopRes2: ResourceType } => {
     const avail = RESOURCES.filter((r) => state.bank[r] > 0);
-    if (avail.length === 0) {
-      return { yopRes1: preferred1, yopRes2: preferred2 };
-    }
+    if (avail.length === 0) return { yopRes1: preferred1, yopRes2: preferred2 };
     const r1 = state.bank[preferred1] > 0 ? preferred1 : avail[0]!;
     const totalBank = avail.reduce((sum, r) => sum + state.bank[r], 0);
-    if (totalBank === 1) {
-      return { yopRes1: r1, yopRes2: r1 };
-    }
+    if (totalBank === 1) return { yopRes1: r1, yopRes2: r1 };
     const r2Ok = state.bank[preferred2] >= (r1 === preferred2 ? 2 : 1);
     const r2 = r2Ok
       ? preferred2
@@ -238,46 +154,29 @@ export function bindCatanEvents(
     return { yopRes1: r1, yopRes2: r2 };
   };
 
-  root.querySelector("#btn-mode-yop")?.addEventListener("click", () => {
+  onClick(root, "#btn-mode-yop", () => {
     const nextOpen = ctx.model.buildMode !== "year_of_plenty";
     const pair = nextOpen
       ? pickValidYopPair(ctx.model.yopRes1, ctx.model.yopRes2)
       : { yopRes1: ctx.model.yopRes1, yopRes2: ctx.model.yopRes2 };
-    ctx.model = {
-      ...ctx.model,
+    patchModelAndRender(ctx, {
       ...pair,
       selectedBoardSpot: null,
       buildMode: nextOpen ? "year_of_plenty" : null,
-    };
-    ctx.render();
-  });
-
-  root.querySelectorAll("[data-yop-pick1]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const picked1 = btn.getAttribute("data-yop-pick1") as ResourceType;
-      const pair = pickValidYopPair(picked1, ctx.model.yopRes2);
-      ctx.model = {
-        ...ctx.model,
-        ...pair,
-      };
-      ctx.render();
     });
   });
-
-  root.querySelectorAll("[data-yop-pick2]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      ctx.model = {
-        ...ctx.model,
-        yopRes2: btn.getAttribute("data-yop-pick2") as ResourceType,
-      };
-      ctx.render();
-    });
-  });
-
-  root.querySelector("#btn-exec-yop")?.addEventListener("click", () => {
+  onDataClick(root, "data-yop-pick1", (picked1) =>
+    patchModelAndRender(
+      ctx,
+      pickValidYopPair(picked1 as ResourceType, ctx.model.yopRes2)
+    )
+  );
+  onDataClick(root, "data-yop-pick2", (r) =>
+    patchModelAndRender(ctx, { yopRes2: r as ResourceType })
+  );
+  onClick(root, "#btn-exec-yop", () => {
     const totalBank = RESOURCES.reduce((sum, r) => sum + state.bank[r], 0);
-    const r1 = ctx.model.yopRes1;
-    const r2 = ctx.model.yopRes2;
+    const { yopRes1: r1, yopRes2: r2 } = ctx.model;
     const valid =
       totalBank === 1
         ? state.bank[r1] === 1 && r2 === r1
@@ -290,37 +189,24 @@ export function bindCatanEvents(
     });
   });
 
-  root.querySelector("#btn-mode-mono")?.addEventListener("click", () => {
-    ctx.model = {
-      ...ctx.model,
+  onClick(root, "#btn-mode-mono", () =>
+    patchModelAndRender(ctx, {
       selectedBoardSpot: null,
       buildMode: ctx.model.buildMode === "monopoly" ? null : "monopoly",
-    };
-    ctx.render();
-  });
-
-  root.querySelectorAll("[data-mono-pick]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      ctx.model = {
-        ...ctx.model,
-        monoRes: btn.getAttribute("data-mono-pick") as ResourceType,
-      };
-      ctx.render();
-    });
-  });
-
-  root.querySelector("#btn-exec-mono")?.addEventListener("click", () => {
+    })
+  );
+  onDataClick(root, "data-mono-pick", (r) =>
+    patchModelAndRender(ctx, { monoRes: r as ResourceType })
+  );
+  onClick(root, "#btn-exec-mono", () =>
     ctx.dispatchUiAction(actingPlayerId, {
       type: "PLAY_MONOPOLY",
       resource: ctx.model.monoRes,
-    });
-  });
-
-  root.querySelector("#btn-end-turn")?.addEventListener("click", () => {
-    if (state.phase === "SPECIAL_BUILDING") {
-      ctx.dispatch(actingPlayerId, { type: "END_SPECIAL_BUILD" });
-    } else {
-      ctx.dispatch(actingPlayerId, { type: "END_TURN" });
-    }
-  });
+    })
+  );
+  onClick(root, "#btn-end-turn", () =>
+    ctx.dispatch(actingPlayerId, {
+      type: state.phase === "SPECIAL_BUILDING" ? "END_SPECIAL_BUILD" : "END_TURN",
+    })
+  );
 }

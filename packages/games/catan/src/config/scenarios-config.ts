@@ -158,8 +158,6 @@ export const SCENARIO_CATALOG: Record<ScenarioId, ScenarioDescriptor> = {
   },
 };
 
-export const SCENARIO_METADATA = SCENARIO_CATALOG;
-
 export const SELECTABLE_SCENARIO_IDS: readonly ScenarioId[] = [
   "standard",
   "seafarers_new_shores",

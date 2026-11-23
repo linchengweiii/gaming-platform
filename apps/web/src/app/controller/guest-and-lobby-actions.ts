@@ -31,9 +31,7 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
   const createLocalRoom = (opts: CreateLocalRoomOptions): ClientRoom => {
     const created = createLocalRoomPure(ctx.model, opts, Date.now());
     ctx.model = created.model;
-    if (opts.autoStart) {
-      ctx.startRoomMatch(created.room.roomId);
-    }
+    if (opts.autoStart) ctx.startRoomMatch(created.room.roomId);
     return ctx.getOrCreateRoomLens(created.room.roomId);
   };
 
@@ -44,52 +42,74 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
 
   const rebuildRoomSeats = (roomLike: ClientRoom): void => {
     const target = ctx.model.rooms[roomLike.roomId] ?? roomLike;
-    const rebuilt = rebuildRoomSeatsPure(target);
-    ctx.model = setRoomInModelPure(ctx.model, rebuilt);
+    ctx.model = setRoomInModelPure(ctx.model, rebuildRoomSeatsPure(target));
+  };
+
+  const postRoomPlayerMutation = (
+    roomId: string,
+    endpoint: string,
+    body: Record<string, unknown>,
+    opts: {
+      readonly fallbackErrorKey: "alert.unableAddLocalPlayer" | "alert.unableRemovePlayer";
+      readonly reasonErrorKey:
+        | "alert.unableAddLocalPlayerWithReason"
+        | "alert.unableRemovePlayerWithReason";
+      readonly clearDraftName?: boolean;
+    }
+  ): void => {
+    void (async () => {
+      try {
+        const res = await ctx.fetchApi(
+          `/api/rooms/${encodeURIComponent(roomId)}/${endpoint}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error ?? t(ctx.model.locale, opts.fallbackErrorKey));
+          return;
+        }
+        const base = opts.clearDraftName
+          ? { ...ctx.model, localFriendDraftName: "" }
+          : ctx.model;
+        ctx.model = upsertRoomFromSummaryPure(base, data.room).model;
+        ctx.render();
+      } catch (err: any) {
+        alert(
+          t(ctx.model.locale, opts.reasonErrorKey, {
+            reason: err?.message ?? String(err),
+          })
+        );
+      }
+    })();
   };
 
   const addLocalFriendToRoom = (room: ClientRoom, rawName: string): void => {
     const liveRoom = ctx.model.rooms[room.roomId] ?? room;
     const cleanName =
       rawName.trim() || `Player ${liveRoom.humanPlayers.length + 1}`;
-    const bounds = getRoomBoundsPure(liveRoom);
-    if (liveRoom.humanPlayers.length >= bounds.maxPlayers) return;
-
-    if (roomUsesServerPure(ctx.model, liveRoom)) {
-      void (async () => {
-        try {
-          const res = await ctx.fetchApi(
-            `/api/rooms/${encodeURIComponent(liveRoom.roomId)}/local-players`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                requesterId: ctx.model.currentUserId,
-                playerName: cleanName.slice(0, 28),
-              }),
-            }
-          );
-          const data = await res.json();
-          if (!res.ok) {
-            alert(data.error ?? t(ctx.model.locale, "alert.unableAddLocalPlayer"));
-            return;
-          }
-          ctx.model = upsertRoomFromSummaryPure(
-            { ...ctx.model, localFriendDraftName: "" },
-            data.room
-          ).model;
-          ctx.render();
-        } catch (err: any) {
-          alert(
-            t(ctx.model.locale, "alert.unableAddLocalPlayerWithReason", {
-              reason: err?.message ?? String(err),
-            })
-          );
-        }
-      })();
+    if (liveRoom.humanPlayers.length >= getRoomBoundsPure(liveRoom).maxPlayers) {
       return;
     }
-
+    if (roomUsesServerPure(ctx.model, liveRoom)) {
+      postRoomPlayerMutation(
+        liveRoom.roomId,
+        "local-players",
+        {
+          requesterId: ctx.model.currentUserId,
+          playerName: cleanName.slice(0, 28),
+        },
+        {
+          fallbackErrorKey: "alert.unableAddLocalPlayer",
+          reasonErrorKey: "alert.unableAddLocalPlayerWithReason",
+          clearDraftName: true,
+        }
+      );
+      return;
+    }
     ctx.model = addOfflineLocalFriendPure(
       ctx.model,
       liveRoom.roomId,
@@ -105,39 +125,18 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
   ): void => {
     const liveRoom = ctx.model.rooms[room.roomId] ?? room;
     if (targetPlayerId === liveRoom.ownerId) return;
-
     if (roomUsesServerPure(ctx.model, liveRoom)) {
-      void (async () => {
-        try {
-          const res = await ctx.fetchApi(
-            `/api/rooms/${encodeURIComponent(liveRoom.roomId)}/remove-player`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                requesterId: ctx.model.currentUserId,
-                targetPlayerId,
-              }),
-            }
-          );
-          const data = await res.json();
-          if (!res.ok) {
-            alert(data.error ?? t(ctx.model.locale, "alert.unableRemovePlayer"));
-            return;
-          }
-          ctx.model = upsertRoomFromSummaryPure(ctx.model, data.room).model;
-          ctx.render();
-        } catch (err: any) {
-          alert(
-            t(ctx.model.locale, "alert.unableRemovePlayerWithReason", {
-              reason: err?.message ?? String(err),
-            })
-          );
+      postRoomPlayerMutation(
+        liveRoom.roomId,
+        "remove-player",
+        { requesterId: ctx.model.currentUserId, targetPlayerId },
+        {
+          fallbackErrorKey: "alert.unableRemovePlayer",
+          reasonErrorKey: "alert.unableRemovePlayerWithReason",
         }
-      })();
+      );
       return;
     }
-
     ctx.model = removeOfflinePlayerPure(
       ctx.model,
       liveRoom.roomId,
@@ -152,121 +151,107 @@ export function attachGuestAndLobbyActions(ctx: AppRuntimeContext): void {
       ctx.model.lobbyGameFilter || ctx.model.createRoomGameId;
     const explicitName = ctx.model.createRoomName.trim();
 
-    const openAsOfflineLocal =
+    const openLocalFallbackRoom = (): void => {
+      const localRoom = createLocalRoom({
+        ...(explicitName ? { name: explicitName } : {}),
+        gameId: selectedGameId,
+        ownerId: ctx.model.currentUserId,
+        ownerName: ctx.model.currentUserName,
+        isOfflineLocal: true,
+        botCount: 0,
+        startingPlayerMode: "random",
+        autoStart: false,
+      });
+      ctx.model = resetSubModesPure({
+        ...ctx.model,
+        lobbyGameFilter: localRoom.gameId,
+        createRoomGameId: localRoom.gameId,
+        activeRoomId: localRoom.roomId,
+        inspectingSetupDuringMatch: false,
+        viewMode: "room_setup",
+      });
+      ctx.render();
+    };
+
+    if (
       ctx.model.createRoomMode === "offline" ||
       !ctx.model.useServerBackend ||
-      !ctx.model.serverReachable;
-
-    if (!openAsOfflineLocal) {
-      ctx.createRoomInFlight = true;
-      ctx.navEpoch += 1;
-      const capturedEpoch = ctx.navEpoch;
-      void (async () => {
-        try {
-          const res = await ctx.fetchApi("/api/rooms", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ...(explicitName ? { name: explicitName } : {}),
-              gameId: selectedGameId,
-              ownerId: ctx.model.currentUserId,
-              hostName: ctx.model.currentUserName,
-              botCount: 0,
-              botStepDelayMs: ctx.model.botMoveThrottleMs,
-              startingPlayerMode: "random",
-              autoStart: false,
-            }),
-          });
-          if (ctx.navEpoch !== capturedEpoch) return;
-          const data = await res.json();
-          if (!res.ok) {
-            alert(data.error ?? t(ctx.model.locale, "alert.unableCreateRoom"));
-            return;
-          }
-          const upserted = upsertRoomFromSummaryPure(
-            ctx.model,
-            data.room,
-            data.state,
-            data.actingPlayerId
-          );
-          const created = upserted.room;
-          saveActiveRoomIdToStorage(created.roomId);
-          ctx.syncUrlRoomHash(created.roomId);
-          ctx.model = resetSubModesPure({
-            ...upserted.model,
-            lobbyGameFilter: created.gameId,
-            createRoomGameId: created.gameId,
-            activeRoomId: created.roomId,
-            inspectingSetupDuringMatch: false,
-            viewMode:
-              created.status === "in_progress" ? "in_game" : "room_setup",
-          });
-          ctx.connectServerRealtime();
-          ctx.sendWsMessage({
-            type: "SUBSCRIBE_ROOM",
-            roomId: created.roomId,
-            playerId: ctx.model.currentUserId,
-          });
-          ctx.render();
-        } catch {
-          if (ctx.navEpoch !== capturedEpoch) return;
-          ctx.model = {
-            ...ctx.model,
-            serverReachable: false,
-            createRoomMode: "offline",
-          };
-          ctx.scheduleWsReconnect();
-          const fallbackRoom = createLocalRoom({
-            ...(explicitName ? { name: explicitName } : {}),
-            gameId: selectedGameId,
-            ownerId: ctx.model.currentUserId,
-            ownerName: ctx.model.currentUserName,
-            isOfflineLocal: true,
-            botCount: 0,
-            startingPlayerMode: "random",
-            autoStart: false,
-          });
-          ctx.model = resetSubModesPure({
-            ...ctx.model,
-            lobbyGameFilter: fallbackRoom.gameId,
-            createRoomGameId: fallbackRoom.gameId,
-            activeRoomId: fallbackRoom.roomId,
-            inspectingSetupDuringMatch: false,
-            viewMode: "room_setup",
-          });
-          ctx.render();
-        } finally {
-          ctx.createRoomInFlight = false;
-        }
-      })();
+      !ctx.model.serverReachable
+    ) {
+      openLocalFallbackRoom();
       return;
     }
 
-    const room = createLocalRoom({
-      ...(explicitName ? { name: explicitName } : {}),
-      gameId: selectedGameId,
-      ownerId: ctx.model.currentUserId,
-      ownerName: ctx.model.currentUserName,
-      isOfflineLocal: true,
-      botCount: 0,
-      startingPlayerMode: "random",
-      autoStart: false,
-    });
-    ctx.model = resetSubModesPure({
-      ...ctx.model,
-      lobbyGameFilter: room.gameId,
-      createRoomGameId: room.gameId,
-      activeRoomId: room.roomId,
-      inspectingSetupDuringMatch: false,
-      viewMode: "room_setup",
-    });
-    ctx.render();
+    ctx.createRoomInFlight = true;
+    ctx.navEpoch += 1;
+    const capturedEpoch = ctx.navEpoch;
+    void (async () => {
+      try {
+        const res = await ctx.fetchApi("/api/rooms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(explicitName ? { name: explicitName } : {}),
+            gameId: selectedGameId,
+            ownerId: ctx.model.currentUserId,
+            hostName: ctx.model.currentUserName,
+            botCount: 0,
+            botStepDelayMs: ctx.model.botMoveThrottleMs,
+            startingPlayerMode: "random",
+            autoStart: false,
+          }),
+        });
+        if (ctx.navEpoch !== capturedEpoch) return;
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error ?? t(ctx.model.locale, "alert.unableCreateRoom"));
+          return;
+        }
+        const upserted = upsertRoomFromSummaryPure(
+          ctx.model,
+          data.room,
+          data.state,
+          data.actingPlayerId
+        );
+        const created = upserted.room;
+        saveActiveRoomIdToStorage(created.roomId);
+        ctx.syncUrlRoomHash(created.roomId);
+        ctx.model = resetSubModesPure({
+          ...upserted.model,
+          lobbyGameFilter: created.gameId,
+          createRoomGameId: created.gameId,
+          activeRoomId: created.roomId,
+          inspectingSetupDuringMatch: false,
+          viewMode: created.status === "in_progress" ? "in_game" : "room_setup",
+        });
+        ctx.connectServerRealtime();
+        ctx.sendWsMessage({
+          type: "SUBSCRIBE_ROOM",
+          roomId: created.roomId,
+          playerId: ctx.model.currentUserId,
+        });
+        ctx.render();
+      } catch {
+        if (ctx.navEpoch !== capturedEpoch) return;
+        ctx.model = {
+          ...ctx.model,
+          serverReachable: false,
+          createRoomMode: "offline",
+        };
+        ctx.scheduleWsReconnect();
+        openLocalFallbackRoom();
+      } finally {
+        ctx.createRoomInFlight = false;
+      }
+    })();
   };
 
-  ctx.createLocalRoom = createLocalRoom;
-  ctx.getActiveRoom = getActiveRoom;
-  ctx.rebuildRoomSeats = rebuildRoomSeats;
-  ctx.addLocalFriendToRoom = addLocalFriendToRoom;
-  ctx.removePlayerFromRoom = removePlayerFromRoom;
-  ctx.createAndOpenRoom = createAndOpenRoom;
+  Object.assign(ctx, {
+    createLocalRoom,
+    getActiveRoom,
+    rebuildRoomSeats,
+    addLocalFriendToRoom,
+    removePlayerFromRoom,
+    createAndOpenRoom,
+  });
 }

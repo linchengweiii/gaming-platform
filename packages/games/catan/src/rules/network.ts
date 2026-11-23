@@ -68,6 +68,48 @@ export function getLegalSettlementVertices(
   });
 }
 
+function getLegalRouteEdges(
+  state: CatanState,
+  playerId: string,
+  routeType: "road" | "ship",
+  setupAnchorVertexId: VertexId | null
+): EdgeId[] {
+  const isShip = routeType === "ship";
+  if (isShip && !state.config.enableSeafarers) return [];
+  const player = state.players.find((p) => p.id === playerId);
+  const remaining = isShip ? player?.shipsRemaining : player?.roadsRemaining;
+  if (!player || !remaining || remaining <= 0) return [];
+
+  return state.topology.edgeOrder.filter((eId) => {
+    if (state.edges[eId]) return false;
+    const eNode = state.topology.edges[eId]!;
+    if (isShip && state.pirateHexId && eNode.adjacentHexIds.includes(state.pirateHexId)) {
+      return false;
+    }
+
+    const validTerrain = eNode.adjacentHexIds.some((hId) => {
+      const t = state.hexes[hId]?.terrain;
+      return isShip ? t === "sea" : Boolean(t && t !== "sea" && t !== "fog");
+    });
+    if (!validTerrain) return false;
+
+    if (setupAnchorVertexId) {
+      return eNode.v1 === setupAnchorVertexId || eNode.v2 === setupAnchorVertexId;
+    }
+
+    return [eNode.v1, eNode.v2].some((vId) => {
+      const building = state.buildings[vId];
+      if (building) return building.ownerId === playerId;
+      const knight = state.knights[vId];
+      if (knight && knight.ownerId !== playerId) return false;
+      return state.topology.vertices[vId]!.incidentEdgeIds.some((incId) => {
+        const route = state.edges[incId];
+        return Boolean(route && route.ownerId === playerId && route.type === routeType);
+      });
+    });
+  });
+}
+
 /**
  * Returns all valid edges where `playerId` can build a Road.
  */
@@ -76,47 +118,7 @@ export function getLegalRoadEdges(
   playerId: string,
   setupAnchorVertexId: VertexId | null = null
 ): EdgeId[] {
-  const player = state.players.find((p) => p.id === playerId);
-  if (!player || player.roadsRemaining <= 0) return [];
-
-  return state.topology.edgeOrder.filter((eId) => {
-    if (state.edges[eId]) return false;
-    const eNode = state.topology.edges[eId]!;
-
-    // Road must border at least one land hex
-    const adjTiles = eNode.adjacentHexIds
-      .map((hId) => state.hexes[hId]!)
-      .filter(Boolean);
-    const touchesLand = adjTiles.some(
-      (t) => t.terrain !== "sea" && t.terrain !== "fog"
-    );
-    if (!touchesLand) return false;
-
-    if (setupAnchorVertexId) {
-      return (
-        eNode.v1 === setupAnchorVertexId || eNode.v2 === setupAnchorVertexId
-      );
-    }
-
-    // Normal play: check if v1 or v2 connects to player's network without being blocked
-    return [eNode.v1, eNode.v2].some((vId) => {
-      const building = state.buildings[vId];
-      if (building) {
-        return building.ownerId === playerId;
-      }
-      const knight = state.knights[vId];
-      if (knight && knight.ownerId !== playerId) {
-        return false;
-      }
-      const vNode = state.topology.vertices[vId]!;
-      return vNode.incidentEdgeIds.some((incId) => {
-        const route = state.edges[incId];
-        return Boolean(
-          route && route.ownerId === playerId && route.type === "road"
-        );
-      });
-    });
-  });
+  return getLegalRouteEdges(state, playerId, "road", setupAnchorVertexId);
 }
 
 /**
@@ -127,50 +129,7 @@ export function getLegalShipEdges(
   playerId: string,
   setupAnchorVertexId: VertexId | null = null
 ): EdgeId[] {
-  if (!state.config.enableSeafarers) return [];
-  const player = state.players.find((p) => p.id === playerId);
-  if (!player || player.shipsRemaining <= 0) return [];
-
-  return state.topology.edgeOrder.filter((eId) => {
-    if (state.edges[eId]) return false;
-    const eNode = state.topology.edges[eId]!;
-
-    // Cannot build ship adjacent to the Pirate Fleet
-    if (state.pirateHexId && eNode.adjacentHexIds.includes(state.pirateHexId)) {
-      return false;
-    }
-
-    // Ship must border at least one sea hex
-    const adjTiles = eNode.adjacentHexIds
-      .map((hId) => state.hexes[hId]!)
-      .filter(Boolean);
-    const touchesSea = adjTiles.some((t) => t.terrain === "sea");
-    if (!touchesSea) return false;
-
-    if (setupAnchorVertexId) {
-      return (
-        eNode.v1 === setupAnchorVertexId || eNode.v2 === setupAnchorVertexId
-      );
-    }
-
-    return [eNode.v1, eNode.v2].some((vId) => {
-      const building = state.buildings[vId];
-      if (building) {
-        return building.ownerId === playerId;
-      }
-      const knight = state.knights[vId];
-      if (knight && knight.ownerId !== playerId) {
-        return false;
-      }
-      const vNode = state.topology.vertices[vId]!;
-      return vNode.incidentEdgeIds.some((incId) => {
-        const route = state.edges[incId];
-        return Boolean(
-          route && route.ownerId === playerId && route.type === "ship"
-        );
-      });
-    });
-  });
+  return getLegalRouteEdges(state, playerId, "ship", setupAnchorVertexId);
 }
 
 /**

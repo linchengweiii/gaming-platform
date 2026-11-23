@@ -7,15 +7,6 @@ import type {
   TradeGoodType,
 } from "@gaming-platform/catan";
 
-export const PLAYER_PALETTE: readonly string[] = [
-  "#ff4a1f",
-  "#38bdf8",
-  "#fde047",
-  "#4ade80",
-  "#c084fc",
-  "#f472b6",
-];
-
 export const TERRAIN_META: Readonly<
   Record<
     TerrainType,
@@ -39,33 +30,6 @@ export const TERRAIN_META: Readonly<
   sea: { label: "Sea", gradientId: "grad-sea", accent: "#0284c7" },
   gold: { label: "Gold River", gradientId: "grad-gold", accent: "#eab308" },
   fog: { label: "Uncharted Fog", gradientId: "grad-fog", accent: "#1e3a52" },
-};
-
-export const HARBOR_GENERIC_META = {
-  ratioText: "3:1",
-  subLabel: "Any",
-  strokeAccent: "#b45309",
-  pierBaseStroke: "#451a03",
-  pierPlankStroke: "#b45309",
-  medallionFill: "#fffbeb",
-} as const;
-
-export const PIECE_SHADE_CONFIG = {
-  actionLight: 0.35,
-  actionDark: -0.32,
-  routeLight: 0.34,
-  routeDark: -0.34,
-  roofLight: 0.36,
-  wallShadow: -0.28,
-  knightDark: -0.3,
-} as const;
-
-export const RESOURCE_ICONS: Record<ResourceType, string> = {
-  brick: "Brick",
-  lumber: "Lumber",
-  wool: "Wool",
-  grain: "Grain",
-  ore: "Ore",
 };
 
 export const RESOURCE_META: Record<

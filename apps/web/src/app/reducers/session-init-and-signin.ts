@@ -1,5 +1,5 @@
 import type { PlayerDescriptor } from "@gaming-platform/core";
-import { PLAYER_COLORS, emptyCommodities, emptyResources } from "@gaming-platform/catan";
+import { PLAYER_COLORS } from "@gaming-platform/catan";
 import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import {
   DEFAULT_AUTOPLAY_SPEED_MS,
@@ -20,7 +20,10 @@ import {
 import { getRoomBoundsPure, rebuildRoomSeatsPure, removeRoomFromModelPure, setRoomInModelPure, upsertDeviceGuestListPure } from "../helpers/room-queries.ts";
 import type { AppModel, AppViewMode, GuestSession, MultiGamePlatformAppOptions } from "../types.ts";
 import { seedInitialLobbyRoomsPure } from "./room-sync-reducers.ts";
-import { resetSubModesPure } from "./trade-and-draft-reducers.ts";
+import {
+  createInitialSubModesPure,
+  resetSubModesPure,
+} from "./trade-and-draft-reducers.ts";
 
 export function createInitialAppModelPure(
   options: MultiGamePlatformAppOptions | undefined,
@@ -163,46 +166,18 @@ export function createInitialAppModelPure(
     roomOrder: [],
     nextRoomNum: 1,
     activeRoomId: "room-1",
-    buildMode: null,
-    selectedBoardSpot: null,
+    ...createInitialSubModesPure(),
     catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT,
-    setupEdgeKind: "road",
-    robberOrPirateMode: "robber",
-    selectedMoveFromEdgeId: null,
-    selectedMoveKnightFromVertexId: null,
-    selectedChaseKnightVertexId: null,
-    discardSelection: emptyResources(),
-    discardCommodities: emptyCommodities(),
     tradeGiveRes: "brick",
     tradeReceiveRes: "ore",
-    maritimeGive: emptyResources(),
-    maritimeWant: emptyResources(),
-    maritimeCommGive: emptyCommodities(),
-    maritimeCommWant: emptyCommodities(),
-    domesticGive: emptyResources(),
-    domesticWant: emptyResources(),
-    domesticCommGive: emptyCommodities(),
-    domesticCommWant: emptyCommodities(),
-    domesticTargetPlayerId: "all",
-    selectedMetropolisVertexId: null,
-    selectedProgressCardId: null,
     alchemistDie1: 4,
     alchemistDie2: 3,
-    inventorHex1: null,
-    smithVertex1: null,
-    deserterTargetPlayerId: null,
     yopRes1: "grain",
     yopRes2: "ore",
     monoRes: "ore",
-    splendorDraftGems: {},
-    azulSelectedDraft: null,
-    azulInspectedPlayerId: null,
-    sevenWondersSelectedCardId: null,
-    sevenWondersInspectedPlayerId: null,
     activeTutorial: null,
     guideModalGameId: null,
     sidebarSettingsExpanded: false,
-    mapBuildMenuExpanded: false,
     boardFullscreen: false,
     fullscreenSidebarOpen: false,
     debugMode:

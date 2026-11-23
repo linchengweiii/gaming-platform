@@ -1,4 +1,4 @@
-import type { RngState, SeededRNG } from "@gaming-platform/core";
+import type { RngState } from "@gaming-platform/core";
 import type { CatanConfig } from "../types/domain.ts";
 import {
   generateCitiesAndKnights56BoardPure,
@@ -58,15 +58,4 @@ export function generateCatanBoardPure(
         ? generateBigIslandBoardPure(config, rngState)
         : generateStandardBoardPure(config, rngState);
   }
-}
-
-export function generateCatanBoard(
-  config: CatanConfig,
-  rng: SeededRNG
-): GeneratedBoard {
-  const [board, nextState] = generateCatanBoardPure(config, rng.getState());
-  while (rng.getState() !== nextState) {
-    rng.nextFloat();
-  }
-  return board;
 }

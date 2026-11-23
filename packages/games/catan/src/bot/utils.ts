@@ -4,7 +4,6 @@ import {
   TERRAIN_TO_RESOURCE,
 } from "../config/costs-and-limits.ts";
 import { computePlayerVictoryPoints } from "../rules/awards-and-vp.ts";
-import { getPlayerResourceCount } from "../rules/helpers.ts";
 import { getCatanPlayerViewPure } from "../rules/redaction.ts";
 import {
   IMPROVEMENT_DISCIPLINES,

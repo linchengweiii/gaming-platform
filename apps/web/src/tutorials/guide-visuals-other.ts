@@ -6,16 +6,9 @@ import {
   renderSwScienceIconSvg,
   renderSwShieldSvg,
 } from "../seven-wonders-view.ts";
+import { escapeHtml as esc } from "../app/helpers/html-and-dropdown.ts";
 import { renderSplendorGemToken } from "../splendor-view.ts";
 import type { TutorialGameId } from "./types.ts";
-
-function esc(raw: string): string {
-  return raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 export function renderOtherGameVisualReferenceHtml(
   gameId: Exclude<TutorialGameId, "catan">,

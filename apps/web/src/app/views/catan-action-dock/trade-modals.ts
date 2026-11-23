@@ -62,204 +62,92 @@ export function renderMaritimeTradeSubModalPure(
 ): string {
   const locale = model.locale;
   const pColor = actingPlayer.color;
-  if (state.config.enableCitiesAndKnights) {
-    const goodRatios = getPlayerGoodTradeRatios(state, actingPlayer.id);
-    const getMarGive = (g: TradeGoodType): number =>
-      isCommodityType(g) ? model.maritimeCommGive[g] : model.maritimeGive[g];
-    const getMarWant = (g: TradeGoodType): number =>
-      isCommodityType(g) ? model.maritimeCommWant[g] : model.maritimeWant[g];
+  const isCk = Boolean(state.config.enableCitiesAndKnights);
+  const goods: readonly TradeGoodType[] = isCk ? TRADE_GOODS : RESOURCES;
+  const ratios: Record<string, number> = isCk
+    ? getPlayerGoodTradeRatios(state, actingPlayer.id)
+    : getPlayerTradeRatios(state, actingPlayer.id);
+  const getGive = (g: TradeGoodType): number =>
+    isCommodityType(g) ? model.maritimeCommGive[g] : model.maritimeGive[g];
+  const getWant = (g: TradeGoodType): number =>
+    isCommodityType(g) ? model.maritimeCommWant[g] : model.maritimeWant[g];
 
-    const giveCredits = TRADE_GOODS.reduce(
-      (sum, g) => sum + Math.floor(getMarGive(g) / goodRatios[g]),
-      0
-    );
-    const receiveCount =
-      totalResourceCount(model.maritimeWant) +
-      totalCommodityCount(model.maritimeCommWant);
-    const canExec =
-      giveCredits > 0 &&
-      giveCredits === receiveCount &&
-      TRADE_GOODS.every((g) => {
-        const gv = getMarGive(g);
-        const wv = getMarWant(g);
-        return (
-          !(gv > 0 && wv > 0) &&
-          gv % goodRatios[g] === 0 &&
-          getPlayerGoodCount(actingPlayer, g) >= gv &&
-          getBankGoodCount(state, g) >= wv
-        );
-      });
-
-    const giveCardsPreview = TRADE_GOODS.filter((g) => getMarGive(g) > 0)
-      .map(
-        (g) =>
-          `<span class="map-yield-chip">−${getMarGive(g)} ${renderMiniTradeGoodCardSvg(g, 32, 20)}</span>`
-      )
-      .join("");
-    const wantCardsPreview = TRADE_GOODS.filter((g) => getMarWant(g) > 0)
-      .map(
-        (g) =>
-          `<span class="map-yield-chip">+${getMarWant(g)} ${renderMiniTradeGoodCardSvg(g, 32, 20)}</span>`
-      )
-      .join("");
-
-    const diffNeed = giveCredits - receiveCount;
-    const diffGive = receiveCount - giveCredits;
-    const statusHint =
-      giveCredits === 0 && receiveCount === 0
-        ? t(locale, "catan.trade.ckMaritimeHint")
-        : diffNeed > 0
-          ? diffNeed === 1
-            ? t(locale, "catan.trade.addMoreRequestedOne")
-            : t(locale, "catan.trade.addMoreRequestedMany", { count: diffNeed })
-          : diffGive > 0
-            ? diffGive === 1
-              ? t(locale, "catan.trade.addMoreBundlesOne")
-              : t(locale, "catan.trade.addMoreBundlesMany", { count: diffGive })
-            : giveCredits === 1
-              ? t(locale, "catan.trade.readyOne")
-              : t(locale, "catan.trade.readyMany", { count: giveCredits });
-
-    return `<div class="sub-modal sub-modal--trade">
-          <div class="ga-trade-head">
-            ${renderTradeModeTabsPure(model, pColor)}
-            <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
-              <span class="ga-chip ${
-                canExec
-                  ? "ga-chip--ok"
-                  : giveCredits > 0 || receiveCount > 0
-                    ? "ga-chip--warn"
-                    : ""
-              } ga-num">${escapeAttr(statusHint)}</span>
-              <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
-            </div>
-          </div>
-
-          <div class="ga-res-matrix ga-res-matrix--ck">
-            ${renderTradeGoodColumnHeadersPure(
-              actingPlayer,
-              undefined,
-              goodRatios,
-              locale
-            )}
-
-            <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.offer"))}
-            </div>
-            ${TRADE_GOODS.map((g) => {
-              const ratio = goodRatios[g];
-              const val = getMarGive(g);
-              const canAddBundle =
-                getPlayerGoodCount(actingPlayer, g) >= val + ratio;
-              return `
-                <div class="ga-res-cell ${
-                  val > 0 ? "ga-res-cell--active-give" : ""
-                }">
-                  <button type="button" data-ck-maritime-give-dec="${g}" class="ga-res-step-btn" ${
-                    val <= 0 ? "disabled" : ""
-                  }>−</button>
-                  <span class="ga-res-step-val">${val}</span>
-                  <button type="button" data-ck-maritime-give="${g}" class="ga-res-step-btn" title="${escapeAttr(
-                    t(locale, "catan.trade.offerRateTitle", {
-                      ratio,
-                      label: getCatanTradeGoodLabelLocalized(g, locale),
-                    })
-                  )}" ${!canAddBundle ? "disabled" : ""}>+</button>
-                </div>
-              `;
-            }).join("")}
-
-            <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.request"))}
-            </div>
-            ${TRADE_GOODS.map((g) => {
-              const val = getMarWant(g);
-              const bankAvail = getBankGoodCount(state, g);
-              return `
-                <div class="ga-res-cell ${
-                  val > 0 ? "ga-res-cell--active-want" : ""
-                }">
-                  <button type="button" data-ck-maritime-receive-dec="${g}" class="ga-res-step-btn" ${
-                    val <= 0 ? "disabled" : ""
-                  }>−</button>
-                  <span class="ga-res-step-val">${val}</span>
-                  <button type="button" data-ck-maritime-receive="${g}" class="ga-res-step-btn" ${
-                    val >= bankAvail ? "disabled" : ""
-                  }>+</button>
-                </div>
-              `;
-            }).join("")}
-          </div>
-
-          <div class="ga-trade-preview">
-            <div class="ga-trade-bundle">
-              ${
-                giveCardsPreview || wantCardsPreview
-                  ? `${giveCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noOffer"))}</span>`} ${DRAWN_ARROW_SVG} ${wantCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noRequest"))}</span>`}`
-                  : `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.ckBankFootnote"))}</span>`
-              }
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" id="btn-maritime-reset" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.reset"))}</button>
-              <button type="button" id="btn-exec-maritime" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
-                !canExec ? "disabled" : ""
-              }>
-                ${renderActionPieceIconSvg("maritime_trade", pColor, 16)}
-                <span>${escapeAttr(t(locale, "catan.trade.withBank"))}</span>
-              </button>
-            </div>
-          </div>
-        </div>`;
-  }
-
-  const ratios = getPlayerTradeRatios(state, actingPlayer.id);
-  const giveCredits = RESOURCES.reduce(
-    (sum, r) => sum + Math.floor(model.maritimeGive[r] / ratios[r]),
+  const giveCredits = goods.reduce(
+    (sum, g) => sum + Math.floor(getGive(g) / ratios[g]!),
     0
   );
-  const receiveCount = totalResourceCount(model.maritimeWant);
+  const receiveCount =
+    totalResourceCount(model.maritimeWant) +
+    (isCk ? totalCommodityCount(model.maritimeCommWant) : 0);
   const canExec =
     giveCredits > 0 &&
     giveCredits === receiveCount &&
-    RESOURCES.every(
-      (r) =>
-        !(model.maritimeGive[r] > 0 && model.maritimeWant[r] > 0) &&
-        model.maritimeGive[r] % ratios[r] === 0 &&
-        actingPlayer.resources[r] >= model.maritimeGive[r] &&
-        state.bank[r] >= model.maritimeWant[r]
-    );
+    goods.every((g) => {
+      const gv = getGive(g);
+      const wv = getWant(g);
+      return (
+        !(gv > 0 && wv > 0) &&
+        gv % ratios[g]! === 0 &&
+        getPlayerGoodCount(actingPlayer, g) >= gv &&
+        getBankGoodCount(state, g) >= wv
+      );
+    });
 
-  const giveCardsPreview = RESOURCES.filter((r) => model.maritimeGive[r] > 0)
-    .map(
-      (r) =>
-        `<span class="map-yield-chip">−${model.maritimeGive[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
-    )
+  const renderCard = (g: TradeGoodType): string =>
+    isCk
+      ? renderMiniTradeGoodCardSvg(g, 32, 20)
+      : renderMiniResourceCardSvg(g as (typeof RESOURCES)[number], 34, 22);
+  const giveCardsPreview = goods
+    .filter((g) => getGive(g) > 0)
+    .map((g) => `<span class="map-yield-chip">−${getGive(g)} ${renderCard(g)}</span>`)
     .join("");
-  const wantCardsPreview = RESOURCES.filter((r) => model.maritimeWant[r] > 0)
-    .map(
-      (r) =>
-        `<span class="map-yield-chip">+${model.maritimeWant[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
-    )
+  const wantCardsPreview = goods
+    .filter((g) => getWant(g) > 0)
+    .map((g) => `<span class="map-yield-chip">+${getWant(g)} ${renderCard(g)}</span>`)
     .join("");
 
   const diffNeed = giveCredits - receiveCount;
   const diffGive = receiveCount - giveCredits;
   const statusHint =
     giveCredits === 0 && receiveCount === 0
-      ? t(locale, "catan.trade.maritimeHint")
+      ? t(locale, isCk ? "catan.trade.ckMaritimeHint" : "catan.trade.maritimeHint")
       : diffNeed > 0
         ? diffNeed === 1
           ? t(locale, "catan.trade.addMoreRequestedOne")
           : t(locale, "catan.trade.addMoreRequestedMany", { count: diffNeed })
         : diffGive > 0
           ? diffGive === 1
-            ? t(locale, "catan.trade.addMoreHarborBundlesOne")
-            : t(locale, "catan.trade.addMoreHarborBundlesMany", {
-                count: diffGive,
-              })
+            ? t(
+                locale,
+                isCk
+                  ? "catan.trade.addMoreBundlesOne"
+                  : "catan.trade.addMoreHarborBundlesOne"
+              )
+            : t(
+                locale,
+                isCk
+                  ? "catan.trade.addMoreBundlesMany"
+                  : "catan.trade.addMoreHarborBundlesMany",
+                { count: diffGive }
+              )
           : giveCredits === 1
             ? t(locale, "catan.trade.readyOne")
             : t(locale, "catan.trade.readyMany", { count: giveCredits });
+
+  const dataPrefix = isCk ? "data-ck-maritime" : "data-maritime";
+  const headersHtml = isCk
+    ? renderTradeGoodColumnHeadersPure(
+        actingPlayer,
+        undefined,
+        ratios as Record<TradeGoodType, number>,
+        locale
+      )
+    : renderResourceColumnHeadersPure(
+        actingPlayer.resources,
+        undefined,
+        ratios as Record<(typeof RESOURCES)[number], number>,
+        locale
+      );
 
   return `<div class="sub-modal sub-modal--trade">
         <div class="ga-trade-head">
@@ -276,59 +164,62 @@ export function renderMaritimeTradeSubModalPure(
           </div>
         </div>
 
-        <div class="ga-res-matrix">
-          ${renderResourceColumnHeadersPure(
-            actingPlayer.resources,
-            undefined,
-            ratios,
-            locale
-          )}
+        <div class="${isCk ? "ga-res-matrix ga-res-matrix--ck" : "ga-res-matrix"}">
+          ${headersHtml}
 
           <div class="ga-res-matrix__row-label">
             <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.offer"))}
           </div>
-          ${RESOURCES.map((r) => {
-            const ratio = ratios[r];
-            const val = model.maritimeGive[r];
-            const canAddBundle = actingPlayer.resources[r] >= val + ratio;
-            return `
+          ${goods
+            .map((g) => {
+              const ratio = ratios[g]!;
+              const val = getGive(g);
+              const canAddBundle =
+                getPlayerGoodCount(actingPlayer, g) >= val + ratio;
+              const label = isCk
+                ? getCatanTradeGoodLabelLocalized(g, locale)
+                : getCatanResourceTextLocalized(
+                    g as (typeof RESOURCES)[number],
+                    locale
+                  ).label;
+              return `
               <div class="ga-res-cell ${
                 val > 0 ? "ga-res-cell--active-give" : ""
               }">
-                <button type="button" data-maritime-give-dec="${r}" class="ga-res-step-btn" ${
+                <button type="button" ${dataPrefix}-give-dec="${g}" class="ga-res-step-btn" ${
                   val <= 0 ? "disabled" : ""
                 }>−</button>
                 <span class="ga-res-step-val">${val}</span>
-                <button type="button" data-maritime-give="${r}" class="ga-res-step-btn" title="${escapeAttr(
-                  t(locale, "catan.trade.offerRateTitle", {
-                    ratio,
-                    label: getCatanResourceTextLocalized(r, locale).label,
-                  })
+                <button type="button" ${dataPrefix}-give="${g}" class="ga-res-step-btn" title="${escapeAttr(
+                  t(locale, "catan.trade.offerRateTitle", { ratio, label })
                 )}" ${!canAddBundle ? "disabled" : ""}>+</button>
               </div>
             `;
-          }).join("")}
+            })
+            .join("")}
 
           <div class="ga-res-matrix__row-label">
             <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.request"))}
           </div>
-          ${RESOURCES.map((r) => {
-            const val = model.maritimeWant[r];
-            const bankAvail = state.bank[r];
-            return `
+          ${goods
+            .map((g) => {
+              const val = getWant(g);
+              const bankAvail = getBankGoodCount(state, g);
+              return `
               <div class="ga-res-cell ${
                 val > 0 ? "ga-res-cell--active-want" : ""
               }">
-                <button type="button" data-maritime-receive-dec="${r}" class="ga-res-step-btn" ${
+                <button type="button" ${dataPrefix}-receive-dec="${g}" class="ga-res-step-btn" ${
                   val <= 0 ? "disabled" : ""
                 }>−</button>
                 <span class="ga-res-step-val">${val}</span>
-                <button type="button" data-maritime-receive="${r}" class="ga-res-step-btn" ${
+                <button type="button" ${dataPrefix}-receive="${g}" class="ga-res-step-btn" ${
                   val >= bankAvail ? "disabled" : ""
                 }>+</button>
               </div>
             `;
-          }).join("")}
+            })
+            .join("")}
         </div>
 
         <div class="ga-trade-preview">
@@ -336,7 +227,7 @@ export function renderMaritimeTradeSubModalPure(
             ${
               giveCardsPreview || wantCardsPreview
                 ? `${giveCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noOffer"))}</span>`} ${DRAWN_ARROW_SVG} ${wantCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noRequest"))}</span>`}`
-                : `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.baseBankFootnote"))}</span>`
+                : `<span class="t-label muted">${escapeAttr(t(locale, isCk ? "catan.trade.ckBankFootnote" : "catan.trade.baseBankFootnote"))}</span>`
             }
           </div>
           <div style="display: flex; gap: 6px;">

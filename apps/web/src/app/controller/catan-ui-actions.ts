@@ -17,6 +17,7 @@ import {
   setSharedTradeWantPure,
   switchTradeModePure,
 } from "../reducers/trade-and-draft-reducers.ts";
+import type { AppModel } from "../types.ts";
 import type { AppRuntimeContext } from "./context.ts";
 
 const IMMEDIATE_PROGRESS_CARD_TYPES = new Set([
@@ -31,14 +32,59 @@ const IMMEDIATE_PROGRESS_CARD_TYPES = new Set([
   "commercial_harbor",
 ]);
 
+function getGoodCountFromModel(
+  model: Readonly<AppModel>,
+  kind: "discard" | "domesticGive" | "maritimeGive",
+  good: TradeGoodType
+): number {
+  if (isCommodityType(good)) {
+    const key =
+      kind === "discard"
+        ? "discardCommodities"
+        : kind === "domesticGive"
+          ? "domesticCommGive"
+          : "maritimeCommGive";
+    return model[key][good];
+  }
+  const key =
+    kind === "discard"
+      ? "discardSelection"
+      : kind === "domesticGive"
+        ? "domesticGive"
+        : "maritimeGive";
+  return model[key][good];
+}
+
+function setGoodCountInModel(
+  model: Readonly<AppModel>,
+  kind: "discard" | "domesticGive" | "maritimeGive",
+  good: TradeGoodType,
+  value: number,
+  extra?: Partial<AppModel>
+): AppModel {
+  if (isCommodityType(good)) {
+    const key =
+      kind === "discard"
+        ? "discardCommodities"
+        : kind === "domesticGive"
+          ? "domesticCommGive"
+          : "maritimeCommGive";
+    return { ...model, ...extra, [key]: { ...model[key], [good]: value } };
+  }
+  const key =
+    kind === "discard"
+      ? "discardSelection"
+      : kind === "domesticGive"
+        ? "domesticGive"
+        : "maritimeGive";
+  return { ...model, ...extra, [key]: { ...model[key], [good]: value } };
+}
+
 export function attachCatanUiActions(ctx: AppRuntimeContext): void {
-  ctx.switchTradeMode = (
-    nextMode: "maritime_trade" | "domestic_trade" | null
-  ): void => {
+  ctx.switchTradeMode = (nextMode): void => {
     ctx.model = switchTradeModePure(ctx.model, nextMode);
     ctx.render();
   };
-
   ctx.setSharedTradeWant = (resource: ResourceType, amount: number): void => {
     ctx.model = setSharedTradeWantPure(ctx.model, resource, amount);
   };
@@ -48,88 +94,13 @@ export function handleCatanHandCardClick(
   ctx: AppRuntimeContext,
   state: CatanState,
   actingPlayerId: string,
-  g: TradeGoodType
+  good: TradeGoodType
 ): void {
   const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
-  if (!actingPlayer || getPlayerGoodCount(actingPlayer, g) <= 0) return;
+  const owned = actingPlayer ? getPlayerGoodCount(actingPlayer, good) : 0;
+  if (owned <= 0) return;
+  if (isCommodityType(good) && !state.config.enableCitiesAndKnights) return;
 
-  if (isCommodityType(g)) {
-    if (!state.config.enableCitiesAndKnights) return;
-    if (state.phase === "DISCARD_ON_SEVEN") {
-      const req = state.pendingDiscards[actingPlayerId] ?? 0;
-      const totalSel =
-        totalResourceCount(ctx.model.discardSelection) +
-        totalCommodityCount(ctx.model.discardCommodities);
-      if (
-        ctx.model.discardCommodities[g] < actingPlayer.commodities[g] &&
-        totalSel < req
-      ) {
-        ctx.model = {
-          ...ctx.model,
-          discardCommodities: {
-            ...ctx.model.discardCommodities,
-            [g]: ctx.model.discardCommodities[g] + 1,
-          },
-        };
-        ctx.render();
-      }
-    } else if (ctx.model.buildMode === "domestic_trade") {
-      if (ctx.model.domesticCommGive[g] < actingPlayer.commodities[g]) {
-        ctx.model = setSharedTradeGoodWantPure(
-          {
-            ...ctx.model,
-            domesticCommGive: {
-              ...ctx.model.domesticCommGive,
-              [g]: ctx.model.domesticCommGive[g] + 1,
-            },
-          },
-          g,
-          0
-        );
-        ctx.render();
-      }
-    } else if (state.phase === "MAIN_PHASE" && !state.activeTradeOffer) {
-      const goodRatios = getPlayerGoodTradeRatios(state, actingPlayerId);
-      const ratio = goodRatios[g];
-      if (actingPlayer.commodities[g] >= ctx.model.maritimeCommGive[g] + ratio) {
-        ctx.model = switchTradeModePure(
-          setSharedTradeGoodWantPure(
-            {
-              ...ctx.model,
-              maritimeCommGive: {
-                ...ctx.model.maritimeCommGive,
-                [g]: ctx.model.maritimeCommGive[g] + ratio,
-              },
-            },
-            g,
-            0
-          ),
-          "maritime_trade"
-        );
-        ctx.render();
-      } else {
-        const withGive =
-          ctx.model.domesticCommGive[g] < actingPlayer.commodities[g]
-            ? setSharedTradeGoodWantPure(
-                {
-                  ...ctx.model,
-                  domesticCommGive: {
-                    ...ctx.model.domesticCommGive,
-                    [g]: ctx.model.domesticCommGive[g] + 1,
-                  },
-                },
-                g,
-                0
-              )
-            : ctx.model;
-        ctx.model = switchTradeModePure(withGive, "domestic_trade");
-        ctx.render();
-      }
-    }
-    return;
-  }
-
-  const r = g;
   if (state.phase === "DISCARD_ON_SEVEN") {
     const req = state.pendingDiscards[actingPlayerId] ?? 0;
     const totalSel =
@@ -137,73 +108,54 @@ export function handleCatanHandCardClick(
       (state.config.enableCitiesAndKnights
         ? totalCommodityCount(ctx.model.discardCommodities)
         : 0);
-    if (
-      ctx.model.discardSelection[r] < actingPlayer.resources[r] &&
-      totalSel < req
-    ) {
-      ctx.model = {
-        ...ctx.model,
-        discardSelection: {
-          ...ctx.model.discardSelection,
-          [r]: ctx.model.discardSelection[r] + 1,
-        },
-      };
+    const cur = getGoodCountFromModel(ctx.model, "discard", good);
+    if (cur < owned && totalSel < req) {
+      ctx.model = setGoodCountInModel(ctx.model, "discard", good, cur + 1);
       ctx.render();
     }
-  } else if (ctx.model.buildMode === "domestic_trade") {
-    if (ctx.model.domesticGive[r] < actingPlayer.resources[r]) {
-      ctx.model = setSharedTradeWantPure(
-        {
-          ...ctx.model,
-          domesticGive: {
-            ...ctx.model.domesticGive,
-            [r]: ctx.model.domesticGive[r] + 1,
-          },
-        },
-        r,
-        0
-      );
+    return;
+  }
+
+  const addDomesticGive = (base: AppModel): AppModel => {
+    const cur = getGoodCountFromModel(base, "domesticGive", good);
+    if (cur >= owned) return base;
+    return setSharedTradeGoodWantPure(
+      setGoodCountInModel(base, "domesticGive", good, cur + 1),
+      good,
+      0
+    );
+  };
+
+  if (ctx.model.buildMode === "domestic_trade") {
+    const next = addDomesticGive(ctx.model);
+    if (next !== ctx.model) {
+      ctx.model = next;
       ctx.render();
     }
-  } else if (state.phase === "MAIN_PHASE" && !state.activeTradeOffer) {
-    const ratios = state.config.enableCitiesAndKnights
-      ? getPlayerGoodTradeRatios(state, actingPlayerId)
-      : getPlayerTradeRatios(state, actingPlayerId);
-    const ratio = ratios[r];
-    if (actingPlayer.resources[r] >= ctx.model.maritimeGive[r] + ratio) {
+    return;
+  }
+
+  if (state.phase === "MAIN_PHASE" && !state.activeTradeOffer) {
+    const ratio = state.config.enableCitiesAndKnights
+      ? getPlayerGoodTradeRatios(state, actingPlayerId)[good]
+      : getPlayerTradeRatios(state, actingPlayerId)[good as ResourceType];
+    const curMar = getGoodCountFromModel(ctx.model, "maritimeGive", good);
+    if (owned >= curMar + ratio) {
       ctx.model = switchTradeModePure(
-        setSharedTradeWantPure(
-          {
-            ...ctx.model,
-            maritimeGive: {
-              ...ctx.model.maritimeGive,
-              [r]: ctx.model.maritimeGive[r] + ratio,
-            },
-          },
-          r,
+        setSharedTradeGoodWantPure(
+          setGoodCountInModel(ctx.model, "maritimeGive", good, curMar + ratio),
+          good,
           0
         ),
         "maritime_trade"
       );
-      ctx.render();
     } else {
-      const withGive =
-        ctx.model.domesticGive[r] < actingPlayer.resources[r]
-          ? setSharedTradeWantPure(
-              {
-                ...ctx.model,
-                domesticGive: {
-                  ...ctx.model.domesticGive,
-                  [r]: ctx.model.domesticGive[r] + 1,
-                },
-              },
-              r,
-              0
-            )
-          : ctx.model;
-      ctx.model = switchTradeModePure(withGive, "domestic_trade");
-      ctx.render();
+      ctx.model = switchTradeModePure(
+        addDomesticGive(ctx.model),
+        "domestic_trade"
+      );
     }
+    ctx.render();
   }
 }
 
@@ -235,190 +187,92 @@ export function handleCatanPlayProgressCardClick(
   ctx.render();
 }
 
-export function handleCatanMaritimeGiveInc(
+function adjustMaritimeGive(
   ctx: AppRuntimeContext,
   state: CatanState,
   actingPlayerId: string,
-  r: ResourceType
+  good: TradeGoodType,
+  deltaDir: 1 | -1,
+  useCkRatios: boolean
 ): void {
-  const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
-  if (!actingPlayer) return;
-  const ratios = getPlayerTradeRatios(state, actingPlayerId);
-  const step = ratios[r];
-  if (actingPlayer.resources[r] >= ctx.model.maritimeGive[r] + step) {
-    ctx.model = setSharedTradeWantPure(
-      {
-        ...ctx.model,
-        tradeGiveRes: r,
-        maritimeGive: {
-          ...ctx.model.maritimeGive,
-          [r]: ctx.model.maritimeGive[r] + step,
-        },
-      },
-      r,
+  const step = useCkRatios
+    ? getPlayerGoodTradeRatios(state, actingPlayerId)[good]
+    : getPlayerTradeRatios(state, actingPlayerId)[good as ResourceType];
+  const cur = getGoodCountFromModel(ctx.model, "maritimeGive", good);
+
+  if (deltaDir === 1) {
+    const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
+    if (!actingPlayer || getPlayerGoodCount(actingPlayer, good) < cur + step) {
+      return;
+    }
+    const extra = isCommodityType(good) ? undefined : { tradeGiveRes: good };
+    ctx.model = setSharedTradeGoodWantPure(
+      setGoodCountInModel(ctx.model, "maritimeGive", good, cur + step, extra),
+      good,
       0
     );
-    ctx.render();
+  } else {
+    const nextVal = cur >= step ? cur - step : 0;
+    ctx.model = setGoodCountInModel(ctx.model, "maritimeGive", good, nextVal);
   }
+  ctx.render();
 }
 
-export function handleCatanMaritimeGiveDec(
+export const handleCatanMaritimeGiveInc = (
   ctx: AppRuntimeContext,
   state: CatanState,
   actingPlayerId: string,
   r: ResourceType
-): void {
-  const ratios = getPlayerTradeRatios(state, actingPlayerId);
-  const step = ratios[r];
-  const nextVal =
-    ctx.model.maritimeGive[r] >= step ? ctx.model.maritimeGive[r] - step : 0;
-  ctx.model = {
-    ...ctx.model,
-    maritimeGive: {
-      ...ctx.model.maritimeGive,
-      [r]: nextVal,
-    },
-  };
-  ctx.render();
-}
+): void => adjustMaritimeGive(ctx, state, actingPlayerId, r, 1, false);
 
-export function handleCatanCkMaritimeGiveInc(
+export const handleCatanMaritimeGiveDec = (
+  ctx: AppRuntimeContext,
+  state: CatanState,
+  actingPlayerId: string,
+  r: ResourceType
+): void => adjustMaritimeGive(ctx, state, actingPlayerId, r, -1, false);
+
+export const handleCatanCkMaritimeGiveInc = (
   ctx: AppRuntimeContext,
   state: CatanState,
   actingPlayerId: string,
   g: TradeGoodType
-): void {
-  const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
-  if (!actingPlayer) return;
-  const goodRatios = getPlayerGoodTradeRatios(state, actingPlayerId);
-  const step = goodRatios[g];
-  const cur = isCommodityType(g)
-    ? ctx.model.maritimeCommGive[g]
-    : ctx.model.maritimeGive[g];
-  if (getPlayerGoodCount(actingPlayer, g) >= cur + step) {
-    if (isCommodityType(g)) {
-      ctx.model = setSharedTradeGoodWantPure(
-        {
-          ...ctx.model,
-          maritimeCommGive: {
-            ...ctx.model.maritimeCommGive,
-            [g]: cur + step,
-          },
-        },
-        g,
-        0
-      );
-    } else {
-      ctx.model = setSharedTradeWantPure(
-        {
-          ...ctx.model,
-          tradeGiveRes: g,
-          maritimeGive: {
-            ...ctx.model.maritimeGive,
-            [g]: cur + step,
-          },
-        },
-        g,
-        0
-      );
-    }
-    ctx.render();
-  }
-}
+): void => adjustMaritimeGive(ctx, state, actingPlayerId, g, 1, true);
 
-export function handleCatanCkMaritimeGiveDec(
+export const handleCatanCkMaritimeGiveDec = (
   ctx: AppRuntimeContext,
   state: CatanState,
   actingPlayerId: string,
   g: TradeGoodType
-): void {
-  const goodRatios = getPlayerGoodTradeRatios(state, actingPlayerId);
-  const step = goodRatios[g];
-  if (isCommodityType(g)) {
-    const nextVal =
-      ctx.model.maritimeCommGive[g] >= step
-        ? ctx.model.maritimeCommGive[g] - step
-        : 0;
-    ctx.model = {
-      ...ctx.model,
-      maritimeCommGive: { ...ctx.model.maritimeCommGive, [g]: nextVal },
-    };
-  } else {
-    const nextVal =
-      ctx.model.maritimeGive[g] >= step ? ctx.model.maritimeGive[g] - step : 0;
-    ctx.model = {
-      ...ctx.model,
-      maritimeGive: { ...ctx.model.maritimeGive, [g]: nextVal },
-    };
-  }
-  ctx.render();
-}
+): void => adjustMaritimeGive(ctx, state, actingPlayerId, g, -1, true);
 
 export function executeCatanMaritimeTrade(
   ctx: AppRuntimeContext,
   state: CatanState,
   actingPlayerId: string
 ): void {
-  if (state.config.enableCitiesAndKnights) {
-    const giveMap: TradeGoodMap = {
-      ...ctx.model.maritimeGive,
-      ...ctx.model.maritimeCommGive,
-    };
-    const receiveMap: TradeGoodMap = {
-      ...ctx.model.maritimeWant,
-      ...ctx.model.maritimeCommWant,
-    };
-    const activeGive = TRADE_GOODS.filter((g) => giveMap[g] > 0);
-    const activeWant = TRADE_GOODS.filter((g) => receiveMap[g] > 0);
-    if (activeGive.length === 0 || activeWant.length === 0) return;
+  const isCk = state.config.enableCitiesAndKnights;
+  const goods: readonly TradeGoodType[] = isCk ? TRADE_GOODS : RESOURCES;
+  const giveMap: Partial<TradeGoodMap> = isCk
+    ? { ...ctx.model.maritimeGive, ...ctx.model.maritimeCommGive }
+    : { ...ctx.model.maritimeGive };
+  const receiveMap: Partial<TradeGoodMap> = isCk
+    ? { ...ctx.model.maritimeWant, ...ctx.model.maritimeCommWant }
+    : { ...ctx.model.maritimeWant };
 
-    const firstGive = activeGive[0]!;
-    const firstWant = activeWant[0]!;
-    if (activeGive.length === 1 && activeWant.length === 1) {
-      ctx.dispatch(actingPlayerId, {
-        type: "MARITIME_TRADE",
-        give: firstGive,
-        giveAmount: giveMap[firstGive],
-        receive: firstWant,
-        receiveAmount: receiveMap[firstWant],
-      });
-    } else {
-      ctx.dispatch(actingPlayerId, {
-        type: "MARITIME_TRADE",
-        give: firstGive,
-        giveAmount: giveMap[firstGive],
-        receive: firstWant,
-        receiveAmount: receiveMap[firstWant],
-        giveMap,
-        receiveMap,
-      });
-    }
-    return;
-  }
-
-  const activeGive = RESOURCES.filter((r) => ctx.model.maritimeGive[r] > 0);
-  const activeWant = RESOURCES.filter((r) => ctx.model.maritimeWant[r] > 0);
+  const activeGive = goods.filter((g) => (giveMap[g] ?? 0) > 0);
+  const activeWant = goods.filter((g) => (receiveMap[g] ?? 0) > 0);
   if (activeGive.length === 0 || activeWant.length === 0) return;
 
   const firstGive = activeGive[0]!;
   const firstWant = activeWant[0]!;
-  if (activeGive.length === 1 && activeWant.length === 1) {
-    ctx.dispatch(actingPlayerId, {
-      type: "MARITIME_TRADE",
-      give: firstGive,
-      giveAmount: ctx.model.maritimeGive[firstGive],
-      receive: firstWant,
-      receiveAmount: ctx.model.maritimeWant[firstWant],
-    });
-  } else {
-    ctx.dispatch(actingPlayerId, {
-      type: "MARITIME_TRADE",
-      give: firstGive,
-      giveAmount: ctx.model.maritimeGive[firstGive],
-      receive: firstWant,
-      receiveAmount: ctx.model.maritimeWant[firstWant],
-      giveMap: { ...ctx.model.maritimeGive },
-      receiveMap: { ...ctx.model.maritimeWant },
-    });
-  }
+  const isSingle = activeGive.length === 1 && activeWant.length === 1;
+  ctx.dispatch(actingPlayerId, {
+    type: "MARITIME_TRADE",
+    give: firstGive,
+    giveAmount: giveMap[firstGive]!,
+    receive: firstWant,
+    receiveAmount: receiveMap[firstWant]!,
+    ...(!isSingle ? { giveMap, receiveMap } : {}),
+  });
 }

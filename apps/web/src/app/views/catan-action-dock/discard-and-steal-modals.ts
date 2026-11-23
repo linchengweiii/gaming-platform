@@ -109,65 +109,26 @@ export function renderCatanSetupAndPhaseDockPure(
       )}</span></div>`;
     }
     const req = state.pendingDiscards[actingPlayer.id] ?? 0;
-    if (state.config.enableCitiesAndKnights) {
-      const currentSelected =
-        totalResourceCount(model.discardSelection) +
-        totalCommodityCount(model.discardCommodities);
-      return `
-        <div class="sub-modal sub-modal--trade sub-modal--discard">
-          <div class="ga-trade-head">
-            <span class="action-prompt">${t(locale, "catan.phase.discardCkHead", {
-              prefix: `<strong>${escapeAttr(t(locale, "catan.phase.discardPrefix", { name: actingPlayer.name }))}</strong>`,
-              req,
-            })}</span>
-            <span class="ga-chip ${currentSelected === req ? "ga-chip--ok" : "ga-chip--warn"} ga-num">${escapeAttr(
-              t(locale, "catan.phase.selectedCount", {
-                selected: currentSelected,
-                req,
-              })
-            )}</span>
-          </div>
-          <div class="ga-res-matrix ga-res-matrix--ck">
-            ${renderTradeGoodColumnHeadersPure(actingPlayer, undefined, undefined, locale)}
-            <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.phase.discardRowLabel"))}
-            </div>
-            ${TRADE_GOODS.map((g) => {
-              const sel = isCommodityType(g)
-                ? model.discardCommodities[g]
-                : model.discardSelection[g];
-              const have = getPlayerGoodCount(actingPlayer, g);
-              return `
-                <div class="ga-res-cell ${sel > 0 ? "ga-res-cell--active-give" : ""}">
-                  <button type="button" data-discard-good-sub="${g}" class="ga-res-step-btn" ${sel <= 0 ? "disabled" : ""}>−</button>
-                  <span class="ga-res-step-val">${sel}</span>
-                  <button type="button" data-discard-good-add="${g}" class="ga-res-step-btn" ${sel >= have || currentSelected >= req ? "disabled" : ""}>+</button>
-                </div>
-              `;
-            }).join("")}
-          </div>
-          <div class="ga-trade-preview">
-            <button type="button" id="btn-discard-reset" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.reset"))}</button>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" id="btn-discard-auto" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "catan.phase.autoPick", { req }))}</button>
-              <button type="button" id="btn-discard-submit" class="btn btn--primary btn--sm" ${currentSelected !== req ? "disabled" : ""}>${escapeAttr(t(locale, "catan.phase.confirmDiscard"))}</button>
-            </div>
-          </div>
-        </div>
-        <div class="action-buttons">
-          ${renderActionPieceIconSvg("robber", pColor, 20)}
-          <span class="action-prompt">${t(locale, "catan.phase.discardCkPrompt", {
-            prefix: `<strong>${escapeAttr(t(locale, "catan.phase.discardRequiredPrefix"))}</strong>`,
-            req,
-          })}</span>
-        </div>`;
-    }
-    const currentSelected = totalResourceCount(model.discardSelection);
+    const isCk = Boolean(state.config.enableCitiesAndKnights);
+    const goods = isCk ? TRADE_GOODS : RESOURCES;
+    const currentSelected =
+      totalResourceCount(model.discardSelection) +
+      (isCk ? totalCommodityCount(model.discardCommodities) : 0);
+    const dataPrefix = isCk ? "data-discard-good" : "data-discard";
+    const headersHtml = isCk
+      ? renderTradeGoodColumnHeadersPure(actingPlayer, undefined, undefined, locale)
+      : renderResourceColumnHeadersPure(actingPlayer.resources, undefined, undefined, locale);
     return `
         <div class="sub-modal sub-modal--trade sub-modal--discard">
           <div class="ga-trade-head">
             <span class="action-prompt">${t(locale, "catan.phase.discardCkHead", {
-              prefix: `<strong>${escapeAttr(t(locale, "catan.phase.roll7NamePrefix", { name: actingPlayer.name }))}</strong>`,
+              prefix: `<strong>${escapeAttr(
+                t(
+                  locale,
+                  isCk ? "catan.phase.discardPrefix" : "catan.phase.roll7NamePrefix",
+                  { name: actingPlayer.name }
+                )
+              )}</strong>`,
               req,
             })}</span>
             <span class="ga-chip ${currentSelected === req ? "ga-chip--ok" : "ga-chip--warn"} ga-num">${escapeAttr(
@@ -177,22 +138,26 @@ export function renderCatanSetupAndPhaseDockPure(
               })
             )}</span>
           </div>
-          <div class="ga-res-matrix">
-            ${renderResourceColumnHeadersPure(actingPlayer.resources, undefined, undefined, locale)}
+          <div class="${isCk ? "ga-res-matrix ga-res-matrix--ck" : "ga-res-matrix"}">
+            ${headersHtml}
             <div class="ga-res-matrix__row-label">
               <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.phase.discardRowLabel"))}
             </div>
-            ${RESOURCES.map((r) => {
-              const sel = model.discardSelection[r];
-              const have = actingPlayer.resources[r];
-              return `
+            ${goods
+              .map((g) => {
+                const sel = isCommodityType(g)
+                  ? model.discardCommodities[g]
+                  : model.discardSelection[g];
+                const have = getPlayerGoodCount(actingPlayer, g);
+                return `
                 <div class="ga-res-cell ${sel > 0 ? "ga-res-cell--active-give" : ""}">
-                  <button type="button" data-discard-sub="${r}" class="ga-res-step-btn" ${sel <= 0 ? "disabled" : ""}>−</button>
+                  <button type="button" ${dataPrefix}-sub="${g}" class="ga-res-step-btn" ${sel <= 0 ? "disabled" : ""}>−</button>
                   <span class="ga-res-step-val">${sel}</span>
-                  <button type="button" data-discard-add="${r}" class="ga-res-step-btn" ${sel >= have || currentSelected >= req ? "disabled" : ""}>+</button>
+                  <button type="button" ${dataPrefix}-add="${g}" class="ga-res-step-btn" ${sel >= have || currentSelected >= req ? "disabled" : ""}>+</button>
                 </div>
               `;
-            }).join("")}
+              })
+              .join("")}
           </div>
           <div class="ga-trade-preview">
             <button type="button" id="btn-discard-reset" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.reset"))}</button>
@@ -204,10 +169,21 @@ export function renderCatanSetupAndPhaseDockPure(
         </div>
         <div class="action-buttons">
           ${renderActionPieceIconSvg("robber", pColor, 20)}
-          <span class="action-prompt">${t(locale, "catan.phase.discardBasePrompt", {
-            prefix: `<strong>${escapeAttr(t(locale, "catan.phase.roll7Prefix"))}</strong>`,
-            req,
-          })}</span>
+          <span class="action-prompt">${t(
+            locale,
+            isCk ? "catan.phase.discardCkPrompt" : "catan.phase.discardBasePrompt",
+            {
+              prefix: `<strong>${escapeAttr(
+                t(
+                  locale,
+                  isCk
+                    ? "catan.phase.discardRequiredPrefix"
+                    : "catan.phase.roll7Prefix"
+                )
+              )}</strong>`,
+              req,
+            }
+          )}</span>
         </div>`;
   }
 

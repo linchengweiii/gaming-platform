@@ -1,5 +1,6 @@
 import type { PlatformRoomManager, RoomInstance } from "../room-manager.ts";
 import type { GuestSessionStore } from "./guest-sessions.ts";
+import { isViewerSeatedOrOwnerPure } from "./viewer-and-static.ts";
 import type {
   WsClient,
   createPresenceTracker,
@@ -17,18 +18,6 @@ export interface WsMessageHandlerDeps {
   readonly broadcastLobbyRooms: () => void;
   readonly broadcastRoomState: (roomId: string) => void;
   readonly scheduleRoomBotTurn: (roomId: string) => void;
-}
-
-function isViewerSeatedOrOwnerPure(
-  room: RoomInstance,
-  viewerId: string
-): boolean {
-  return (
-    room.ownerId === viewerId ||
-    room.humanPlayers.some(
-      (p) => p.id === viewerId || p.controllerId === viewerId
-    )
-  );
 }
 
 export function handleClientJsonMessage(

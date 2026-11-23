@@ -1,5 +1,4 @@
 import type { BotDifficulty } from "@gaming-platform/core";
-import { NUMBER_TOKEN_PIPS } from "./costs-and-limits.ts";
 
 /**
  * Tunable strategic weight vector for Catan AI difficulty tiers and evolutionary self-play optimization.
@@ -127,8 +126,6 @@ export const CATAN_BOT_WEIGHTS: Record<BotDifficulty, CatanBotWeights> = {
     sevenDiscardRiskWeight: 1.22,
   },
 };
-
-export const BOT_DICE_PIPS = NUMBER_TOKEN_PIPS;
 
 export function setMasterCatanBotWeights(
   overrides: Partial<CatanBotWeights>

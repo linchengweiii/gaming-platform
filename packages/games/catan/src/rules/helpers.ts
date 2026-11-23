@@ -1,6 +1,9 @@
-import type { GameEvent } from "@gaming-platform/core";
 import { isExpanded56Scenario } from "../board/helpers.ts";
-import { totalCommodityCount } from "../cities-and-knights/helpers.ts";
+import {
+  type StateEventsPair,
+  pushCkEvent,
+  totalCommodityCount,
+} from "../cities-and-knights/helpers.ts";
 import { getPlayerGoodTradeRatios } from "../cities-and-knights/improvements.ts";
 import {
   CITY_WALL_SAFE_HAND_BONUS,
@@ -16,39 +19,8 @@ import {
 } from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 
-export type StateWithEvents = {
-  readonly state: CatanState;
-  readonly emitted: GameEvent[];
-};
-
-/**
- * Pure helper to append an event into `state.eventLog` and `emitted`.
- */
-export function appendCatanEvent(
-  state: CatanState,
-  emitted: readonly GameEvent[],
-  type: string,
-  message: string,
-  playerId?: string,
-  payload?: unknown
-): StateWithEvents {
-  const evt: GameEvent = {
-    id: `evt-${state.eventLog.length}`,
-    timestamp: state.eventLog.length,
-    turn: state.turn,
-    playerId,
-    type,
-    message,
-    payload,
-  };
-  return {
-    state: {
-      ...state,
-      eventLog: [...state.eventLog, evt],
-    },
-    emitted: [...emitted, evt],
-  };
-}
+export type StateWithEvents = StateEventsPair;
+export const appendCatanEvent = pushCkEvent;
 
 export function emptyResources(): ResourceMap {
   return { brick: 0, lumber: 0, wool: 0, grain: 0, ore: 0 };
@@ -116,24 +88,6 @@ export function subtractResourcesPure(
     grain: target.grain - (delta.grain ?? 0),
     ore: target.ore - (delta.ore ?? 0),
   };
-}
-
-export function addResources(
-  target: ResourceMap,
-  delta: Partial<ResourceMap>
-): ResourceMap {
-  const next = addResourcesPure(target, delta);
-  Object.assign(target, next);
-  return next;
-}
-
-export function subtractResources(
-  target: ResourceMap,
-  delta: Partial<ResourceMap>
-): ResourceMap {
-  const next = subtractResourcesPure(target, delta);
-  Object.assign(target, next);
-  return next;
 }
 
 export function omitRecordKey<V>(

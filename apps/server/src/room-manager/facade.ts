@@ -68,27 +68,22 @@ export function createPlatformRoomManager(): PlatformRoomManager {
 
   const registryLens: GameRegistry = {
     register(engine) {
-      state = {
-        ...state,
-        registry: registerEnginePure(state.registry, engine),
-      };
+      state = { ...state, registry: registerEnginePure(state.registry, engine) };
     },
-    get(gameId) {
-      return getRegisteredEnginePure(state.registry, gameId);
-    },
-    list() {
-      return listRegisteredGamesPure(state.registry);
-    },
+    get: (gameId) => getRegisteredEnginePure(state.registry, gameId),
+    list: () => listRegisteredGamesPure(state.registry),
   };
 
   function createSessionLens(roomId: string): MatchSession<any, any, any> {
     const readRoom = (): RoomRecord => getRoomRecordPure(state, roomId);
+    const readEngine = () =>
+      getRegisteredEnginePure(state.registry, readRoom().gameId);
     const readSession = (): MatchSessionState<any, any> => {
       const s = readRoom().sessionState;
       if (!s) throw new Error("Game has not started in this room");
       return s;
     };
-    const writeSession = (nextSession: MatchSessionState<any, any>): void => {
+    const commitSession = (nextSession: MatchSessionState<any, any>) => {
       const curRoom = readRoom();
       const curGame = getSessionState(nextSession);
       state = setRoomRecordInState(state, {
@@ -101,11 +96,12 @@ export function createPlatformRoomManager(): PlatformRoomManager {
               ? "in_progress"
               : curRoom.status,
       });
+      return curGame;
     };
 
     return {
       get engine() {
-        return getRegisteredEnginePure(state.registry, readRoom().gameId);
+        return readEngine();
       },
       get enforceInvariants() {
         return readSession().enforceInvariants;
@@ -115,63 +111,34 @@ export function createPlatformRoomManager(): PlatformRoomManager {
       getTotalSteps: () => getSessionTotalSteps(readSession()),
       getActionLog: () => getSessionActionLog(readSession()),
       dispatch(playerId: string, action: any) {
-        const room = readRoom();
-        const engine = getRegisteredEnginePure(state.registry, room.gameId);
         const dispatched = dispatchSessionActionPure(
-          engine,
+          readEngine(),
           readSession(),
           playerId,
           action
         );
-        writeSession(dispatched.session);
+        commitSession(dispatched.session);
         return dispatched.result;
       },
       canUndo: () => getSessionStep(readSession()) > 0,
       canRedo: () =>
         getSessionStep(readSession()) < getSessionTotalSteps(readSession()),
-      getUndoableStepCount(playerId: string | null) {
-        const room = readRoom();
-        const engine = getRegisteredEnginePure(state.registry, room.gameId);
-        return getSessionUndoableStepCount(engine, readSession(), playerId);
-      },
-      canPlayerUndo(playerId: string | null) {
-        const room = readRoom();
-        const engine = getRegisteredEnginePure(state.registry, room.gameId);
-        return canSessionPlayerUndo(engine, readSession(), playerId);
-      },
-      canPlayerRedo: (playerId: string | null) =>
+      getUndoableStepCount: (playerId) =>
+        getSessionUndoableStepCount(readEngine(), readSession(), playerId),
+      canPlayerUndo: (playerId) =>
+        canSessionPlayerUndo(readEngine(), readSession(), playerId),
+      canPlayerRedo: (playerId) =>
         canSessionPlayerRedo(readSession(), playerId),
-      undoForPlayer(playerId: string | null) {
-        const room = readRoom();
-        const engine = getRegisteredEnginePure(state.registry, room.gameId);
-        const nextSession = undoSessionForPlayerPure(
-          engine,
-          readSession(),
-          playerId
-        );
-        writeSession(nextSession);
-        return getSessionState(nextSession);
-      },
-      redoForPlayer(playerId: string | null) {
-        const nextSession = redoSessionForPlayerPure(readSession(), playerId);
-        writeSession(nextSession);
-        return getSessionState(nextSession);
-      },
-      undo() {
-        const nextSession = undoSessionPure(readSession());
-        writeSession(nextSession);
-        return getSessionState(nextSession);
-      },
-      redo() {
-        const nextSession = redoSessionPure(readSession());
-        writeSession(nextSession);
-        return getSessionState(nextSession);
-      },
-      jumpToStep(step: number) {
-        const nextSession = jumpSessionToStepPure(readSession(), step);
-        writeSession(nextSession);
-        return getSessionState(nextSession);
-      },
+      undoForPlayer: (playerId) =>
+        commitSession(
+          undoSessionForPlayerPure(readEngine(), readSession(), playerId)
+        ),
+      redoForPlayer: (playerId) =>
+        commitSession(redoSessionForPlayerPure(readSession(), playerId)),
+      undo: () => commitSession(undoSessionPure(readSession())),
+      redo: () => commitSession(redoSessionPure(readSession())),
+      jumpToStep: (step) =>
+        commitSession(jumpSessionToStepPure(readSession(), step)),
     };
   }
 
@@ -183,63 +150,50 @@ export function createPlatformRoomManager(): PlatformRoomManager {
 
     let lastKnownRecord: RoomRecord = initialRec;
     const sessionLens = createSessionLens(roomId);
+    const readCurrent = (): RoomRecord => {
+      const current = state.rooms[roomId];
+      if (current) lastKnownRecord = current;
+      return current ?? lastKnownRecord;
+    };
 
-    const target = {} as RoomInstance;
-    const proxy = new Proxy(target, {
+    const proxy = new Proxy({} as RoomInstance, {
       get(_t, prop: string | symbol) {
-        const current = state.rooms[roomId];
-        if (current) {
-          lastKnownRecord = current;
-        }
-        const rec = current ?? lastKnownRecord;
-        if (prop === "session") {
-          return rec.sessionState ? sessionLens : null;
-        }
-        if (prop === Symbol.toStringTag) {
-          return "RoomInstance";
-        }
+        const rec = readCurrent();
+        if (prop === "session") return rec.sessionState ? sessionLens : null;
+        if (prop === Symbol.toStringTag) return "RoomInstance";
         return (rec as unknown as Record<string | symbol, unknown>)[prop];
       },
       set(_t, prop: string | symbol, value: unknown) {
         const current = state.rooms[roomId];
-        if (!current || typeof prop !== "string") {
-          return true;
-        }
-        if (prop === "session") {
-          const nextSessionState =
-            value &&
-            typeof (value as MatchSession<any, any, any>).getState === "function"
-              ? createMatchSessionState(
-                  getRegisteredEnginePure(state.registry, current.gameId),
-                  (value as MatchSession<any, any, any>).getState(),
-                  (value as MatchSession<any, any, any>).enforceInvariants
-                )
-              : null;
-          const updated: RoomRecord = {
-            ...current,
-            sessionState: nextSessionState,
-          };
-          lastKnownRecord = updated;
-          state = setRoomRecordInState(state, updated);
-          return true;
-        }
-        const updated = {
-          ...current,
-          [prop]: value,
-        } as RoomRecord;
+        if (!current || typeof prop !== "string") return true;
+        const updated: RoomRecord =
+          prop === "session"
+            ? {
+                ...current,
+                sessionState:
+                  value &&
+                  typeof (value as MatchSession<any, any, any>).getState ===
+                    "function"
+                    ? createMatchSessionState(
+                        getRegisteredEnginePure(state.registry, current.gameId),
+                        (value as MatchSession<any, any, any>).getState(),
+                        (value as MatchSession<any, any, any>).enforceInvariants
+                      )
+                    : null,
+              }
+            : ({ ...current, [prop]: value } as RoomRecord);
         lastKnownRecord = updated;
         state = setRoomRecordInState(state, updated);
         return true;
       },
       ownKeys() {
-        const rec = state.rooms[roomId] ?? lastKnownRecord;
         return [
-          ...Object.keys(rec).filter((k) => k !== "sessionState"),
+          ...Object.keys(readCurrent()).filter((k) => k !== "sessionState"),
           "session",
         ];
       },
       getOwnPropertyDescriptor(_t, prop: string | symbol) {
-        const rec = state.rooms[roomId] ?? lastKnownRecord;
+        const rec = readCurrent();
         if (prop === "session") {
           return {
             configurable: true,
@@ -248,11 +202,7 @@ export function createPlatformRoomManager(): PlatformRoomManager {
             value: rec.sessionState ? sessionLens : null,
           };
         }
-        if (
-          typeof prop === "string" &&
-          prop in rec &&
-          prop !== "sessionState"
-        ) {
+        if (typeof prop === "string" && prop in rec && prop !== "sessionState") {
           return {
             configurable: true,
             enumerable: true,
@@ -268,54 +218,37 @@ export function createPlatformRoomManager(): PlatformRoomManager {
     return proxy;
   }
 
+  const commitGameState = (res: { state: RoomManagerState; gameState: any }) => {
+    state = res.state;
+    return res.gameState;
+  };
+
   return {
     registry: registryLens,
     getStateSnapshot: () => state,
     getRoomPlayerBounds: (gameId, config) =>
       getRoomPlayerBoundsPure(state.registry, gameId, config),
-    canViewerControlActor: (room, viewerId, actorId) =>
-      canViewerControlActorPure(room, viewerId, actorId),
+    canViewerControlActor: canViewerControlActorPure,
     toRoomSummary(r, viewerId) {
-      const rec = state.rooms[r.roomId];
-      if (rec) {
-        return toRoomSummaryPure(state.registry, rec, viewerId);
-      }
+      const existing = state.rooms[r.roomId];
+      if (existing) return toRoomSummaryPure(state.registry, existing, viewerId);
       if ("sessionState" in r) {
         return toRoomSummaryPure(state.registry, r, viewerId);
       }
       const engine = getRegisteredEnginePure(state.registry, r.gameId);
       const fallbackRec: RoomRecord = {
-        roomId: r.roomId,
-        name: r.name,
-        gameId: r.gameId,
-        ownerId: r.ownerId,
-        ownerName: r.ownerName,
-        status: r.status,
+        ...r,
         isPrivate: Boolean(r.isPrivate),
-        humanPlayers: r.humanPlayers,
-        botCount: r.botCount,
-        botDifficulty: r.botDifficulty,
-        allBots: r.allBots,
-        startingPlayerMode: r.startingPlayerMode,
-        autoStepBots: r.autoStepBots,
-        botStepDelayMs: r.botStepDelayMs,
-        players: r.players,
-        config: r.config,
-        seed: r.seed,
-        matchCounter: r.matchCounter,
+        revision: r.revision ?? 1,
         sessionState: r.session
           ? createMatchSessionState(engine, r.session.getState(), false)
           : null,
-        revision: r.revision ?? 1,
-        createdAt: r.createdAt,
       };
       return toRoomSummaryPure(state.registry, fallbackRec, viewerId);
     },
     listRooms: (gameFilter, viewerId) =>
       listRoomsPure(state, gameFilter, viewerId),
-    getRoom(roomId) {
-      return getOrCreateRoomLens(roomId);
-    },
+    getRoom: getOrCreateRoomLens,
     createRoom(options) {
       const created = createRoomPure(state, options);
       state = created.state;
@@ -356,62 +289,40 @@ export function createPlatformRoomManager(): PlatformRoomManager {
       return getOrCreateRoomLens(canonicalId);
     },
     closeRoom(roomId) {
-      const canonicalId = (() => {
-        try {
-          return getRoomRecordPure(state, roomId).roomId;
-        } catch {
-          return roomId;
-        }
-      })();
+      let canonicalId = roomId;
+      try {
+        canonicalId = getRoomRecordPure(state, roomId).roomId;
+      } catch {
+        // Already removed or unknown room ID
+      }
       const closed = closeRoomPure(state, canonicalId);
       state = closed.state;
-      if (closed.closed) {
-        roomLensCache.delete(canonicalId);
-      }
+      if (closed.closed) roomLensCache.delete(canonicalId);
       return closed.closed;
     },
     signOutGuest(playerId) {
-      const signedOut = signOutGuestEverywherePure(state, playerId);
-      state = signedOut.state;
-      signedOut.closedRoomIds.forEach((id) => roomLensCache.delete(id));
-      return {
-        closedRoomIds: signedOut.closedRoomIds,
-        updatedRoomIds: signedOut.updatedRoomIds,
-      };
+      const { state: next, closedRoomIds, updatedRoomIds } =
+        signOutGuestEverywherePure(state, playerId);
+      state = next;
+      closedRoomIds.forEach((id) => roomLensCache.delete(id));
+      return { closedRoomIds, updatedRoomIds };
     },
     renameGuest(playerId, newName) {
-      const renamed = renameGuestEverywherePure(state, playerId, newName);
-      state = renamed.state;
-      return {
-        cleanName: renamed.cleanName,
-        updatedRoomIds: renamed.updatedRoomIds,
-      };
+      const { state: next, cleanName, updatedRoomIds } =
+        renameGuestEverywherePure(state, playerId, newName);
+      state = next;
+      return { cleanName, updatedRoomIds };
     },
-    startGame(roomId, requesterId) {
-      const started = startGamePure(state, roomId, requesterId);
-      state = started.state;
-      return started.gameState;
-    },
-    dispatchAction(roomId, playerId, action) {
-      const dispatched = dispatchActionPure(state, roomId, playerId, action);
-      state = dispatched.state;
-      return dispatched.gameState;
-    },
-    undoAction(roomId, requesterId) {
-      const undone = undoActionPure(state, roomId, requesterId);
-      state = undone.state;
-      return undone.gameState;
-    },
-    redoAction(roomId, requesterId) {
-      const redone = redoActionPure(state, roomId, requesterId);
-      state = redone.state;
-      return redone.gameState;
-    },
-    finishCatanSetupWithBots(roomId) {
-      const finished = finishCatanSetupWithBotsPure(state, roomId);
-      state = finished.state;
-      return finished.gameState;
-    },
+    startGame: (roomId, requesterId) =>
+      commitGameState(startGamePure(state, roomId, requesterId)),
+    dispatchAction: (roomId, playerId, action) =>
+      commitGameState(dispatchActionPure(state, roomId, playerId, action)),
+    undoAction: (roomId, requesterId) =>
+      commitGameState(undoActionPure(state, roomId, requesterId)),
+    redoAction: (roomId, requesterId) =>
+      commitGameState(redoActionPure(state, roomId, requesterId)),
+    finishCatanSetupWithBots: (roomId) =>
+      commitGameState(finishCatanSetupWithBotsPure(state, roomId)),
     stepBot(roomId, options) {
       const stepped = stepBotPure(state, roomId, options);
       state = stepped.state;

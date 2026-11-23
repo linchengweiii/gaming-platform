@@ -5,14 +5,10 @@ export {
 } from "./config/scenarios-config.ts";
 export type { GeneratedBoard } from "./board/helpers.ts";
 export {
-  createDevCardDeck,
   createDevCardDeckPure,
   isExpanded56Scenario,
   toBaseMapScenarioId,
   toExpanded56ScenarioId,
   toStandard34ScenarioId,
 } from "./board/helpers.ts";
-export {
-  generateCatanBoard,
-  generateCatanBoardPure,
-} from "./board/generator.ts";
+export { generateCatanBoardPure } from "./board/generator.ts";

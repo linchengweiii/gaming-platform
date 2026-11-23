@@ -74,128 +74,113 @@ import { ZH_TW_TUTORIAL_LESSONS } from "./locales/zh-TW/tutorials.ts";
 import { t } from "./translator.ts";
 import type { SupportedLocale } from "./types.ts";
 
-export function getGameTitleLocalized(
+const GAME_SEAT_RANGES: readonly [SupportedGameId, string][] = [
+  ["catan", "2–6"],
+  ["splendor", "2–4"],
+  ["azul", "2–4"],
+  ["seven_wonders", "3–7"],
+];
+
+export const getGameTitleLocalized = (
   gameId: SupportedGameId,
   locale: SupportedLocale
-): string {
-  if (locale === "zh-TW") return ZH_TW_GAME_TITLES[gameId];
-  return GAME_TITLE_BY_ID[gameId];
-}
+): string =>
+  locale === "zh-TW" ? ZH_TW_GAME_TITLES[gameId] : GAME_TITLE_BY_ID[gameId];
 
-export function getGameShortTitleLocalized(
+export const getGameShortTitleLocalized = (
   gameId: SupportedGameId,
   locale: SupportedLocale
-): string {
-  if (locale === "zh-TW") return ZH_TW_GAME_TITLES[gameId];
-  return TUTORIAL_GAME_SHORT_TITLE_BY_ID[gameId];
-}
+): string =>
+  locale === "zh-TW"
+    ? ZH_TW_GAME_TITLES[gameId]
+    : TUTORIAL_GAME_SHORT_TITLE_BY_ID[gameId];
 
-export function getSetupGameDropdownOptionsLocalized(
+export const getSetupGameDropdownOptionsLocalized = (
   locale: SupportedLocale
-): DropdownOption[] {
-  return [
-    {
-      value: "catan",
-      label: getGameTitleLocalized("catan", locale),
-      meta: t(locale, "lobby.seatsRange", { range: "2–6" }),
-    },
-    {
-      value: "splendor",
-      label: getGameTitleLocalized("splendor", locale),
-      meta: t(locale, "lobby.seatsRange", { range: "2–4" }),
-    },
-    {
-      value: "azul",
-      label: getGameTitleLocalized("azul", locale),
-      meta: t(locale, "lobby.seatsRange", { range: "2–4" }),
-    },
-    {
-      value: "seven_wonders",
-      label: getGameTitleLocalized("seven_wonders", locale),
-      meta: t(locale, "lobby.seatsRange", { range: "3–7" }),
-    },
-  ];
-}
+): DropdownOption[] =>
+  GAME_SEAT_RANGES.map(([value, range]) => ({
+    value,
+    label: getGameTitleLocalized(value, locale),
+    meta: t(locale, "lobby.seatsRange", { range }),
+  }));
 
-export function getBotDifficultyMetaLocalized(
+export const getBotDifficultyMetaLocalized = (
   difficulty: BotDifficulty,
   locale: SupportedLocale
-): { readonly label: string; readonly badge: string; readonly desc: string } {
-  if (locale === "zh-TW") return ZH_TW_BOT_DIFFICULTY_META[difficulty];
-  return BOT_DIFFICULTY_META[difficulty];
-}
+): { readonly label: string; readonly badge: string; readonly desc: string } =>
+  locale === "zh-TW"
+    ? ZH_TW_BOT_DIFFICULTY_META[difficulty]
+    : BOT_DIFFICULTY_META[difficulty];
 
 export function getCatanScenarioTextLocalized(
   scenarioId: ScenarioId,
   locale: SupportedLocale
 ): { readonly name: string; readonly subtitle: string; readonly description: string } {
   if (locale === "zh-TW") return ZH_TW_CATAN_SCENARIOS[scenarioId];
-  const sc = SCENARIO_CATALOG[scenarioId];
-  return { name: sc.name, subtitle: sc.subtitle, description: sc.description };
+  const { name, subtitle, description } = SCENARIO_CATALOG[scenarioId];
+  return { name, subtitle, description };
 }
 
-export function getCatanScenarioDropdownOptionsLocalized(
+export const getCatanScenarioDropdownOptionsLocalized = (
   locale: SupportedLocale
-): DropdownOption[] {
-  return SELECTABLE_SCENARIO_IDS.map((id) => {
+): DropdownOption[] =>
+  SELECTABLE_SCENARIO_IDS.map((id) => {
     const sc = SCENARIO_CATALOG[id];
-    const localized = getCatanScenarioTextLocalized(id, locale);
     return {
       value: sc.id,
-      label: localized.name,
+      label: getCatanScenarioTextLocalized(id, locale).name,
       meta: t(locale, "lobby.seatsRange", {
         range: `${sc.minPlayers}–${sc.maxPlayers}`,
       }),
     };
   });
-}
 
-export function getCatanTerrainLabelLocalized(
+export const getCatanTerrainLabelLocalized = (
   terrain: TerrainType,
   locale: SupportedLocale
-): string {
-  if (locale === "zh-TW") return ZH_TW_CATAN_TERRAINS[terrain];
-  return TERRAIN_META[terrain].label;
-}
+): string =>
+  locale === "zh-TW" ? ZH_TW_CATAN_TERRAINS[terrain] : TERRAIN_META[terrain].label;
 
-export function getCatanResourceTextLocalized(
+export const getCatanResourceTextLocalized = (
   resource: ResourceType,
   locale: SupportedLocale
-): { readonly label: string; readonly subtitle: string } {
-  if (locale === "zh-TW") return ZH_TW_CATAN_RESOURCES[resource];
-  const m = RESOURCE_META[resource];
-  return { label: m.label, subtitle: m.subtitle };
-}
+): { readonly label: string; readonly subtitle: string } =>
+  locale === "zh-TW"
+    ? ZH_TW_CATAN_RESOURCES[resource]
+    : { label: RESOURCE_META[resource].label, subtitle: RESOURCE_META[resource].subtitle };
 
-export function getCatanCommodityTextLocalized(
+export const getCatanCommodityTextLocalized = (
   commodity: CommodityType,
   locale: SupportedLocale
-): { readonly label: string; readonly subtitle: string } {
-  if (locale === "zh-TW") return ZH_TW_CATAN_COMMODITIES[commodity];
-  const m = COMMODITY_META[commodity];
-  return { label: m.label, subtitle: m.subtitle };
-}
+): { readonly label: string; readonly subtitle: string } =>
+  locale === "zh-TW"
+    ? ZH_TW_CATAN_COMMODITIES[commodity]
+    : {
+        label: COMMODITY_META[commodity].label,
+        subtitle: COMMODITY_META[commodity].subtitle,
+      };
 
-export function getCatanTradeGoodLabelLocalized(
+export const getCatanTradeGoodLabelLocalized = (
   good: TradeGoodType,
   locale: SupportedLocale
-): string {
-  if (locale === "zh-TW") {
-    return isCommodityType(good)
+): string =>
+  locale === "zh-TW"
+    ? isCommodityType(good)
       ? ZH_TW_CATAN_COMMODITIES[good].label
-      : ZH_TW_CATAN_RESOURCES[good].label;
-  }
-  return TRADE_GOOD_META[good].label;
-}
+      : ZH_TW_CATAN_RESOURCES[good].label
+    : TRADE_GOOD_META[good].label;
 
-export function getCatanDevCardTextLocalized(
+export const getCatanDevCardTextLocalized = (
   devType: DevCardType,
   locale: SupportedLocale
-): { readonly title: string; readonly category: string; readonly rule: string } {
-  if (locale === "zh-TW") return ZH_TW_CATAN_DEV_CARDS[devType];
-  const m = DEV_CARD_META[devType];
-  return { title: m.title, category: m.category, rule: m.rule };
-}
+): { readonly title: string; readonly category: string; readonly rule: string } =>
+  locale === "zh-TW"
+    ? ZH_TW_CATAN_DEV_CARDS[devType]
+    : {
+        title: DEV_CARD_META[devType].title,
+        category: DEV_CARD_META[devType].category,
+        rule: DEV_CARD_META[devType].rule,
+      };
 
 export function getCatanDisciplineTextLocalized(
   discipline: ImprovementDiscipline,
@@ -207,69 +192,57 @@ export function getCatanDisciplineTextLocalized(
   readonly perkRule: string;
 } {
   if (locale === "zh-TW") return ZH_TW_CATAN_DISCIPLINES[discipline];
-  const m = DISCIPLINE_META[discipline];
-  return {
-    label: m.label,
-    shortCode: m.shortCode,
-    perkTitle: m.perkTitle,
-    perkRule: m.perkRule,
-  };
+  const { label, shortCode, perkTitle, perkRule } = DISCIPLINE_META[discipline];
+  return { label, shortCode, perkTitle, perkRule };
 }
 
-export function getCatanProgressCardTextLocalized(
+export const getCatanProgressCardTextLocalized = (
   cardType: ProgressCardType,
   locale: SupportedLocale
-): { readonly title: string; readonly description: string } {
-  if (locale === "zh-TW") return ZH_TW_CATAN_PROGRESS_CARDS[cardType];
-  const c = PROGRESS_CARD_CATALOG[cardType];
-  return { title: c.title, description: c.description };
-}
+): { readonly title: string; readonly description: string } =>
+  locale === "zh-TW"
+    ? ZH_TW_CATAN_PROGRESS_CARDS[cardType]
+    : {
+        title: PROGRESS_CARD_CATALOG[cardType].title,
+        description: PROGRESS_CARD_CATALOG[cardType].description,
+      };
 
-export function getSplendorGemTextLocalized(
+export const getSplendorGemTextLocalized = (
   color: TokenColor,
   locale: SupportedLocale
-): { readonly label: string; readonly short: string } {
-  if (locale === "zh-TW") return ZH_TW_SPLENDOR_GEMS[color];
-  const s = GEM_STYLES[color];
-  return { label: s.label, short: s.short };
-}
+): { readonly label: string; readonly short: string } =>
+  locale === "zh-TW"
+    ? ZH_TW_SPLENDOR_GEMS[color]
+    : { label: GEM_STYLES[color].label, short: GEM_STYLES[color].short };
 
-export function getSplendorNobleNameLocalized(
+export const getSplendorNobleNameLocalized = (
   nobleId: string,
   fallbackName: string,
   locale: SupportedLocale
-): string {
-  if (locale === "zh-TW") {
-    return ZH_TW_SPLENDOR_NOBLES[nobleId] ?? fallbackName;
-  }
-  return fallbackName;
-}
+): string =>
+  locale === "zh-TW" ? ZH_TW_SPLENDOR_NOBLES[nobleId] ?? fallbackName : fallbackName;
 
-export function getAzulTileLabelLocalized(
+export const getAzulTileLabelLocalized = (
   color: AzulTileColor,
   locale: SupportedLocale
-): string {
-  if (locale === "zh-TW") return ZH_TW_AZUL_TILES[color];
-  return AZUL_TILE_STYLES[color].label;
-}
+): string =>
+  locale === "zh-TW" ? ZH_TW_AZUL_TILES[color] : AZUL_TILE_STYLES[color].label;
 
-export function getSevenWondersResourceTextLocalized(
+export const getSevenWondersResourceTextLocalized = (
   res: WonderResource,
   locale: SupportedLocale
-): { readonly label: string; readonly short: string } {
-  if (locale === "zh-TW") return ZH_TW_SW_RESOURCES[res];
-  const m = SW_RESOURCE_META[res];
-  return { label: m.label, short: m.short };
-}
+): { readonly label: string; readonly short: string } =>
+  locale === "zh-TW"
+    ? ZH_TW_SW_RESOURCES[res]
+    : { label: SW_RESOURCE_META[res].label, short: SW_RESOURCE_META[res].short };
 
-export function getSevenWondersCardColorTextLocalized(
+export const getSevenWondersCardColorTextLocalized = (
   color: CardColor,
   locale: SupportedLocale
-): { readonly label: string; readonly short: string } {
-  if (locale === "zh-TW") return ZH_TW_SW_CARD_COLORS[color];
-  const m = SW_CARD_COLOR_META[color];
-  return { label: m.label, short: m.short };
-}
+): { readonly label: string; readonly short: string } =>
+  locale === "zh-TW"
+    ? ZH_TW_SW_CARD_COLORS[color]
+    : { label: SW_CARD_COLOR_META[color].label, short: SW_CARD_COLOR_META[color].short };
 
 export function getSevenWondersWonderNameLocalized(
   wonderId: WonderId,
@@ -285,38 +258,28 @@ export function getSevenWondersWonderNameLocalized(
   return compact ? fullName.replace(/^The /, "") : fullName;
 }
 
-export function getSevenWondersStageSummaryLocalized(
+export const getSevenWondersStageSummaryLocalized = (
   summary: string,
   locale: SupportedLocale
-): string {
-  if (locale === "zh-TW") {
-    return ZH_TW_SW_STAGE_SUMMARIES[summary] ?? summary;
-  }
-  return summary;
-}
+): string =>
+  locale === "zh-TW" ? ZH_TW_SW_STAGE_SUMMARIES[summary] ?? summary : summary;
 
-export function getSevenWondersCardNameLocalized(
+export const getSevenWondersCardNameLocalized = (
   englishName: string,
   locale: SupportedLocale
-): string {
-  if (locale === "zh-TW") {
-    return ZH_TW_SW_CARD_NAMES[englishName] ?? englishName;
-  }
-  return englishName;
-}
+): string =>
+  locale === "zh-TW" ? ZH_TW_SW_CARD_NAMES[englishName] ?? englishName : englishName;
 
-export function getTutorialLessonsLocalized(
+export const getTutorialLessonsLocalized = (
   gameId: TutorialGameId,
   locale: SupportedLocale
-): readonly TutorialLesson[] {
-  if (locale === "zh-TW") return ZH_TW_TUTORIAL_LESSONS[gameId];
-  return TUTORIAL_LESSONS[gameId];
-}
+): readonly TutorialLesson[] =>
+  locale === "zh-TW" ? ZH_TW_TUTORIAL_LESSONS[gameId] : TUTORIAL_LESSONS[gameId];
 
-export function getGameReferenceGuideLocalized(
+export const getGameReferenceGuideLocalized = (
   gameId: TutorialGameId,
   locale: SupportedLocale
-): GameReferenceGuide {
-  if (locale === "zh-TW") return ZH_TW_GAME_REFERENCE_GUIDES[gameId];
-  return GAME_REFERENCE_GUIDES[gameId];
-}
+): GameReferenceGuide =>
+  locale === "zh-TW"
+    ? ZH_TW_GAME_REFERENCE_GUIDES[gameId]
+    : GAME_REFERENCE_GUIDES[gameId];

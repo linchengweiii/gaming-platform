@@ -8,6 +8,7 @@ import {
   type CatanBoardSvgOptions,
   type OuterOceanHexNode,
   computeOuterOceanHexes,
+  getCatanBoardViewBox,
   getHexCornerCoords,
   getPolygonPoints,
 } from "./geometry.ts";
@@ -115,40 +116,8 @@ export function renderCatanBoardSvg(
   actingPlayerId: string | null,
   options: CatanBoardSvgOptions
 ): string {
-  const topo = state.topology;
-  const hexSize = topo.hexSize;
   const outerOceanHexes = computeOuterOceanHexes(state);
-
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-
-  for (const vId of topo.vertexOrder) {
-    const v = topo.vertices[vId]!;
-    if (v.x < minX) minX = v.x;
-    if (v.x > maxX) maxX = v.x;
-    if (v.y < minY) minY = v.y;
-    if (v.y > maxY) maxY = v.y;
-  }
-  for (const oceanHex of outerOceanHexes.values()) {
-    for (const c of getHexCornerCoords(
-      oceanHex.centerX,
-      oceanHex.centerY,
-      hexSize
-    )) {
-      if (c.x < minX) minX = c.x;
-      if (c.x > maxX) maxX = c.x;
-      if (c.y < minY) minY = c.y;
-      if (c.y > maxY) maxY = c.y;
-    }
-  }
-
-  const pad = 28;
-  const vbX = Math.floor(minX - pad);
-  const vbY = Math.floor(minY - pad);
-  const vbW = Math.ceil(maxX - minX + pad * 2);
-  const vbH = Math.ceil(maxY - minY + pad * 2);
+  const { vbX, vbY, vbW, vbH } = getCatanBoardViewBox(state, outerOceanHexes);
   const cameraViewBoxStr = formatCatanMapViewBoxPure(
     { vbX, vbY, vbW, vbH },
     options.viewport

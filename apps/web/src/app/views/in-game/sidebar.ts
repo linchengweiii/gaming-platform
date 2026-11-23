@@ -12,6 +12,7 @@ import {
   renderResourceGlyphSvg,
 } from "../../../catan-graphics.ts";
 import {
+  type SupportedLocale,
   getCatanCommodityTextLocalized,
   getCatanDisciplineTextLocalized,
   getCatanResourceTextLocalized,
@@ -27,6 +28,107 @@ import { renderCatanPlayerCardPure } from "../catan-player-card-view.ts";
 import { extractBotMoveFeedPure } from "./bot-move-feed.ts";
 import { renderFullscreenSidebarHeaderPure } from "./fullscreen-controls.ts";
 import type { InGameComputedContext } from "./view-state.ts";
+
+function renderCatanBankSectionPure(
+  state: CatanState,
+  locale: SupportedLocale
+): string {
+  const isCk = Boolean(state.config.enableCitiesAndKnights);
+  const playerName = (id: string | null): string =>
+    escapeAttr(state.players.find((p) => p.id === id)?.name ?? "");
+  const headTitle = t(
+    locale,
+    isCk ? "catan.bankAndProgressDecks" : "catan.bankSupplyAndAwards"
+  );
+  const headCount = isCk
+    ? `${getCatanDisciplineTextLocalized("trade", locale).shortCode}${state.progressDecks.trade.length}·${getCatanDisciplineTextLocalized("politics", locale).shortCode}${state.progressDecks.politics.length}·${getCatanDisciplineTextLocalized("science", locale).shortCode}${state.progressDecks.science.length}`
+    : escapeAttr(t(locale, "catan.devDeckCount", { count: state.devCardDeck.length }));
+  const resourcePills = RESOURCES.map(
+    (r) =>
+      `<span class="res-pill res-${r}" title="${escapeAttr(
+        t(locale, "catan.inBankTooltip", {
+          label: getCatanResourceTextLocalized(r, locale).label,
+          count: state.bank[r],
+        })
+      )}">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
+  ).join("");
+  const bankPills = isCk
+    ? `${resourcePills}${COMMODITIES.map(
+        (c) =>
+          `<span class="res-pill res-${c}" title="${escapeAttr(
+            t(locale, "catan.inBankTooltip", {
+              label: getCatanCommodityTextLocalized(c, locale).label,
+              count: state.commodityBank[c],
+            })
+          )}">${renderCommodityGlyphSvg(c)} ${state.commodityBank[c]}</span>`
+      ).join("")}`
+    : resourcePills;
+
+  const middleAwardsHtml = isCk
+    ? `${IMPROVEMENT_DISCIPLINES.map((disc) => {
+        const m = state.metropolises[disc];
+        const dText = getCatanDisciplineTextLocalized(disc, locale);
+        return `<div class="ga-stat-row">
+                        <span>${escapeAttr(t(locale, "catan.metroAward", { discipline: dText.label }))}</span>
+                        <strong class="ga-num">${
+                          m.ownerId
+                            ? `${playerName(m.ownerId)} (${escapeAttr(t(locale, "catan.lvN", { lv: m.level }))})`
+                            : escapeAttr(t(locale, "catan.unclaimedLv4"))
+                        }</strong>
+                      </div>`;
+      }).join("")}
+                    <div class="ga-stat-row">
+                      <span>${escapeAttr(t(locale, "catan.merchantAward"))}</span>
+                      <strong class="ga-num">${
+                        state.merchantOwnerId
+                          ? playerName(state.merchantOwnerId)
+                          : escapeAttr(t(locale, "catan.unclaimed"))
+                      }</strong>
+                    </div>`
+    : `<div class="ga-stat-row">
+                      <span>${escapeAttr(t(locale, "catan.largestArmyAward"))}</span>
+                      <strong class="ga-num">${
+                        state.largestArmyOwnerId
+                          ? `${playerName(state.largestArmyOwnerId)} (${state.largestArmySize})`
+                          : escapeAttr(t(locale, "catan.unclaimed3Plus"))
+                      }</strong>
+                    </div>`;
+
+  return `
+                <div class="ga-bank-section">
+                  <div class="ga-sidebar__head">
+                    <span>${escapeAttr(headTitle)}</span>
+                    <span class="ga-num">${headCount}</span>
+                  </div>
+                  <div class="res-pills res-pills--bank"${isCk ? ' data-bank-mode="ck"' : ""}>
+                    ${bankPills}
+                  </div>
+                  <div class="ga-stat-list ga-stat-list--compact">
+                    <div class="ga-stat-row">
+                      <span>${escapeAttr(t(locale, "catan.longestRouteAward"))}</span>
+                      <strong class="ga-num">${
+                        state.longestRoadOwnerId
+                          ? `${playerName(state.longestRoadOwnerId)} (${state.longestRoadLength})`
+                          : escapeAttr(t(locale, "catan.unclaimed5Plus"))
+                      }</strong>
+                    </div>
+                    ${middleAwardsHtml}
+                    ${
+                      state.config.enableHarbormaster
+                        ? `<div class="ga-stat-row">
+                            <span>${escapeAttr(t(locale, "catan.harbormasterAward"))}</span>
+                            <strong class="ga-num">${
+                              state.harbormasterOwnerId
+                                ? `${playerName(state.harbormasterOwnerId)} (${state.harbormasterPoints})`
+                                : escapeAttr(t(locale, "catan.unclaimed3Plus"))
+                            }</strong>
+                          </div>`
+                        : ""
+                    }
+                  </div>
+                </div>
+              `;
+}
 
 export function renderInGameSidebarPure(
   room: ClientRoom,
@@ -153,152 +255,7 @@ export function renderInGameSidebarPure(
 
               ${
                 room.gameId === "catan"
-                  ? (state as CatanState).config.enableCitiesAndKnights
-                    ? `
-                <div class="ga-bank-section">
-                  <div class="ga-sidebar__head">
-                    <span>${escapeAttr(t(locale, "catan.bankAndProgressDecks"))}</span>
-                    <span class="ga-num">${getCatanDisciplineTextLocalized("trade", locale).shortCode}${state.progressDecks.trade.length}·${getCatanDisciplineTextLocalized("politics", locale).shortCode}${state.progressDecks.politics.length}·${getCatanDisciplineTextLocalized("science", locale).shortCode}${state.progressDecks.science.length}</span>
-                  </div>
-                  <div class="res-pills res-pills--bank" data-bank-mode="ck">
-                    ${RESOURCES.map(
-                      (r) =>
-                        `<span class="res-pill res-${r}" title="${escapeAttr(
-                          t(locale, "catan.inBankTooltip", {
-                            label: getCatanResourceTextLocalized(r, locale).label,
-                            count: state.bank[r],
-                          })
-                        )}">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
-                    ).join("")}${COMMODITIES.map(
-                      (c) =>
-                        `<span class="res-pill res-${c}" title="${escapeAttr(
-                          t(locale, "catan.inBankTooltip", {
-                            label: getCatanCommodityTextLocalized(c, locale).label,
-                            count: state.commodityBank[c],
-                          })
-                        )}">${renderCommodityGlyphSvg(c)} ${state.commodityBank[c]}</span>`
-                    ).join("")}
-                  </div>
-                  <div class="ga-stat-list ga-stat-list--compact">
-                    <div class="ga-stat-row">
-                      <span>${escapeAttr(t(locale, "catan.longestRouteAward"))}</span>
-                      <strong class="ga-num">${
-                        state.longestRoadOwnerId
-                          ? `${escapeAttr(
-                              state.players.find(
-                                (p: any) => p.id === state.longestRoadOwnerId
-                              )?.name ?? ""
-                            )} (${state.longestRoadLength})`
-                          : escapeAttr(t(locale, "catan.unclaimed5Plus"))
-                      }</strong>
-                    </div>
-                    ${IMPROVEMENT_DISCIPLINES.map((disc) => {
-                      const m = state.metropolises[disc];
-                      const dText = getCatanDisciplineTextLocalized(disc, locale);
-                      return `<div class="ga-stat-row">
-                        <span>${escapeAttr(t(locale, "catan.metroAward", { discipline: dText.label }))}</span>
-                        <strong class="ga-num">${
-                          m.ownerId
-                            ? `${escapeAttr(
-                                state.players.find((p: any) => p.id === m.ownerId)
-                                  ?.name ?? ""
-                              )} (${escapeAttr(t(locale, "catan.lvN", { lv: m.level }))})`
-                            : escapeAttr(t(locale, "catan.unclaimedLv4"))
-                        }</strong>
-                      </div>`;
-                    }).join("")}
-                    <div class="ga-stat-row">
-                      <span>${escapeAttr(t(locale, "catan.merchantAward"))}</span>
-                      <strong class="ga-num">${
-                        state.merchantOwnerId
-                          ? `${escapeAttr(
-                              state.players.find(
-                                (p: any) => p.id === state.merchantOwnerId
-                              )?.name ?? ""
-                            )}`
-                          : escapeAttr(t(locale, "catan.unclaimed"))
-                      }</strong>
-                    </div>
-                    ${
-                      state.config.enableHarbormaster
-                        ? `<div class="ga-stat-row">
-                            <span>${escapeAttr(t(locale, "catan.harbormasterAward"))}</span>
-                            <strong class="ga-num">${
-                              state.harbormasterOwnerId
-                                ? `${escapeAttr(
-                                    state.players.find(
-                                      (p: any) => p.id === state.harbormasterOwnerId
-                                    )?.name ?? ""
-                                  )} (${state.harbormasterPoints})`
-                                : escapeAttr(t(locale, "catan.unclaimed3Plus"))
-                            }</strong>
-                          </div>`
-                        : ""
-                    }
-                  </div>
-                </div>
-              `
-                    : `
-                <div class="ga-bank-section">
-                  <div class="ga-sidebar__head">
-                    <span>${escapeAttr(t(locale, "catan.bankSupplyAndAwards"))}</span>
-                    <span class="ga-num">${escapeAttr(t(locale, "catan.devDeckCount", { count: state.devCardDeck.length }))}</span>
-                  </div>
-                  <div class="res-pills res-pills--bank">
-                    ${RESOURCES.map(
-                      (r) =>
-                        `<span class="res-pill res-${r}" title="${escapeAttr(
-                          t(locale, "catan.inBankTooltip", {
-                            label: getCatanResourceTextLocalized(r, locale).label,
-                            count: state.bank[r],
-                          })
-                        )}">${renderResourceGlyphSvg(r)} ${state.bank[r]}</span>`
-                    ).join("")}
-                  </div>
-                  <div class="ga-stat-list ga-stat-list--compact">
-                    <div class="ga-stat-row">
-                      <span>${escapeAttr(t(locale, "catan.longestRouteAward"))}</span>
-                      <strong class="ga-num">${
-                        state.longestRoadOwnerId
-                          ? `${escapeAttr(
-                              state.players.find(
-                                (p: any) => p.id === state.longestRoadOwnerId
-                              )?.name ?? ""
-                            )} (${state.longestRoadLength})`
-                          : escapeAttr(t(locale, "catan.unclaimed5Plus"))
-                      }</strong>
-                    </div>
-                    <div class="ga-stat-row">
-                      <span>${escapeAttr(t(locale, "catan.largestArmyAward"))}</span>
-                      <strong class="ga-num">${
-                        state.largestArmyOwnerId
-                          ? `${escapeAttr(
-                              state.players.find(
-                                (p: any) => p.id === state.largestArmyOwnerId
-                              )?.name ?? ""
-                            )} (${state.largestArmySize})`
-                          : escapeAttr(t(locale, "catan.unclaimed3Plus"))
-                      }</strong>
-                    </div>
-                    ${
-                      state.config.enableHarbormaster
-                        ? `<div class="ga-stat-row">
-                            <span>${escapeAttr(t(locale, "catan.harbormasterAward"))}</span>
-                            <strong class="ga-num">${
-                              state.harbormasterOwnerId
-                                ? `${escapeAttr(
-                                    state.players.find(
-                                      (p: any) => p.id === state.harbormasterOwnerId
-                                    )?.name ?? ""
-                                  )} (${state.harbormasterPoints})`
-                                : escapeAttr(t(locale, "catan.unclaimed3Plus"))
-                            }</strong>
-                          </div>`
-                        : ""
-                    }
-                  </div>
-                </div>
-              `
+                  ? renderCatanBankSectionPure(state as CatanState, locale)
                   : ""
               }
 

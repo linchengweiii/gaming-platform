@@ -5,15 +5,8 @@ import {
   renderEventDieSvg,
   renderMiniTradeGoodCardSvg,
 } from "../catan-graphics.ts";
+import { escapeHtml as esc } from "../app/helpers/html-and-dropdown.ts";
 import { type SupportedLocale, t } from "../i18n/index.ts";
-
-function esc(raw: string): string {
-  return raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 export function renderCatanGuideVisualReferenceHtml(
   locale: SupportedLocale = "en"

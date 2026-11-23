@@ -7,17 +7,10 @@ import {
   getTutorialLessonsLocalized,
   t,
 } from "../i18n/index.ts";
+import { escapeHtml } from "../app/helpers/html-and-dropdown.ts";
 import { renderCatanGuideVisualReferenceHtml } from "./guide-visuals-catan.ts";
 import { renderOtherGameVisualReferenceHtml } from "./guide-visuals-other.ts";
 import type { TutorialGameId } from "./types.ts";
-
-function escapeHtml(raw: string): string {
-  return raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 export function renderTutorialCoachBannerPure(
   gameId: TutorialGameId,

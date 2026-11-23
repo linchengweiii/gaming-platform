@@ -2,7 +2,6 @@ import type { GameEvent } from "@gaming-platform/core";
 import { SEVEN_WONDERS_HAND_SIZE } from "../config/game-config.ts";
 import { getWonderBoardDefinition } from "../config/wonders-config.ts";
 import {
-  MANUFACTURED_GOODS,
   RAW_RESOURCES,
   type SevenWondersAge,
   type SevenWondersCard,
@@ -25,10 +24,6 @@ export function emptyWonderResourceMap(): WonderResourceMap {
 
 export function isRawResource(res: WonderResource): boolean {
   return (RAW_RESOURCES as readonly string[]).includes(res);
-}
-
-export function isManufacturedGood(res: WonderResource): boolean {
-  return (MANUFACTURED_GOODS as readonly string[]).includes(res);
 }
 
 export function getLeftNeighborIndex(playerIndex: number, count: number): number {

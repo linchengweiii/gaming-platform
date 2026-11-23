@@ -8,7 +8,6 @@ export const DEFAULT_SERVER_PORT = 3000;
 export const DEFAULT_SERVER_HOST = "localhost";
 export const PUBLIC_DIR = path.resolve(__dirname, "../../web/public");
 
-export const BOT_STEP_DELAY_MS = 150;
 export const DEFAULT_BOT_STEP_DELAY_MS = 1200;
 export const MIN_BOT_STEP_DELAY_MS = 150;
 export const MAX_BOT_STEP_DELAY_MS = 5000;
@@ -41,13 +40,6 @@ export const MAX_GUEST_DISPLAY_NAME_LENGTH = 28;
 
 export type SupportedGameId = "catan" | "splendor" | "azul" | "seven_wonders";
 
-export const SUPPORTED_GAME_IDS: readonly SupportedGameId[] = [
-  "catan",
-  "splendor",
-  "azul",
-  "seven_wonders",
-];
-
 export const DEFAULT_GAME_ID: SupportedGameId = "catan";
 export const DEFAULT_BOT_DIFFICULTY: BotDifficulty = "master";
 export const DEFAULT_STARTING_PLAYER_MODE = "random";
@@ -67,12 +59,3 @@ export const DEFAULT_CATAN_ROOM_PRESET = {
   enableCityWalls: false,
   enableFriendlyRobber: false,
 } as const;
-
-export const SUPPORTED_GAME_PRESETS: Readonly<
-  Record<SupportedGameId, Readonly<Record<string, unknown>>>
-> = {
-  catan: DEFAULT_CATAN_ROOM_PRESET,
-  splendor: {},
-  azul: {},
-  seven_wonders: {},
-};

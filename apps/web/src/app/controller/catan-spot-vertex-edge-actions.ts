@@ -14,7 +14,15 @@ import {
   getLegalShipEdges,
   getPlayerVulnerableCities,
 } from "@gaming-platform/catan";
+import { toggleSelectedBoardSpot } from "./catan-spot-actions.ts";
 import type { AppRuntimeContext } from "./context.ts";
+import { patchModelAndRender } from "./dom-events.ts";
+
+const CK_VERTEX_INTERACTION_ACTIONS: Readonly<Record<string, string>> = {
+  displace_knight: "RESOLVE_DISPLACED_KNIGHT",
+  deserter_choose_knight: "SELECT_DESERTER_KNIGHT",
+  deserter_place_knight: "PLACE_DESERTED_KNIGHT",
+};
 
 export function handleCatanVertexSpotClick(
   ctx: AppRuntimeContext,
@@ -22,51 +30,26 @@ export function handleCatanVertexSpotClick(
   actingPlayerId: string,
   vertexId: string
 ): void {
+  const pending = state.pendingCkInteraction;
   if (
     state.phase === "CK_INTERACTION" &&
-    state.pendingCkInteraction &&
-    state.pendingCkInteraction.actorId === actingPlayerId
+    pending &&
+    pending.actorId === actingPlayerId &&
+    "candidateVertexIds" in pending &&
+    pending.candidateVertexIds.includes(vertexId)
   ) {
-    const pending = state.pendingCkInteraction;
-    if (
-      pending.kind === "displace_knight" &&
-      pending.candidateVertexIds.includes(vertexId)
-    ) {
-      ctx.dispatch(actingPlayerId, {
-        type: "RESOLVE_DISPLACED_KNIGHT",
-        vertexId,
-      });
-      return;
-    }
-    if (
-      pending.kind === "deserter_choose_knight" &&
-      pending.candidateVertexIds.includes(vertexId)
-    ) {
-      ctx.dispatch(actingPlayerId, {
-        type: "SELECT_DESERTER_KNIGHT",
-        vertexId,
-      });
-      return;
-    }
-    if (
-      pending.kind === "deserter_place_knight" &&
-      pending.candidateVertexIds.includes(vertexId)
-    ) {
-      ctx.dispatch(actingPlayerId, {
-        type: "PLACE_DESERTED_KNIGHT",
-        vertexId,
-      });
+    const actionType = CK_VERTEX_INTERACTION_ACTIONS[pending.kind];
+    if (actionType) {
+      ctx.dispatch(actingPlayerId, { type: actionType, vertexId });
       return;
     }
   }
+
   if (
     state.phase === "BARBARIAN_PILLAGE_SELECTION" &&
     getPlayerVulnerableCities(state, actingPlayerId).includes(vertexId)
   ) {
-    ctx.dispatch(actingPlayerId, {
-      type: "SELECT_PILLAGED_CITY",
-      vertexId,
-    });
+    ctx.dispatch(actingPlayerId, { type: "SELECT_PILLAGED_CITY", vertexId });
     return;
   }
   if (
@@ -74,53 +57,45 @@ export function handleCatanVertexSpotClick(
       state.phase === "SETUP_SETTLEMENT_2") &&
     getLegalSettlementVertices(state, actingPlayerId, true).includes(vertexId)
   ) {
-    ctx.dispatch(actingPlayerId, {
-      type: "PLACE_SETUP_SETTLEMENT",
-      vertexId,
-    });
+    ctx.dispatch(actingPlayerId, { type: "PLACE_SETUP_SETTLEMENT", vertexId });
     return;
   }
+
+  const { buildMode } = ctx.model;
+  const bld = state.buildings[vertexId];
   if (
-    ctx.model.buildMode === "settlement" &&
+    buildMode === "settlement" &&
     getLegalSettlementVertices(state, actingPlayerId, false).includes(vertexId)
   ) {
     ctx.dispatch(actingPlayerId, { type: "BUILD_SETTLEMENT", vertexId });
     return;
   }
-  if (
-    ctx.model.buildMode === "city" &&
-    state.buildings[vertexId]?.ownerId === actingPlayerId &&
-    state.buildings[vertexId]?.type === "settlement"
-  ) {
+  if (buildMode === "city" && bld?.ownerId === actingPlayerId && bld.type === "settlement") {
     ctx.dispatch(actingPlayerId, { type: "BUILD_CITY", vertexId });
     return;
   }
-  if (
-    ctx.model.buildMode === "wall" &&
-    state.buildings[vertexId]?.ownerId === actingPlayerId &&
-    state.buildings[vertexId]?.type === "city" &&
-    !state.buildings[vertexId]?.hasWall
-  ) {
+  if (buildMode === "wall" && bld?.ownerId === actingPlayerId && bld.type === "city" && !bld.hasWall) {
     ctx.dispatch(actingPlayerId, { type: "BUILD_CITY_WALL", vertexId });
     return;
   }
+
   if (state.config.enableCitiesAndKnights) {
     if (
-      ctx.model.buildMode === "knight" &&
+      buildMode === "knight" &&
       getLegalBuildKnightVertices(state, actingPlayerId).includes(vertexId)
     ) {
       ctx.dispatch(actingPlayerId, { type: "BUILD_KNIGHT", vertexId });
       return;
     }
     if (
-      ctx.model.buildMode === "activate_knight" &&
+      buildMode === "activate_knight" &&
       getLegalActivateKnightVertices(state, actingPlayerId).includes(vertexId)
     ) {
       ctx.dispatch(actingPlayerId, { type: "ACTIVATE_KNIGHT", vertexId });
       return;
     }
     if (
-      ctx.model.buildMode === "promote_knight" &&
+      buildMode === "promote_knight" &&
       getLegalPromoteKnightVertices(state, actingPlayerId, false).includes(
         vertexId
       )
@@ -128,37 +103,29 @@ export function handleCatanVertexSpotClick(
       ctx.dispatch(actingPlayerId, { type: "PROMOTE_KNIGHT", vertexId });
       return;
     }
-    if (ctx.model.buildMode === "move_knight") {
+    if (buildMode === "move_knight") {
       const kMoves = getLegalMoveKnightActions(state, actingPlayerId);
-      if (
-        !ctx.model.selectedMoveKnightFromVertexId &&
-        kMoves.some((m) => m.fromVertexId === vertexId)
-      ) {
-        ctx.model = {
-          ...ctx.model,
+      const fromId = ctx.model.selectedMoveKnightFromVertexId;
+      if (!fromId && kMoves.some((m) => m.fromVertexId === vertexId)) {
+        patchModelAndRender(ctx, {
           selectedMoveKnightFromVertexId: vertexId,
           selectedBoardSpot: null,
-        };
-        ctx.render();
+        });
         return;
       }
       if (
-        ctx.model.selectedMoveKnightFromVertexId &&
-        kMoves.some(
-          (m) =>
-            m.fromVertexId === ctx.model.selectedMoveKnightFromVertexId &&
-            m.toVertexId === vertexId
-        )
+        fromId &&
+        kMoves.some((m) => m.fromVertexId === fromId && m.toVertexId === vertexId)
       ) {
         ctx.dispatch(actingPlayerId, {
           type: "MOVE_KNIGHT",
-          fromVertexId: ctx.model.selectedMoveKnightFromVertexId,
+          fromVertexId: fromId,
           toVertexId: vertexId,
         });
         return;
       }
     }
-    if (ctx.model.buildMode === "chase_robber") {
+    if (buildMode === "chase_robber") {
       const chases = getLegalChaseRobberActions(
         state,
         actingPlayerId,
@@ -168,28 +135,22 @@ export function handleCatanVertexSpotClick(
           : []
       );
       if (chases.some((c) => c.vertexId === vertexId)) {
-        ctx.model = {
-          ...ctx.model,
+        patchModelAndRender(ctx, {
           selectedChaseKnightVertexId: vertexId,
           selectedBoardSpot: null,
-        };
-        ctx.render();
+        });
         return;
       }
     }
-    if (
-      ctx.model.buildMode === "progress_card" &&
-      ctx.model.selectedProgressCardId
-    ) {
-      const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
-      const card = actingPlayer?.progressCards.find(
-        (c) => c.id === ctx.model.selectedProgressCardId
-      );
+    if (buildMode === "progress_card" && ctx.model.selectedProgressCardId) {
+      const card = state.players
+        .find((p) => p.id === actingPlayerId)
+        ?.progressCards.find((c) => c.id === ctx.model.selectedProgressCardId);
       if (
         card?.type === "engineer" &&
-        state.buildings[vertexId]?.ownerId === actingPlayerId &&
-        state.buildings[vertexId]?.type === "city" &&
-        !state.buildings[vertexId]?.hasWall
+        bld?.ownerId === actingPlayerId &&
+        bld.type === "city" &&
+        !bld.hasWall
       ) {
         ctx.dispatch(actingPlayerId, {
           type: "PLAY_PROGRESS_CARD",
@@ -229,12 +190,10 @@ export function handleCatanVertexSpotClick(
             return;
           }
           if (!ctx.model.smithVertex1) {
-            ctx.model = {
-              ...ctx.model,
+            patchModelAndRender(ctx, {
               smithVertex1: vertexId,
               selectedBoardSpot: null,
-            };
-            ctx.render();
+            });
             return;
           }
           if (ctx.model.smithVertex1 !== vertexId) {
@@ -250,7 +209,7 @@ export function handleCatanVertexSpotClick(
       if (
         card?.type === "deserter" &&
         ctx.model.deserterTargetPlayerId &&
-        !state.buildings[vertexId] &&
+        !bld &&
         !state.knights[vertexId] &&
         state.topology.vertices[vertexId]?.incidentEdgeIds.some(
           (eId) => state.edges[eId]?.ownerId === actingPlayerId
@@ -268,15 +227,8 @@ export function handleCatanVertexSpotClick(
       }
     }
   }
-  ctx.model = {
-    ...ctx.model,
-    selectedBoardSpot:
-      ctx.model.selectedBoardSpot?.kind === "vertex" &&
-      ctx.model.selectedBoardSpot.id === vertexId
-        ? null
-        : { kind: "vertex", id: vertexId },
-  };
-  ctx.render();
+
+  toggleSelectedBoardSpot(ctx, "vertex", vertexId);
 }
 
 export function handleCatanEdgeSpotClick(
@@ -287,46 +239,33 @@ export function handleCatanEdgeSpotClick(
 ): void {
   if (state.phase === "SETUP_ROAD_1" || state.phase === "SETUP_ROAD_2") {
     const anchor = state.lastSetupSettlementVertexId;
-    const legalRoads = getLegalRoadEdges(state, actingPlayerId, anchor);
-    const legalShips = state.config.enableSeafarers
-      ? getLegalShipEdges(state, actingPlayerId, anchor)
-      : [];
-    const canRoad = legalRoads.includes(edgeId);
-    const canShip = legalShips.includes(edgeId);
+    const canRoad = getLegalRoadEdges(state, actingPlayerId, anchor).includes(
+      edgeId
+    );
+    const canShip = state.config.enableSeafarers
+      ? getLegalShipEdges(state, actingPlayerId, anchor).includes(edgeId)
+      : false;
     if (canRoad || canShip) {
-      const chosenEdgeKind: "road" | "ship" =
-        canRoad && canShip
-          ? ctx.model.setupEdgeKind
-          : canShip
-            ? "ship"
-            : "road";
+      const edgeKind: "road" | "ship" =
+        canRoad && canShip ? ctx.model.setupEdgeKind : canShip ? "ship" : "road";
       ctx.dispatch(actingPlayerId, {
         type: "PLACE_SETUP_EDGE",
         edgeId,
-        edgeKind: chosenEdgeKind,
+        edgeKind,
       });
       return;
     }
   } else if (state.phase === "ROAD_BUILDING_DEV") {
-    const isRoad = getLegalRoadEdges(state, actingPlayerId, null).includes(
-      edgeId
-    );
+    const isRoad = getLegalRoadEdges(state, actingPlayerId, null).includes(edgeId);
     const isShip = state.config.enableSeafarers
       ? getLegalShipEdges(state, actingPlayerId, null).includes(edgeId)
       : false;
-    if (isRoad && isShip) {
+    if (isRoad || isShip) {
+      const buildShip = isRoad && isShip ? ctx.model.setupEdgeKind === "ship" : isShip;
       ctx.dispatch(actingPlayerId, {
-        type: ctx.model.setupEdgeKind === "ship" ? "BUILD_SHIP" : "BUILD_ROAD",
+        type: buildShip ? "BUILD_SHIP" : "BUILD_ROAD",
         edgeId,
       });
-      return;
-    }
-    if (isRoad) {
-      ctx.dispatch(actingPlayerId, { type: "BUILD_ROAD", edgeId });
-      return;
-    }
-    if (isShip) {
-      ctx.dispatch(actingPlayerId, { type: "BUILD_SHIP", edgeId });
       return;
     }
   } else if (
@@ -343,29 +282,21 @@ export function handleCatanEdgeSpotClick(
     return;
   } else if (ctx.model.buildMode === "move_ship") {
     const moves = getLegalMoveShipActions(state, actingPlayerId);
-    if (
-      !ctx.model.selectedMoveFromEdgeId &&
-      moves.some((m) => m.fromEdgeId === edgeId)
-    ) {
-      ctx.model = {
-        ...ctx.model,
+    const fromId = ctx.model.selectedMoveFromEdgeId;
+    if (!fromId && moves.some((m) => m.fromEdgeId === edgeId)) {
+      patchModelAndRender(ctx, {
         selectedMoveFromEdgeId: edgeId,
         selectedBoardSpot: null,
-      };
-      ctx.render();
+      });
       return;
     }
     if (
-      ctx.model.selectedMoveFromEdgeId &&
-      moves.some(
-        (m) =>
-          m.fromEdgeId === ctx.model.selectedMoveFromEdgeId &&
-          m.toEdgeId === edgeId
-      )
+      fromId &&
+      moves.some((m) => m.fromEdgeId === fromId && m.toEdgeId === edgeId)
     ) {
       ctx.dispatch(actingPlayerId, {
         type: "MOVE_SHIP",
-        fromEdgeId: ctx.model.selectedMoveFromEdgeId,
+        fromEdgeId: fromId,
         toEdgeId: edgeId,
       });
       return;
@@ -375,55 +306,41 @@ export function handleCatanEdgeSpotClick(
     ctx.model.buildMode === "progress_card" &&
     ctx.model.selectedProgressCardId
   ) {
-    const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
-    const card = actingPlayer?.progressCards.find(
-      (c) => c.id === ctx.model.selectedProgressCardId
-    );
+    const card = state.players
+      .find((p) => p.id === actingPlayerId)
+      ?.progressCards.find((c) => c.id === ctx.model.selectedProgressCardId);
     if (
       card?.type === "diplomat" &&
       getDiplomatRemovableRoadEdges(state).includes(edgeId)
     ) {
       const isOwn = state.edges[edgeId]?.ownerId === actingPlayerId;
-      const ownRebuilds = isOwn
-        ? (() => {
-            const withoutEdge = Object.fromEntries(
-              Object.entries(state.edges).filter(([k]) => k !== edgeId)
-            );
-            const afterRemove: CatanState = {
-              ...state,
-              edges: withoutEdge,
-              players: state.players.map((p) =>
-                p.id === actingPlayerId
-                  ? { ...p, roadsRemaining: p.roadsRemaining + 1 }
-                  : p
-              ),
-            };
-            return getLegalRoadEdges(afterRemove, actingPlayerId, null).filter(
-              (rId) => rId !== edgeId
-            );
-          })()
-        : [];
+      let rebuildEdgeId: string | undefined;
+      if (isOwn) {
+        const afterRemove: CatanState = {
+          ...state,
+          edges: Object.fromEntries(
+            Object.entries(state.edges).filter(([k]) => k !== edgeId)
+          ),
+          players: state.players.map((p) =>
+            p.id === actingPlayerId
+              ? { ...p, roadsRemaining: p.roadsRemaining + 1 }
+              : p
+          ),
+        };
+        rebuildEdgeId = getLegalRoadEdges(
+          afterRemove,
+          actingPlayerId,
+          null
+        ).find((rId) => rId !== edgeId);
+      }
       ctx.dispatch(actingPlayerId, {
         type: "PLAY_PROGRESS_CARD",
         cardId: card.id,
-        params: {
-          edgeId,
-          ...(isOwn && ownRebuilds[0]
-            ? { rebuildEdgeId: ownRebuilds[0] }
-            : {}),
-        },
+        params: { edgeId, ...(rebuildEdgeId ? { rebuildEdgeId } : {}) },
       });
       return;
     }
   }
 
-  ctx.model = {
-    ...ctx.model,
-    selectedBoardSpot:
-      ctx.model.selectedBoardSpot?.kind === "edge" &&
-      ctx.model.selectedBoardSpot.id === edgeId
-        ? null
-        : { kind: "edge", id: edgeId },
-  };
-  ctx.render();
+  toggleSelectedBoardSpot(ctx, "edge", edgeId);
 }

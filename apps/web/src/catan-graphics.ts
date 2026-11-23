@@ -1,9 +1,5 @@
 export {
-  PLAYER_PALETTE,
   TERRAIN_META,
-  HARBOR_GENERIC_META,
-  PIECE_SHADE_CONFIG,
-  RESOURCE_ICONS,
   RESOURCE_META,
   DEV_CARD_META,
   COMMODITY_META,
@@ -36,7 +32,6 @@ export {
 export {
   renderResourceGlyphSvg,
   renderCommodityGlyphSvg,
-  renderTradeGoodGlyphSvg,
 } from "./catan-graphics/harbors-and-tokens.ts";
 export {
   type ActionGraphicKind,
