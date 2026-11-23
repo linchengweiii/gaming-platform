@@ -59,52 +59,40 @@ function buildSeafarersIslandsBoardPure(
   );
   const [landTerrains, rng1] = shufflePure<TerrainType>(rng0, terrainDeck);
 
-  const laidOut = coords.reduce<{
-    hexes: Record<HexId, HexTile>;
-    productiveIds: HexId[];
-    landIdx: number;
-  }>(
-    (acc, { q, r }) => {
-      const id = hexId(q, r);
-      const islandId = islandMap.get(id) ?? 0;
-      if (islandId > 0) {
-        const tile: HexTile = {
-          id,
-          q,
-          r,
-          terrain: landTerrains[acc.landIdx]!,
-          numberToken: null,
-          islandId,
-          allowSetupSettlement: true,
-        };
-        return {
-          hexes: { ...acc.hexes, [id]: tile },
-          productiveIds: [...acc.productiveIds, id],
-          landIdx: acc.landIdx + 1,
-        };
-      }
-      return {
-        ...acc,
-        hexes: {
-          ...acc.hexes,
-          [id]: {
-            id,
-            q,
-            r,
-            terrain: "sea",
-            numberToken: null,
-            islandId: 0,
-            allowSetupSettlement: false,
-          },
-        },
+  const rawHexes: Record<HexId, HexTile> = {};
+  const productiveIds: HexId[] = [];
+  let landIdx = 0;
+
+  for (const { q, r } of coords) {
+    const id = hexId(q, r);
+    const islandId = islandMap.get(id) ?? 0;
+    if (islandId > 0) {
+      rawHexes[id] = {
+        id,
+        q,
+        r,
+        terrain: landTerrains[landIdx++]!,
+        numberToken: null,
+        islandId,
+        allowSetupSettlement: true,
       };
-    },
-    { hexes: {}, productiveIds: [], landIdx: 0 }
-  );
+      productiveIds.push(id);
+    } else {
+      rawHexes[id] = {
+        id,
+        q,
+        r,
+        terrain: "sea",
+        numberToken: null,
+        islandId: 0,
+        allowSetupSettlement: false,
+      };
+    }
+  }
 
   const [hexes, rng2] = assignBalancedNumbersPure(
-    laidOut.hexes,
-    laidOut.productiveIds,
+    rawHexes,
+    productiveIds,
     preset.landNumbers,
     rng1,
     config.balancedNumbers

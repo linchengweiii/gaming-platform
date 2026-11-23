@@ -6,7 +6,6 @@ import {
   type RngState,
   type VertexId,
   axialDistance,
-  hexId,
   shufflePure,
 } from "@gaming-platform/core";
 import { DEV_CARD_DECK_COUNTS } from "../config/costs-and-limits.ts";
@@ -18,7 +17,6 @@ import type {
   HarborType,
   HexTile,
   ScenarioId,
-  TerrainType,
 } from "../types/domain.ts";
 
 export interface GeneratedBoard {
@@ -30,77 +28,53 @@ export interface GeneratedBoard {
   fogPool: FogRevealTile[];
 }
 
+const EXPANDED_56_BY_STANDARD: Partial<Record<ScenarioId, ScenarioId>> = {
+  standard: "big_island_5_6",
+  cities_and_knights: "cities_and_knights_5_6",
+  seafarers_new_shores: "seafarers_new_shores_5_6",
+  seafarers_four_islands: "seafarers_six_islands_5_6",
+  seafarers_fog_islands: "seafarers_fog_islands_5_6",
+};
+
+const STANDARD_34_BY_EXPANDED: Partial<Record<ScenarioId, ScenarioId>> =
+  Object.fromEntries(
+    Object.entries(EXPANDED_56_BY_STANDARD).map(([std, exp]) => [exp, std])
+  );
+
+export function toStandard34ScenarioId(scenarioId: ScenarioId): ScenarioId {
+  return STANDARD_34_BY_EXPANDED[scenarioId] ?? scenarioId;
+}
+
+export function toExpanded56ScenarioId(scenarioId: ScenarioId): ScenarioId {
+  return EXPANDED_56_BY_STANDARD[scenarioId] ?? scenarioId;
+}
+
 export function toBaseMapScenarioId(scenarioId: ScenarioId): ScenarioId {
-  switch (scenarioId) {
-    case "seafarers_new_shores":
-    case "seafarers_new_shores_5_6":
-      return "seafarers_new_shores";
-    case "seafarers_four_islands":
-    case "seafarers_six_islands_5_6":
-      return "seafarers_four_islands";
-    case "seafarers_fog_islands":
-    case "seafarers_fog_islands_5_6":
-      return "seafarers_fog_islands";
-    default:
-      return "standard";
-  }
+  const std = toStandard34ScenarioId(scenarioId);
+  return std === "cities_and_knights" ? "standard" : std;
 }
 
 export function isExpanded56Scenario(scenarioId: ScenarioId): boolean {
   return Boolean(SCENARIO_CATALOG[scenarioId]?.is56PlayerPreset);
 }
 
-export function toExpanded56ScenarioId(scenarioId: ScenarioId): ScenarioId {
-  switch (scenarioId) {
-    case "standard":
-      return "big_island_5_6";
-    case "cities_and_knights":
-      return "cities_and_knights_5_6";
-    case "seafarers_new_shores":
-      return "seafarers_new_shores_5_6";
-    case "seafarers_four_islands":
-      return "seafarers_six_islands_5_6";
-    case "seafarers_fog_islands":
-      return "seafarers_fog_islands_5_6";
-    default:
-      return scenarioId;
-  }
-}
-
-export function toStandard34ScenarioId(scenarioId: ScenarioId): ScenarioId {
-  switch (scenarioId) {
-    case "big_island_5_6":
-      return "standard";
-    case "cities_and_knights_5_6":
-      return "cities_and_knights";
-    case "seafarers_new_shores_5_6":
-      return "seafarers_new_shores";
-    case "seafarers_six_islands_5_6":
-      return "seafarers_four_islands";
-    case "seafarers_fog_islands_5_6":
-      return "seafarers_fog_islands";
-    default:
-      return scenarioId;
-  }
-}
-
 function countAdjacentRedConflicts(
   productiveHexes: readonly HexTile[],
   candidateNumbers: readonly number[]
 ): number {
-  return productiveHexes.reduce((outerSum, h1, i) => {
+  let conflicts = 0;
+  for (let i = 0; i < productiveHexes.length; i++) {
     const n1 = candidateNumbers[i]!;
-    if (n1 !== 6 && n1 !== 8) {
-      return outerSum;
+    if (n1 !== 6 && n1 !== 8) continue;
+    const h1 = productiveHexes[i]!;
+    for (let j = i + 1; j < productiveHexes.length; j++) {
+      const n2 = candidateNumbers[j]!;
+      if ((n2 === 6 || n2 === 8) && axialDistance(h1, productiveHexes[j]!) === 1) {
+        conflicts++;
+      }
     }
-    const innerConflicts = productiveHexes
-      .slice(i + 1)
-      .filter((h2, offset) => {
-        const n2 = candidateNumbers[i + 1 + offset]!;
-        return (n2 === 6 || n2 === 8) && axialDistance(h1, h2) === 1;
-      }).length;
-    return outerSum + innerConflicts;
-  }, 0);
+  }
+  return conflicts;
 }
 
 /**
@@ -114,50 +88,32 @@ export function assignBalancedNumbersPure(
   balanced: boolean
 ): readonly [Record<HexId, HexTile>, RngState] {
   const productiveHexes = productiveIds.map((id) => hexes[id]!);
-  const [initialAssignment, rngAfterInitial] = shufflePure(
-    rngState,
-    numbersPool
-  );
+  let [bestAssignment, curRng] = shufflePure(rngState, numbersPool);
+  let bestConflicts = Infinity;
 
-  const searchBalanced = (
-    attempt: number,
-    bestAssignment: readonly number[],
-    bestConflicts: number,
-    curRng: RngState
-  ): readonly [readonly number[], RngState] => {
-    if (!balanced || attempt >= 60) {
-      return [bestAssignment, curRng];
+  if (balanced) {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const [candidate, nextRng] = shufflePure(curRng, numbersPool);
+      curRng = nextRng;
+      const conflicts = countAdjacentRedConflicts(productiveHexes, candidate);
+      if (conflicts < bestConflicts) {
+        bestAssignment = candidate;
+        bestConflicts = conflicts;
+      }
+      if (conflicts === 0) break;
     }
-    const [candidate, nextRng] = shufflePure(curRng, numbersPool);
-    const conflicts = countAdjacentRedConflicts(productiveHexes, candidate);
-    const nextBest =
-      conflicts < bestConflicts ? candidate : bestAssignment;
-    const nextMinConflicts = Math.min(bestConflicts, conflicts);
-    if (conflicts === 0) {
-      return [candidate, nextRng];
-    }
-    return searchBalanced(attempt + 1, nextBest, nextMinConflicts, nextRng);
-  };
+  }
 
-  const [chosenNumbers, finalRng] = searchBalanced(
-    0,
-    initialAssignment,
-    Infinity,
-    rngAfterInitial
-  );
+  const updatedHexes: Record<HexId, HexTile> = { ...hexes };
+  for (let idx = 0; idx < productiveIds.length; idx++) {
+    const id = productiveIds[idx]!;
+    updatedHexes[id] = {
+      ...updatedHexes[id]!,
+      numberToken: bestAssignment[idx] ?? 5,
+    };
+  }
 
-  const updatedHexes = productiveIds.reduce<Record<HexId, HexTile>>(
-    (acc, id, idx) => ({
-      ...acc,
-      [id]: {
-        ...acc[id]!,
-        numberToken: chosenNumbers[idx] ?? 5,
-      },
-    }),
-    { ...hexes }
-  );
-
-  return [updatedHexes, finalRng];
+  return [updatedHexes, curRng];
 }
 
 /**
@@ -182,150 +138,87 @@ export function placeCoastalHarborsPure(
     return adjHexes.length === 1 || adjHexes.some((h) => h.terrain === "sea");
   });
 
-  const { sumX, sumY } = candidateEdgeIds.reduce(
-    (acc, eId) => {
-      const e = topology.edges[eId]!;
-      return { sumX: acc.sumX + e.midX, sumY: acc.sumY + e.midY };
-    },
-    { sumX: 0, sumY: 0 }
-  );
-  const count = candidateEdgeIds.length;
-  const centerX = count > 0 ? sumX / count : 0;
-  const centerY = count > 0 ? sumY / count : 0;
+  let sumX = 0;
+  let sumY = 0;
+  for (const eId of candidateEdgeIds) {
+    const e = topology.edges[eId]!;
+    sumX += e.midX;
+    sumY += e.midY;
+  }
+  const centerX = candidateEdgeIds.length > 0 ? sumX / candidateEdgeIds.length : 0;
+  const centerY = candidateEdgeIds.length > 0 ? sumY / candidateEdgeIds.length : 0;
 
   const sortedCandidates = [...candidateEdgeIds].sort((a, b) => {
     const ea = topology.edges[a]!;
     const eb = topology.edges[b]!;
-    const angA = Math.atan2(ea.midY - centerY, ea.midX - centerX);
-    const angB = Math.atan2(eb.midY - centerY, eb.midX - centerX);
-    return angA - angB;
+    return (
+      Math.atan2(ea.midY - centerY, ea.midX - centerX) -
+      Math.atan2(eb.midY - centerY, eb.midX - centerX)
+    );
   });
 
   const [shuffledTypes, nextRng] = shufflePure(rngState, harborTypes);
   const targetCount = Math.min(shuffledTypes.length, sortedCandidates.length);
-  if (targetCount === 0) {
-    return [[], nextRng];
-  }
+  if (targetCount === 0) return [[], nextRng];
 
   const stride = sortedCandidates.length / targetCount;
-  const indices = Array.from({ length: targetCount }, (_, i) => i);
-  const offsets = Array.from(
-    { length: sortedCandidates.length },
-    (_, offset) => offset
-  );
+  const usedVertices = new Set<VertexId>();
+  const usedSeaHexes = new Set<HexId>();
+  const harbors: Harbor[] = [];
 
-  const { harbors } = indices.reduce<{
-    usedVertices: ReadonlySet<VertexId>;
-    usedSeaHexes: ReadonlySet<HexId>;
-    harbors: Harbor[];
-  }>(
-    (acc, i) => {
-      const startIdx = Math.floor(i * stride);
-      const getSeaHex = (eId: EdgeId): HexId | undefined =>
-        topology.edges[eId]!.adjacentHexIds.find(
-          (id) => hexes[id]?.terrain === "sea"
-        );
-      // Prefer a coastal edge whose adjacent sea hex does not already host an opposite-shore harbor
-      const chosenEdgeId: EdgeId | undefined =
-        offsets
-          .map(
-            (offset) =>
-              sortedCandidates[(startIdx + offset) % sortedCandidates.length]!
-          )
-          .find((eId) => {
-            const edge = topology.edges[eId]!;
-            const sea = getSeaHex(eId);
-            return (
-              !acc.usedVertices.has(edge.v1) &&
-              !acc.usedVertices.has(edge.v2) &&
-              (!sea || !acc.usedSeaHexes.has(sea))
-            );
-          }) ??
-        offsets
-          .map(
-            (offset) =>
-              sortedCandidates[(startIdx + offset) % sortedCandidates.length]!
-          )
-          .find((eId) => {
-            const edge = topology.edges[eId]!;
-            return (
-              !acc.usedVertices.has(edge.v1) && !acc.usedVertices.has(edge.v2)
-            );
-          });
+  const getSeaHex = (eId: EdgeId): HexId | undefined =>
+    topology.edges[eId]!.adjacentHexIds.find(
+      (id) => hexes[id]?.terrain === "sea"
+    );
 
-      if (!chosenEdgeId) {
-        return acc;
+  const pickEdge = (
+    startIdx: number,
+    avoidSharedSea: boolean
+  ): EdgeId | undefined => {
+    for (let offset = 0; offset < sortedCandidates.length; offset++) {
+      const eId = sortedCandidates[(startIdx + offset) % sortedCandidates.length]!;
+      const edge = topology.edges[eId]!;
+      if (usedVertices.has(edge.v1) || usedVertices.has(edge.v2)) continue;
+      if (avoidSharedSea) {
+        const sea = getSeaHex(eId);
+        if (sea && usedSeaHexes.has(sea)) continue;
       }
+      return eId;
+    }
+    return undefined;
+  };
 
-      const edge = topology.edges[chosenEdgeId]!;
-      const seaHex = getSeaHex(chosenEdgeId);
-      const harbor: Harbor = {
-        id: `harbor-${i + 1}`,
-        type: shuffledTypes[i]!,
-        edgeId: chosenEdgeId,
-        vertexIds: [edge.v1, edge.v2],
-        seaHexId: seaHex,
-      };
-      return {
-        usedVertices: new Set([...acc.usedVertices, edge.v1, edge.v2]),
-        usedSeaHexes: seaHex
-          ? new Set([...acc.usedSeaHexes, seaHex])
-          : acc.usedSeaHexes,
-        harbors: [...acc.harbors, harbor],
-      };
-    },
-    { usedVertices: new Set<VertexId>(), usedSeaHexes: new Set<HexId>(), harbors: [] }
-  );
+  for (let i = 0; i < targetCount; i++) {
+    const startIdx = Math.floor(i * stride);
+    const chosenEdgeId = pickEdge(startIdx, true) ?? pickEdge(startIdx, false);
+    if (!chosenEdgeId) continue;
+
+    const edge = topology.edges[chosenEdgeId]!;
+    const seaHex = getSeaHex(chosenEdgeId);
+    usedVertices.add(edge.v1);
+    usedVertices.add(edge.v2);
+    if (seaHex) usedSeaHexes.add(seaHex);
+    harbors.push({
+      id: `harbor-${i + 1}`,
+      type: shuffledTypes[i]!,
+      edgeId: chosenEdgeId,
+      vertexIds: [edge.v1, edge.v2],
+    });
+  }
 
   return [harbors, nextRng];
 }
 
-export function buildSingleIslandHexes(
-  coords: readonly AxialCoord[],
-  shuffledTerrains: readonly TerrainType[]
-): {
-  hexes: Record<HexId, HexTile>;
-  productiveIds: HexId[];
-  robberHexId: HexId;
-} {
-  return coords.reduce<{
-    hexes: Record<HexId, HexTile>;
-    productiveIds: HexId[];
-    robberHexId: HexId;
-  }>(
-    (acc, { q, r }, i) => {
-      const id = hexId(q, r);
-      const terrain = shuffledTerrains[i]!;
-      const tile: HexTile = {
-        id,
-        q,
-        r,
-        terrain,
-        numberToken: null,
-        islandId: 1,
-        allowSetupSettlement: true,
-      };
-      return {
-        hexes: { ...acc.hexes, [id]: tile },
-        productiveIds:
-          terrain === "desert" ? acc.productiveIds : [...acc.productiveIds, id],
-        robberHexId: terrain === "desert" ? id : acc.robberHexId,
-      };
-    },
-    { hexes: {}, productiveIds: [], robberHexId: hexId(0, 0) }
-  );
-}
-
 export function buildElongatedMarineCoords(maxQ: number): AxialCoord[] {
-  const rows = [-3, -2, -1, 0, 1, 2, 3] as const;
-  return rows.flatMap((r) => {
+  const out: AxialCoord[] = [];
+  for (let r = -3; r <= 3; r++) {
     const minQ = Math.max(-3, -3 - r);
     const upperQ = Math.min(maxQ, maxQ - r);
-    return Array.from({ length: Math.max(0, upperQ - minQ + 1) }, (_, idx) => ({
-      q: minQ + idx,
-      r,
-    }));
-  });
+    for (let q = minQ; q <= upperQ; q++) {
+      out.push({ q, r });
+    }
+  }
+  return out;
 }
 
 export function createDevCardDeckPure(
@@ -337,11 +230,8 @@ export function createDevCardDeckPure(
     : DEV_CARD_DECK_COUNTS.standard;
 
   const deck: DevCardType[] = [
-    ...Array.from({ length: counts.knights }, (): DevCardType => "knight"),
-    ...Array.from(
-      { length: counts.victoryPoints },
-      (): DevCardType => "victory_point"
-    ),
+    ...Array<DevCardType>(counts.knights).fill("knight"),
+    ...Array<DevCardType>(counts.victoryPoints).fill("victory_point"),
     ...Array.from({ length: counts.progressEach }, (): DevCardType[] => [
       "road_building",
       "year_of_plenty",

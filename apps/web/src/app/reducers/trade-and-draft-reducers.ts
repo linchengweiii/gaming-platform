@@ -34,12 +34,10 @@ export function createInitialSubModesPure() {
     domesticWant: emptyResources(),
     domesticCommGive: emptyCommodities(),
     domesticCommWant: emptyCommodities(),
-    domesticTargetPlayerId: "all",
     selectedMetropolisVertexId: null,
     selectedProgressCardId: null,
     inventorHex1: null,
     smithVertex1: null,
-    deserterTargetPlayerId: null,
     splendorDraftGems: {},
     azulSelectedDraft: null,
     azulInspectedPlayerId: null,
@@ -59,101 +57,67 @@ export function switchTradeModePure(
   model: Readonly<AppModel>,
   nextMode: "maritime_trade" | "domestic_trade" | null
 ): AppModel {
-  const syncedWants = (() => {
-    const marTotal =
-      totalResourceCount(model.maritimeWant) +
-      totalCommodityCount(model.maritimeCommWant);
-    const domTotal =
-      totalResourceCount(model.domesticWant) +
-      totalCommodityCount(model.domesticCommWant);
-    if (model.buildMode === "domestic_trade" && nextMode === "maritime_trade") {
-      return {
-        maritimeWant: { ...model.domesticWant },
-        domesticWant: { ...model.domesticWant },
-        maritimeCommWant: { ...model.domesticCommWant },
-        domesticCommWant: { ...model.domesticCommWant },
-      };
-    }
-    if (model.buildMode === "maritime_trade" && nextMode === "domestic_trade") {
-      return {
-        maritimeWant: { ...model.maritimeWant },
-        domesticWant: { ...model.maritimeWant },
-        maritimeCommWant: { ...model.maritimeCommWant },
-        domesticCommWant: { ...model.maritimeCommWant },
-      };
-    }
-    if (nextMode === "maritime_trade") {
-      if (marTotal === 0 && domTotal > 0) {
-        return {
-          maritimeWant: { ...model.domesticWant },
-          domesticWant: { ...model.domesticWant },
-          maritimeCommWant: { ...model.domesticCommWant },
-          domesticCommWant: { ...model.domesticCommWant },
-        };
-      }
-      return {
-        maritimeWant: { ...model.maritimeWant },
-        domesticWant: { ...model.maritimeWant },
-        maritimeCommWant: { ...model.maritimeCommWant },
-        domesticCommWant: { ...model.maritimeCommWant },
-      };
-    }
-    if (domTotal === 0 && marTotal > 0) {
-      return {
-        maritimeWant: { ...model.maritimeWant },
-        domesticWant: { ...model.maritimeWant },
-        maritimeCommWant: { ...model.maritimeCommWant },
-        domesticCommWant: { ...model.maritimeCommWant },
-      };
-    }
-    return {
-      maritimeWant: { ...model.domesticWant },
-      domesticWant: { ...model.domesticWant },
-      maritimeCommWant: { ...model.domesticCommWant },
-      domesticCommWant: { ...model.domesticCommWant },
-    };
-  })();
+  const marTotal =
+    totalResourceCount(model.maritimeWant) +
+    totalCommodityCount(model.maritimeCommWant);
+  const domTotal =
+    totalResourceCount(model.domesticWant) +
+    totalCommodityCount(model.domesticCommWant);
+  const useDomestic =
+    (model.buildMode === "domestic_trade" && nextMode === "maritime_trade") ||
+    (model.buildMode !== "maritime_trade" &&
+      (nextMode === "maritime_trade"
+        ? marTotal === 0 && domTotal > 0
+        : !(domTotal === 0 && marTotal > 0)));
+  const srcResWant = useDomestic ? model.domesticWant : model.maritimeWant;
+  const srcCommWant = useDomestic
+    ? model.domesticCommWant
+    : model.maritimeCommWant;
 
-  const nextMaritimeGive = RESOURCES.reduce<ResourceMap>(
-    (acc, r) => ({
-      ...acc,
-      [r]: syncedWants.maritimeWant[r] > 0 ? 0 : model.maritimeGive[r],
-    }),
+  const zeroConflicts = <K extends string>(
+    keys: readonly K[],
+    want: Record<K, number>,
+    give: Record<K, number>,
+    empty: Record<K, number>
+  ): Record<K, number> =>
+    keys.reduce(
+      (acc, k) => ({ ...acc, [k]: want[k] > 0 ? 0 : give[k] }),
+      empty
+    );
+
+  const nextMaritimeGive = zeroConflicts(
+    RESOURCES,
+    srcResWant,
+    model.maritimeGive,
     emptyResources()
-  );
-
-  const nextDomesticGive = RESOURCES.reduce<ResourceMap>(
-    (acc, r) => ({
-      ...acc,
-      [r]: syncedWants.domesticWant[r] > 0 ? 0 : model.domesticGive[r],
-    }),
+  ) as ResourceMap;
+  const nextDomesticGive = zeroConflicts(
+    RESOURCES,
+    srcResWant,
+    model.domesticGive,
     emptyResources()
-  );
-
-  const nextMaritimeCommGive = COMMODITIES.reduce<CommodityMap>(
-    (acc, c) => ({
-      ...acc,
-      [c]: syncedWants.maritimeCommWant[c] > 0 ? 0 : model.maritimeCommGive[c],
-    }),
+  ) as ResourceMap;
+  const nextMaritimeCommGive = zeroConflicts(
+    COMMODITIES,
+    srcCommWant,
+    model.maritimeCommGive,
     emptyCommodities()
-  );
-
-  const nextDomesticCommGive = COMMODITIES.reduce<CommodityMap>(
-    (acc, c) => ({
-      ...acc,
-      [c]: syncedWants.domesticCommWant[c] > 0 ? 0 : model.domesticCommGive[c],
-    }),
+  ) as CommodityMap;
+  const nextDomesticCommGive = zeroConflicts(
+    COMMODITIES,
+    srcCommWant,
+    model.domesticCommGive,
     emptyCommodities()
-  );
+  ) as CommodityMap;
 
   return {
     ...model,
     selectedBoardSpot: null,
     mapBuildMenuExpanded: false,
-    maritimeWant: syncedWants.maritimeWant,
-    domesticWant: syncedWants.domesticWant,
-    maritimeCommWant: syncedWants.maritimeCommWant,
-    domesticCommWant: syncedWants.domesticCommWant,
+    maritimeWant: { ...srcResWant },
+    domesticWant: { ...srcResWant },
+    maritimeCommWant: { ...srcCommWant },
+    domesticCommWant: { ...srcCommWant },
     maritimeGive: nextMaritimeGive,
     domesticGive: nextDomesticGive,
     maritimeCommGive: nextMaritimeCommGive,

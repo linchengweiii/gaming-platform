@@ -1,10 +1,7 @@
 import type { BotDifficulty, GameEvent } from "@gaming-platform/core";
-import { ALL_TOKEN_COLORS, GEM_COLORS } from "./config.ts";
+import type { GemColor, TokenColor } from "./config.ts";
 
-export { ALL_TOKEN_COLORS, GEM_COLORS };
-
-export type GemColor = (typeof GEM_COLORS)[number];
-export type TokenColor = GemColor | "gold";
+export type { GemColor, TokenColor };
 
 export type GemMap = Record<GemColor, number>;
 export type TokenMap = Record<TokenColor, number>;

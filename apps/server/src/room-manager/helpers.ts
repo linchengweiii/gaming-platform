@@ -160,21 +160,13 @@ export function toRoomSummaryPure(
     r.sessionState && undoTargetId
       ? getSessionUndoableStepCount(engine, r.sessionState, undoTargetId)
       : 0;
-  const viewerAllowedUndo =
+  const canControlTarget = (targetId: string | null): boolean =>
     viewerId === undefined
-      ? Boolean(
-          undoTargetId && !r.players.find((p) => p.id === undoTargetId)?.isBot
-        )
-      : canViewerControlActorPure(r, viewerId, undoTargetId);
-  const viewerAllowedRedo =
-    viewerId === undefined
-      ? Boolean(
-          redoTargetId && !r.players.find((p) => p.id === redoTargetId)?.isBot
-        )
-      : canViewerControlActorPure(r, viewerId, redoTargetId);
-  const undoableSteps = viewerAllowedUndo ? rawUndoableSteps : 0;
+      ? Boolean(targetId && !r.players.find((p) => p.id === targetId)?.isBot)
+      : canViewerControlActorPure(r, viewerId, targetId);
+  const undoableSteps = canControlTarget(undoTargetId) ? rawUndoableSteps : 0;
   const canRedo =
-    viewerAllowedRedo && r.sessionState && redoTargetId
+    canControlTarget(redoTargetId) && r.sessionState && redoTargetId
       ? canSessionPlayerRedo(r.sessionState, redoTargetId)
       : false;
 
@@ -198,9 +190,24 @@ export function toRoomSummaryPure(
     undoableSteps,
     canRedo,
     step: r.sessionState ? getSessionStep(r.sessionState) : 0,
-    revision: r.revision ?? 1,
+    revision: r.revision,
     createdAt: r.createdAt,
   };
+}
+
+export function isPlayerInRoomPure(
+  room: Pick<RoomRecord, "ownerId" | "humanPlayers" | "players">,
+  playerId: string
+): boolean {
+  return (
+    room.ownerId === playerId ||
+    room.humanPlayers.some(
+      (p) => p.id === playerId || p.controllerId === playerId
+    ) ||
+    room.players.some(
+      (p) => !p.isBot && (p.id === playerId || p.controllerId === playerId)
+    )
+  );
 }
 
 export function listRoomsPure(
@@ -208,19 +215,8 @@ export function listRoomsPure(
   gameFilter?: string,
   viewerId?: string | null
 ): RoomSummary[] {
-  const canViewerSeeRoom = (r: RoomRecord): boolean => {
-    if (!r.isPrivate) return true;
-    if (!viewerId) return false;
-    return (
-      r.ownerId === viewerId ||
-      r.humanPlayers.some(
-        (p) => p.id === viewerId || p.controllerId === viewerId
-      ) ||
-      r.players.some(
-        (p) => !p.isBot && (p.id === viewerId || p.controllerId === viewerId)
-      )
-    );
-  };
+  const canViewerSeeRoom = (r: RoomRecord): boolean =>
+    !r.isPrivate || (Boolean(viewerId) && isPlayerInRoomPure(r, viewerId!));
 
   return managerState.roomOrder
     .map((id) => managerState.rooms[id])
@@ -235,8 +231,20 @@ export function listRoomsPure(
     .map((r) => toRoomSummaryPure(managerState.registry, r, viewerId));
 }
 
-export function normalizeRoomHashIdPure(rawRoomId: string): string {
+function normalizeRoomHashIdPure(rawRoomId: string): string {
   return rawRoomId.trim().replace(/^#+/, "");
+}
+
+export function findRoomRecord(
+  managerState: RoomManagerState,
+  roomId: string
+): RoomRecord | undefined {
+  const cleaned = normalizeRoomHashIdPure(roomId);
+  return (
+    managerState.rooms[roomId] ??
+    managerState.rooms[cleaned] ??
+    managerState.rooms[cleaned.toLowerCase()]
+  );
 }
 
 export function computeRoomHashPure(
@@ -270,11 +278,7 @@ export function getRoomRecordPure(
   managerState: RoomManagerState,
   roomId: string
 ): RoomRecord {
-  const cleaned = normalizeRoomHashIdPure(roomId);
-  const room =
-    managerState.rooms[roomId] ??
-    managerState.rooms[cleaned] ??
-    managerState.rooms[cleaned.toLowerCase()];
+  const room = findRoomRecord(managerState, roomId);
   if (!room) {
     throw new Error(`Room "${roomId}" not found`);
   }
@@ -309,12 +313,7 @@ export function removeRoomRecordFromState(
   managerState: RoomManagerState,
   roomId: string
 ): RoomManagerState {
-  const cleaned = normalizeRoomHashIdPure(roomId);
-  const target =
-    managerState.rooms[roomId] ??
-    managerState.rooms[cleaned] ??
-    managerState.rooms[cleaned.toLowerCase()];
-  const canonicalId = target ? target.roomId : roomId;
+  const canonicalId = findRoomRecord(managerState, roomId)?.roomId ?? roomId;
   const nextRooms = Object.fromEntries(
     Object.entries(managerState.rooms).filter(([id]) => id !== canonicalId)
   );
@@ -323,6 +322,17 @@ export function removeRoomRecordFromState(
     rooms: nextRooms,
     roomOrder: managerState.roomOrder.filter((id) => id !== canonicalId),
   };
+}
+
+function resolveValidStartMode(
+  mode: string,
+  players: readonly PlayerDescriptor[]
+): string {
+  return mode !== "random" &&
+    mode !== "first" &&
+    !players.some((p) => p.id === mode)
+    ? "random"
+    : mode;
 }
 
 export function rebuildRoomPlayersPure(
@@ -349,18 +359,14 @@ export function rebuildRoomPlayersPure(
         botDifficulty: room.botDifficulty,
       })
     );
-    const validStartMode =
-      room.startingPlayerMode !== "random" &&
-      room.startingPlayerMode !== "first" &&
-      !nextPlayers.some((p) => p.id === room.startingPlayerMode)
-        ? "random"
-        : room.startingPlayerMode;
-
     return {
       ...room,
       botCount: clampedBotCount,
       players: nextPlayers,
-      startingPlayerMode: validStartMode,
+      startingPlayerMode: resolveValidStartMode(
+        room.startingPlayerMode,
+        nextPlayers
+      ),
     };
   }
 
@@ -397,18 +403,14 @@ export function rebuildRoomPlayersPure(
     ];
   }, seatedHumans);
 
-  const validStartMode =
-    room.startingPlayerMode !== "random" &&
-    room.startingPlayerMode !== "first" &&
-    !nextPlayers.some((p) => p.id === room.startingPlayerMode)
-      ? "random"
-      : room.startingPlayerMode;
-
   return {
     ...room,
     humanPlayers: trimmedHumans,
     botCount: clampedBotCount,
     players: nextPlayers,
-    startingPlayerMode: validStartMode,
+    startingPlayerMode: resolveValidStartMode(
+      room.startingPlayerMode,
+      nextPlayers
+    ),
   };
 }

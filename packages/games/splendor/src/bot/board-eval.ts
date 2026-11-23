@@ -1,5 +1,5 @@
 import { GEM_COLORS } from "../config.ts";
-import { totalTokens } from "../rules.ts";
+import { totalTokens } from "../rules/helpers.ts";
 import type { SplendorPlayerState, SplendorState } from "../types.ts";
 import {
   computeBonusColorDemand,
@@ -185,7 +185,8 @@ export function evaluateMasterPublicState(
   state: SplendorState,
   meId: string
 ): number {
-  const me = state.players.find((p) => p.id === meId)!;
+  const myIdx = state.players.findIndex((p) => p.id === meId);
+  const me = state.players[myIdx]!;
   if (state.phase === "GAME_OVER") {
     if (state.winnerId === meId) {
       return 12000 + me.points * 25 - me.purchasedCards.length;
@@ -219,7 +220,6 @@ export function evaluateMasterPublicState(
     }
   }
 
-  const myIdx = state.players.findIndex((p) => p.id === meId);
   const nPlayers = state.players.length;
   const oppScores: number[] = [];
   state.players.forEach((opp, idx) => {

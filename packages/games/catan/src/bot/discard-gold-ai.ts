@@ -4,11 +4,11 @@ import {
   totalCommodityCount,
 } from "../cities-and-knights/helpers.ts";
 import type { CatanBotWeights } from "../config/bot-config.ts";
+import { COMMODITY_TO_DISCIPLINE } from "../config/cities-knights-config.ts";
 import { emptyResources } from "../rules/helpers.ts";
 import type { CatanAction } from "../types/actions.ts";
 import {
   type CommodityMap,
-  type ImprovementDiscipline,
   RESOURCES,
   type ResourceMap,
   type ResourceType,
@@ -17,14 +17,13 @@ import {
 } from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import { evaluateHandStrategicValue } from "./trade-eval.ts";
-import { computeBoardScarcity, computePlayerProductionPips } from "./utils.ts";
 
 function chooseCkDiscardWithCommodities(
   state: CatanState,
   player: CatanPlayerState,
-  needed: number
+  needed: number,
+  scarcity: Record<ResourceType, number>
 ): CatanAction {
-  const scarcity = computeBoardScarcity(state);
   const remRes: ResourceMap = { ...player.resources };
   const remComm: CommodityMap = { ...player.commodities };
   const dropRes: Partial<ResourceMap> = {};
@@ -32,8 +31,7 @@ function chooseCkDiscardWithCommodities(
 
   const scoreDropPenalty = (good: TradeGoodType): number => {
     if (isCommodityType(good)) {
-      const disc: ImprovementDiscipline =
-        good === "paper" ? "science" : good === "cloth" ? "trade" : "politics";
+      const disc = COMMODITY_TO_DISCIPLINE[good];
       const curLvl = player.cityImprovements[disc];
       if (curLvl >= 5) return 0.5;
       const nextReq = Math.max(
@@ -106,7 +104,9 @@ export function chooseOptimalDiscardAction(
   player: CatanPlayerState,
   needed: number,
   weights: CatanBotWeights,
-  fallbackLegal: CatanAction[]
+  fallbackLegal: CatanAction[],
+  scarcity: Record<ResourceType, number>,
+  prod: Record<ResourceType, number>
 ): CatanAction {
   const diff = player.botDifficulty ?? "smart";
   if (diff === "easy") {
@@ -117,7 +117,7 @@ export function chooseOptimalDiscardAction(
     state.config.enableCitiesAndKnights &&
     totalCommodityCount(player.commodities) > 0
   ) {
-    return chooseCkDiscardWithCommodities(state, player, needed);
+    return chooseCkDiscardWithCommodities(state, player, needed, scarcity);
   }
 
   if (diff === "normal") {
@@ -148,8 +148,6 @@ export function chooseOptimalDiscardAction(
     return { type: "DISCARD_CARDS", resources: greedyResult.discard };
   }
 
-  const scarcity = computeBoardScarcity(state);
-  const prod = computePlayerProductionPips(state, player.id);
   const resList = RESOURCES;
 
   function searchBestDiscard(

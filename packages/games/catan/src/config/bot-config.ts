@@ -18,7 +18,6 @@ export interface CatanBotWeights {
   roadToSpotPriority: number;
   longestRoadContestBonus: number;
   harbormasterContestBonus: number;
-  cityWallPriority: number;
   robberLeaderVpWeight: number;
   robberPipsWeight: number;
   tradeAcceptThreshold: number;
@@ -44,7 +43,6 @@ export const CATAN_BOT_WEIGHTS: Record<BotDifficulty, CatanBotWeights> = {
     roadToSpotPriority: 9,
     longestRoadContestBonus: 1.5,
     harbormasterContestBonus: 1,
-    cityWallPriority: 3,
     robberLeaderVpWeight: 0.3,
     robberPipsWeight: 0.8,
     tradeAcceptThreshold: -0.3,
@@ -68,7 +66,6 @@ export const CATAN_BOT_WEIGHTS: Record<BotDifficulty, CatanBotWeights> = {
     roadToSpotPriority: 9.0,
     longestRoadContestBonus: 4.5,
     harbormasterContestBonus: 4,
-    cityWallPriority: 4.5,
     robberLeaderVpWeight: 1.8,
     robberPipsWeight: 1.25,
     tradeAcceptThreshold: 0.58,
@@ -92,7 +89,6 @@ export const CATAN_BOT_WEIGHTS: Record<BotDifficulty, CatanBotWeights> = {
     roadToSpotPriority: 11.5,
     longestRoadContestBonus: 11.5,
     harbormasterContestBonus: 9.5,
-    cityWallPriority: 7,
     robberLeaderVpWeight: 3.9,
     robberPipsWeight: 1.95,
     tradeAcceptThreshold: 0.48,
@@ -116,7 +112,6 @@ export const CATAN_BOT_WEIGHTS: Record<BotDifficulty, CatanBotWeights> = {
     roadToSpotPriority: 13.5,
     longestRoadContestBonus: 31.5,
     harbormasterContestBonus: 10.5,
-    cityWallPriority: 8.3,
     robberLeaderVpWeight: 8.2,
     robberPipsWeight: 2.95,
     tradeAcceptThreshold: 0.52,

@@ -8,6 +8,7 @@ import {
   getActingPlayerIdPure,
   getActiveRoomPure,
   getRoomStatePure,
+  removeRoomFromModelPure,
 } from "../helpers/room-queries.ts";
 import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
 import type { SupportedGameId } from "../types.ts";
@@ -23,7 +24,7 @@ import {
 } from "./dom-events.ts";
 import { bindDropdownEventsOnRoot } from "./render-and-dropdowns.ts";
 
-export function bindTutorialAndGuideEvents(ctx: AppRuntimeContext): void {
+function bindTutorialAndGuideEvents(ctx: AppRuntimeContext): void {
   const { root } = ctx;
   const closeGuide = () => patchModelAndRender(ctx, { guideModalGameId: null });
 
@@ -77,21 +78,14 @@ export function bindTutorialAndGuideEvents(ctx: AppRuntimeContext): void {
     ctx.stopAutoPlay();
     const tutRoomId = ctx.model.activeTutorial?.roomId ?? null;
     if (tutRoomId) ctx.roomLensCache.delete(tutRoomId);
-    const nextRooms = tutRoomId
-      ? Object.fromEntries(
-          Object.entries(ctx.model.rooms).filter(([id]) => id !== tutRoomId)
-        )
-      : ctx.model.rooms;
-    const nextOrder = tutRoomId
-      ? ctx.model.roomOrder.filter((id) => id !== tutRoomId)
-      : ctx.model.roomOrder;
+    const afterRemove = tutRoomId
+      ? removeRoomFromModelPure(ctx.model, tutRoomId)
+      : ctx.model;
     ctx.model = resetSubModesPure({
-      ...ctx.model,
-      rooms: nextRooms,
-      roomOrder: nextOrder,
+      ...afterRemove,
       activeRoomId:
         ctx.model.activeRoomId === tutRoomId
-          ? nextOrder[0] ?? ""
+          ? afterRemove.roomOrder[0] ?? ""
           : ctx.model.activeRoomId,
       activeTutorial: null,
       viewMode: "lobby",
@@ -137,7 +131,7 @@ export function bindTutorialAndGuideEvents(ctx: AppRuntimeContext): void {
   });
 }
 
-export function bindLocaleSelectorEvents(ctx: AppRuntimeContext): void {
+function bindLocaleSelectorEvents(ctx: AppRuntimeContext): void {
   onChange(ctx.root, "#sel-locale", (e) =>
     ctx.setLocale((e.target as HTMLSelectElement).value as SupportedLocale)
   );

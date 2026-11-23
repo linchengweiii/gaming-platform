@@ -1,12 +1,7 @@
 import type { BotDifficulty, GameEvent } from "@gaming-platform/core";
-import {
-  AZUL_COLORS,
-  AZUL_WALL_PATTERN,
-  FLOOR_PENALTIES,
-} from "./config.ts";
+import type { AzulTileColor } from "./config.ts";
 
-export { AZUL_COLORS, AZUL_WALL_PATTERN, FLOOR_PENALTIES };
-export type AzulTileColor = (typeof AZUL_COLORS)[number];
+export type { AzulTileColor };
 export type FloorToken = AzulTileColor | "first_player";
 
 export interface PatternLineState {

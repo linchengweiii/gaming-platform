@@ -13,7 +13,7 @@ import {
 import { escapeAttr } from "../../helpers/html-and-dropdown.ts";
 import type { AppModel, ClientRoom, SupportedGameId } from "../../types.ts";
 
-export interface BotMoveEntry {
+interface BotMoveEntry {
   readonly id: string;
   readonly turn: number;
   readonly playerId: string;
@@ -238,7 +238,7 @@ export function extractBotMoveFeedPure(
   };
 }
 
-export function getEffectiveBotThrottleMsPure(
+function getEffectiveBotThrottleMsPure(
   model: Readonly<AppModel>,
   room: ClientRoom
 ): number {

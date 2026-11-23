@@ -9,7 +9,7 @@ import {
   computeCardPurchasePayment,
   emptyGemMap,
   totalTokens,
-} from "../rules.ts";
+} from "../rules/helpers.ts";
 import type {
   GemMap,
   SplendorAction,
@@ -29,10 +29,6 @@ export function evaluateCardUtility(
   difficulty: BotDifficulty
 ): number {
   if (card.redacted) return 0;
-  if (difficulty === "easy") {
-    const ew = SPLENDOR_BOT_TUNING.easy;
-    return card.points * ew.cardPointWeight + ew.cardBaseBonus;
-  }
 
   const targetPts = state.config.targetPoints;
   const nobleImmediatePts = getUnlockedNoblePoints(state, player, card.bonus);

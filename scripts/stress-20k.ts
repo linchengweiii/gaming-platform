@@ -1,8 +1,7 @@
-import { STRESS_DEFAULTS, type StressReport } from "./stress-20k/config.ts";
+import { STRESS_DEFAULTS } from "./stress-20k/config.ts";
 import { runHumanMimicIterations } from "./stress-20k/human-mimic-runner.ts";
 import { runRobotIterations } from "./stress-20k/robot-runner.ts";
 
-export type { StressReport };
 export { runHumanMimicIterations, runRobotIterations };
 
 const isMain =

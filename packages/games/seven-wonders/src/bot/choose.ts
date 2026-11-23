@@ -1,5 +1,5 @@
 import {
-  SEVEN_WONDERS_BOT_TIER_PROFILES,
+  SEVEN_WONDERS_INTERMEDIATE_PROFILES,
   SEVEN_WONDERS_MASTER_BOT_WEIGHTS,
   SEVEN_WONDERS_NORMAL_BOT_WEIGHTS,
   SEVEN_WONDERS_SMART_BOT_WEIGHTS,
@@ -26,8 +26,8 @@ import {
 import {
   computeDraftDenialBonus,
   computeHalikarnassusDiscardFeedPenalty,
-  doesAnyOpponentHaveActiveHalikarnassus,
   estimateOpponentBestUseOfCard,
+  getActiveHalikarnassusOpponents,
 } from "./deny-eval.ts";
 import {
   chooseBabylonSeventhCardLookahead,
@@ -39,7 +39,7 @@ import {
   evaluateMasterWonderStage,
 } from "./wonder-coin-eval.ts";
 
-export function chooseMasterSevenWondersAction(
+function chooseMasterSevenWondersAction(
   state: SevenWondersState,
   playerId: string,
   legal: readonly SevenWondersAction[],
@@ -75,10 +75,7 @@ export function chooseMasterSevenWondersAction(
         : rightIdx
       : -1;
 
-  const opponentHasActiveHalikarnassus = doesAnyOpponentHaveActiveHalikarnassus(
-    state,
-    pIdx
-  );
+  const halikarnassusOpponents = getActiveHalikarnassusOpponents(state, pIdx);
 
   const receiverValById: Record<string, number> = {};
   let receiverValCount = 0;
@@ -192,9 +189,15 @@ export function chooseMasterSevenWondersAction(
           rightCoins: 0,
         }
       );
-      const halikarnassusFeedPenalty = opponentHasActiveHalikarnassus
-        ? computeHalikarnassusDiscardFeedPenalty(state, pIdx, card)
-        : 0;
+      const halikarnassusFeedPenalty =
+        halikarnassusOpponents.length > 0
+          ? computeHalikarnassusDiscardFeedPenalty(
+              state,
+              pIdx,
+              card,
+              halikarnassusOpponents
+            )
+          : 0;
       actionScore = coinUtil - ownOpportunityLeak - halikarnassusFeedPenalty;
     }
 
@@ -221,14 +224,14 @@ export function chooseMasterSevenWondersAction(
   return bestAct;
 }
 
-export function chooseIntermediateSevenWondersAction(
+function chooseIntermediateSevenWondersAction(
   state: SevenWondersState,
   legal: readonly SevenWondersAction[],
   pIdx: number,
   tier: "normal" | "smart"
 ): SevenWondersAction {
   const player = state.players[pIdx]!;
-  const profile = SEVEN_WONDERS_BOT_TIER_PROFILES[tier];
+  const profile = SEVEN_WONDERS_INTERMEDIATE_PROFILES[tier];
   const nw = SEVEN_WONDERS_NORMAL_BOT_WEIGHTS;
   const sw = SEVEN_WONDERS_SMART_BOT_WEIGHTS;
 

@@ -21,6 +21,7 @@ import {
 import {
   OPTIMIZE_BOTS_DEFAULTS,
   TUNABLE_CATAN_WEIGHT_KEYS,
+  type TournamentSummary,
 } from "./config.ts";
 import {
   evaluateMasterVsSmartAzul,
@@ -31,29 +32,87 @@ import {
   runSplendorMixedTournament,
 } from "./runners.ts";
 
-function evaluateCompositeMasterFitness(
-  duelBoards: number,
-  mixedBoards: number,
-  seedTag: string
-): { fitness: number; duelWinRate: number; mixedWinRate: number } {
-  const duel = evaluateMasterVsSmartCatan(duelBoards, `opt-duel-${seedTag}`);
-  const mixed = runCatanMixedTournament(
-    mixedBoards,
-    undefined,
-    false,
-    `opt-mixed-${seedTag}`
-  );
-  const mixedRate = mixed.winsByTier.master / Math.max(1, mixed.matchesPlayed);
-  const fitness =
-    duel.masterWinRate * OPTIMIZE_BOTS_DEFAULTS.duelFitnessWeight +
-    mixedRate *
-      OPTIMIZE_BOTS_DEFAULTS.mixedFitnessWeight *
-      OPTIMIZE_BOTS_DEFAULTS.mixedFitnessScale;
-  return {
-    fitness,
-    duelWinRate: duel.masterWinRate,
-    mixedWinRate: mixedRate,
+function evolveMasterWeights<T extends object>(opts: {
+  readonly label: string;
+  readonly seed: string;
+  readonly initial: T;
+  readonly keys: readonly (keyof T)[];
+  readonly setWeights: (w: Partial<T>) => void;
+  readonly evaluateDuel: (tag: string) => number;
+  readonly evaluateMixed: (tag: string) => TournamentSummary;
+  readonly trainTag: string;
+  readonly holdoutTag: string;
+  readonly generations: number;
+  readonly minSigma: number;
+  readonly maxSigma: number;
+  readonly minWeight: number;
+}): T {
+  let rngState = createRngState(opts.seed);
+  let champion: T = { ...opts.initial };
+  opts.setWeights(champion);
+
+  const evalFit = (tag: string) => {
+    const duel = opts.evaluateDuel(tag);
+    const mixedRes = opts.evaluateMixed(tag);
+    const mixed =
+      mixedRes.winsByTier.master / Math.max(1, mixedRes.matchesPlayed);
+    const fitness =
+      duel * OPTIMIZE_BOTS_DEFAULTS.duelFitnessWeight +
+      mixed *
+        OPTIMIZE_BOTS_DEFAULTS.mixedFitnessWeight *
+        OPTIMIZE_BOTS_DEFAULTS.mixedFitnessScale;
+    return { duel, mixed, fitness };
   };
+
+  const baseTrain = evalFit(opts.trainTag);
+  const baseHoldout = evalFit(opts.holdoutTag);
+  let championScore = (baseTrain.fitness + baseHoldout.fitness) / 2;
+  let championTrainScore = baseTrain.fitness;
+
+  console.log(
+    `[${opts.label} Init] Duel vs Smart: ${(((baseTrain.duel + baseHoldout.duel) / 2) * 100).toFixed(1)}%, Mixed 4P: ${(((baseTrain.mixed + baseHoldout.mixed) / 2) * 100).toFixed(1)}%, Composite: ${(championScore * 100).toFixed(2)}`
+  );
+
+  for (let gen = 1; gen <= opts.generations; gen++) {
+    const sigma = Math.max(
+      opts.minSigma,
+      opts.maxSigma * (1 - gen / (opts.generations + 4))
+    );
+    const candidate: T = { ...champion };
+
+    const [mutRand, nextRng0] =
+      gen % 2 === 0 ? [0, rngState] : nextFloatPure(rngState);
+    rngState = nextRng0;
+    const numMutate = gen % 2 === 0 ? 1 : 2 + Math.floor(mutRand * 3);
+    for (let m = 0; m < numMutate; m++) {
+      const [key, nextRng1] = pickPure(rngState, opts.keys);
+      const [deltaRand, nextRng2] = nextFloatPure(nextRng1);
+      rngState = nextRng2;
+      const delta = (deltaRand * 2 - 1) * sigma;
+      const cur = Number(candidate[key]);
+      (candidate as Record<keyof T, number>)[key] = Number(
+        Math.max(opts.minWeight, cur * (1 + delta)).toFixed(3)
+      );
+    }
+
+    opts.setWeights(candidate);
+    const tr = evalFit(opts.trainTag);
+    if (tr.fitness > championTrainScore - 0.01) {
+      const ho = evalFit(opts.holdoutTag);
+      const combined = (tr.fitness + ho.fitness) / 2;
+      if (combined > championScore) {
+        champion = candidate;
+        championScore = combined;
+        championTrainScore = tr.fitness;
+        console.log(
+          `[${opts.label} Gen ${gen}/${opts.generations}] NEW CHAMPION! Duel = ${(((tr.duel + ho.duel) / 2) * 100).toFixed(1)}%, Mixed 4P = ${(((tr.mixed + ho.mixed) / 2) * 100).toFixed(1)}%, Composite = ${(championScore * 100).toFixed(2)}`
+        );
+      }
+    }
+    opts.setWeights(champion);
+  }
+
+  return champion;
 }
 
 export function optimizeMasterWeights(
@@ -61,71 +120,23 @@ export function optimizeMasterWeights(
   duelBoards = 84,
   mixedBoards = 56
 ): CatanBotWeights {
-  let rngState = createRngState("catan-master-optimizer-stage4");
-  let champion: CatanBotWeights = { ...CATAN_BOT_WEIGHTS.master };
-  setMasterCatanBotWeights(champion);
-
-  const baseEval = evaluateCompositeMasterFitness(
-    duelBoards,
-    mixedBoards,
-    "s4-train"
-  );
-  const baseHoldout = evaluateCompositeMasterFitness(
-    duelBoards,
-    mixedBoards,
-    "s4-holdout"
-  );
-  let championScore = (baseEval.fitness + baseHoldout.fitness) / 2;
-  let championTrainScore = baseEval.fitness;
-
-  console.log(
-    `[Catan Init] Duel vs Smart: ${(((baseEval.duelWinRate + baseHoldout.duelWinRate) / 2) * 100).toFixed(1)}%, Mixed 4P: ${(((baseEval.mixedWinRate + baseHoldout.mixedWinRate) / 2) * 100).toFixed(1)}%, Composite: ${(championScore * 100).toFixed(2)}`
-  );
-
-  for (let gen = 1; gen <= generations; gen++) {
-    const sigma = Math.max(0.03, 0.14 * (1 - gen / (generations + 4)));
-    const candidate: CatanBotWeights = { ...champion };
-
-    const [mutRand, nextRng0] =
-      gen % 2 === 0 ? [0, rngState] : nextFloatPure(rngState);
-    rngState = nextRng0;
-    const numMutate = gen % 2 === 0 ? 1 : 2 + Math.floor(mutRand * 3);
-    for (let m = 0; m < numMutate; m++) {
-      const [key, nextRng1] = pickPure(rngState, TUNABLE_CATAN_WEIGHT_KEYS);
-      const [deltaRand, nextRng2] = nextFloatPure(nextRng1);
-      rngState = nextRng2;
-      const cur = candidate[key];
-      const delta = (deltaRand * 2 - 1) * sigma;
-      candidate[key] = Number(Math.max(0.05, cur * (1 + delta)).toFixed(3));
-    }
-
-    setMasterCatanBotWeights(candidate);
-    const trainRes = evaluateCompositeMasterFitness(
-      duelBoards,
-      mixedBoards,
-      "s4-train"
-    );
-
-    if (trainRes.fitness > championTrainScore - 0.01) {
-      const holdoutRes = evaluateCompositeMasterFitness(
-        duelBoards,
-        mixedBoards,
-        "s4-holdout"
-      );
-      const combined = (trainRes.fitness + holdoutRes.fitness) / 2;
-      if (combined > championScore) {
-        champion = candidate;
-        championScore = combined;
-        championTrainScore = trainRes.fitness;
-        console.log(
-          `[Catan Gen ${gen}/${generations}] NEW CHAMPION! Duel = ${(((trainRes.duelWinRate + holdoutRes.duelWinRate) / 2) * 100).toFixed(1)}%, Mixed 4P = ${(((trainRes.mixedWinRate + holdoutRes.mixedWinRate) / 2) * 100).toFixed(1)}%, Composite = ${(championScore * 100).toFixed(2)}`
-        );
-      }
-    }
-    setMasterCatanBotWeights(champion);
-  }
-
-  return champion;
+  return evolveMasterWeights({
+    label: "Catan",
+    seed: "catan-master-optimizer-stage4",
+    initial: CATAN_BOT_WEIGHTS.master,
+    keys: TUNABLE_CATAN_WEIGHT_KEYS,
+    setWeights: setMasterCatanBotWeights,
+    evaluateDuel: (tag) =>
+      evaluateMasterVsSmartCatan(duelBoards, `opt-duel-${tag}`),
+    evaluateMixed: (tag) =>
+      runCatanMixedTournament(mixedBoards, false, `opt-mixed-${tag}`),
+    trainTag: "s4-train",
+    holdoutTag: "s4-holdout",
+    generations,
+    minSigma: 0.03,
+    maxSigma: 0.14,
+    minWeight: 0.05,
+  });
 }
 
 export function optimizeSplendorMasterWeights(
@@ -133,72 +144,25 @@ export function optimizeSplendorMasterWeights(
   duelBoards = 90,
   mixedBoards = 60
 ): SplendorMasterWeights {
-  let rngState = createRngState("splendor-master-optimizer-stage4");
-  let champion: SplendorMasterWeights = { ...SPLENDOR_MASTER_WEIGHTS };
-  setMasterSplendorBotWeights(champion);
-
-  const evalFit = (tag: string) => {
-    const duel = evaluateMasterVsSmartSplendor(duelBoards, `sp-duel-${tag}`);
-    const mixed =
-      runSplendorMixedTournament(mixedBoards, false, `sp-mix-${tag}`).winsByTier
-        .master /
-      (mixedBoards * 4);
-    return {
-      duel,
-      mixed,
-      fitness:
-        duel * OPTIMIZE_BOTS_DEFAULTS.duelFitnessWeight +
-        mixed *
-          OPTIMIZE_BOTS_DEFAULTS.mixedFitnessWeight *
-          OPTIMIZE_BOTS_DEFAULTS.mixedFitnessScale,
-    };
-  };
-
-  const bTrain = evalFit("train");
-  const bHold = evalFit("holdout");
-  let championScore = (bTrain.fitness + bHold.fitness) / 2;
-  let championTrain = bTrain.fitness;
-  console.log(
-    `[Splendor Init] Duel vs Smart: ${(((bTrain.duel + bHold.duel) / 2) * 100).toFixed(1)}%, Mixed 4P: ${(((bTrain.mixed + bHold.mixed) / 2) * 100).toFixed(1)}%, Composite: ${(championScore * 100).toFixed(2)}`
-  );
-
-  const keys = Object.keys(champion) as Array<keyof SplendorMasterWeights>;
-
-  for (let gen = 1; gen <= generations; gen++) {
-    const sigma = Math.max(0.035, 0.2 * (1 - gen / (generations + 4)));
-    const candidate: SplendorMasterWeights = { ...champion };
-    const [mutRand, nextRng0] =
-      gen % 2 === 0 ? [0, rngState] : nextFloatPure(rngState);
-    rngState = nextRng0;
-    const numMutate = gen % 2 === 0 ? 1 : 2 + Math.floor(mutRand * 3);
-    for (let m = 0; m < numMutate; m++) {
-      const [k, nextRng1] = pickPure(rngState, keys);
-      const [deltaRand, nextRng2] = nextFloatPure(nextRng1);
-      rngState = nextRng2;
-      const delta = (deltaRand * 2 - 1) * sigma;
-      candidate[k] = Number(
-        Math.max(0.03, candidate[k] * (1 + delta)).toFixed(3)
-      );
-    }
-
-    setMasterSplendorBotWeights(candidate);
-    const tr = evalFit("train");
-    if (tr.fitness > championTrain - 0.01) {
-      const ho = evalFit("holdout");
-      const comb = (tr.fitness + ho.fitness) / 2;
-      if (comb > championScore) {
-        champion = candidate;
-        championScore = comb;
-        championTrain = tr.fitness;
-        console.log(
-          `[Splendor Gen ${gen}/${generations}] NEW CHAMPION! Duel = ${(((tr.duel + ho.duel) / 2) * 100).toFixed(1)}%, Mixed 4P = ${(((tr.mixed + ho.mixed) / 2) * 100).toFixed(1)}%, Composite = ${(championScore * 100).toFixed(2)}`
-        );
-      }
-    }
-    setMasterSplendorBotWeights(champion);
-  }
-
-  return champion;
+  return evolveMasterWeights({
+    label: "Splendor",
+    seed: "splendor-master-optimizer-stage4",
+    initial: SPLENDOR_MASTER_WEIGHTS,
+    keys: Object.keys(SPLENDOR_MASTER_WEIGHTS) as Array<
+      keyof SplendorMasterWeights
+    >,
+    setWeights: setMasterSplendorBotWeights,
+    evaluateDuel: (tag) =>
+      evaluateMasterVsSmartSplendor(duelBoards, `sp-duel-${tag}`),
+    evaluateMixed: (tag) =>
+      runSplendorMixedTournament(mixedBoards, false, `sp-mix-${tag}`),
+    trainTag: "train",
+    holdoutTag: "holdout",
+    generations,
+    minSigma: 0.035,
+    maxSigma: 0.2,
+    minWeight: 0.03,
+  });
 }
 
 export function optimizeAzulMasterWeights(
@@ -206,70 +170,21 @@ export function optimizeAzulMasterWeights(
   duelBoards = 100,
   mixedBoards = 70
 ): AzulMasterWeights {
-  let rngState = createRngState("azul-master-optimizer-stage4");
-  let champion: AzulMasterWeights = { ...AZUL_MASTER_WEIGHTS };
-  setMasterAzulBotWeights(champion);
-
-  const evalFit = (tag: string) => {
-    const duel = evaluateMasterVsSmartAzul(duelBoards, `az-duel-${tag}`);
-    const mixed =
-      runAzulMixedTournament(mixedBoards, false, `az-mix-${tag}`).winsByTier
-        .master /
-      (mixedBoards * 4);
-    return {
-      duel,
-      mixed,
-      fitness:
-        duel * OPTIMIZE_BOTS_DEFAULTS.duelFitnessWeight +
-        mixed *
-          OPTIMIZE_BOTS_DEFAULTS.mixedFitnessWeight *
-          OPTIMIZE_BOTS_DEFAULTS.mixedFitnessScale,
-    };
-  };
-
-  const bTrain = evalFit("train");
-  const bHold = evalFit("holdout");
-  let championScore = (bTrain.fitness + bHold.fitness) / 2;
-  let championTrain = bTrain.fitness;
-  console.log(
-    `[Azul Init] Duel vs Smart: ${(((bTrain.duel + bHold.duel) / 2) * 100).toFixed(1)}%, Mixed 4P: ${(((bTrain.mixed + bHold.mixed) / 2) * 100).toFixed(1)}%, Composite: ${(championScore * 100).toFixed(2)}`
-  );
-
-  const keys = Object.keys(champion) as Array<keyof AzulMasterWeights>;
-
-  for (let gen = 1; gen <= generations; gen++) {
-    const sigma = Math.max(0.035, 0.22 * (1 - gen / (generations + 4)));
-    const candidate: AzulMasterWeights = { ...champion };
-    const [mutRand, nextRng0] =
-      gen % 2 === 0 ? [0, rngState] : nextFloatPure(rngState);
-    rngState = nextRng0;
-    const numMutate = gen % 2 === 0 ? 1 : 2 + Math.floor(mutRand * 3);
-    for (let m = 0; m < numMutate; m++) {
-      const [k, nextRng1] = pickPure(rngState, keys);
-      const [deltaRand, nextRng2] = nextFloatPure(nextRng1);
-      rngState = nextRng2;
-      const delta = (deltaRand * 2 - 1) * sigma;
-      candidate[k] = Number(
-        Math.max(0.03, candidate[k] * (1 + delta)).toFixed(3)
-      );
-    }
-
-    setMasterAzulBotWeights(candidate);
-    const tr = evalFit("train");
-    if (tr.fitness > championTrain - 0.01) {
-      const ho = evalFit("holdout");
-      const comb = (tr.fitness + ho.fitness) / 2;
-      if (comb > championScore) {
-        champion = candidate;
-        championScore = comb;
-        championTrain = tr.fitness;
-        console.log(
-          `[Azul Gen ${gen}/${generations}] NEW CHAMPION! Duel = ${(((tr.duel + ho.duel) / 2) * 100).toFixed(1)}%, Mixed 4P = ${(((tr.mixed + ho.mixed) / 2) * 100).toFixed(1)}%, Composite = ${(championScore * 100).toFixed(2)}`
-        );
-      }
-    }
-    setMasterAzulBotWeights(champion);
-  }
-
-  return champion;
+  return evolveMasterWeights({
+    label: "Azul",
+    seed: "azul-master-optimizer-stage4",
+    initial: AZUL_MASTER_WEIGHTS,
+    keys: Object.keys(AZUL_MASTER_WEIGHTS) as Array<keyof AzulMasterWeights>,
+    setWeights: setMasterAzulBotWeights,
+    evaluateDuel: (tag) =>
+      evaluateMasterVsSmartAzul(duelBoards, `az-duel-${tag}`),
+    evaluateMixed: (tag) =>
+      runAzulMixedTournament(mixedBoards, false, `az-mix-${tag}`),
+    trainTag: "train",
+    holdoutTag: "holdout",
+    generations,
+    minSigma: 0.035,
+    maxSigma: 0.22,
+    minWeight: 0.03,
+  });
 }

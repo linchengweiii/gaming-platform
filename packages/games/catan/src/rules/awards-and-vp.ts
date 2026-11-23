@@ -70,6 +70,23 @@ export function computePlayerVictoryPoints(
   );
 }
 
+function resolveHoldableAward(
+  players: readonly { id: string }[],
+  getScore: (p: any) => number,
+  minThreshold: number,
+  currentOwnerId: string | null
+): { ownerId: string | null; value: number } {
+  const maxVal = Math.max(0, ...players.map(getScore));
+  if (maxVal < minThreshold) return { ownerId: null, value: 0 };
+  const leaders = players.filter((p) => getScore(p) === maxVal);
+  if (currentOwnerId && leaders.some((p) => p.id === currentOwnerId)) {
+    return { ownerId: currentOwnerId, value: maxVal };
+  }
+  return leaders.length === 1
+    ? { ownerId: leaders[0]!.id, value: maxVal }
+    : { ownerId: null, value: 0 };
+}
+
 /**
  * Purely recalculates Longest Road / Longest Trade Route, Largest Army, and Harbormaster awards.
  */
@@ -123,26 +140,14 @@ export function recalculateAwardsPure(state: CatanState): CatanState {
     };
   });
 
-  // 1. Longest Road / Trade Route
-  const maxRoad = Math.max(0, ...nextPlayers.map((p) => p.longestRoadLength));
-  const nextRoadAward = (() => {
-    if (maxRoad < AWARD_THRESHOLDS.longestRoadMinLength) {
-      return { ownerId: null as string | null, length: 0 };
-    }
-    const leaders = nextPlayers.filter((p) => p.longestRoadLength === maxRoad);
-    if (
-      state.longestRoadOwnerId &&
-      leaders.some((p) => p.id === state.longestRoadOwnerId)
-    ) {
-      return { ownerId: state.longestRoadOwnerId, length: maxRoad };
-    }
-    if (leaders.length === 1) {
-      return { ownerId: leaders[0]!.id, length: maxRoad };
-    }
-    return { ownerId: null as string | null, length: 0 };
-  })();
+  const nextRoadAward = resolveHoldableAward(
+    nextPlayers,
+    (p) => p.longestRoadLength,
+    AWARD_THRESHOLDS.longestRoadMinLength,
+    state.longestRoadOwnerId
+  );
 
-  // 2. Largest Army (>= 3 knights played; disabled in Cities & Knights)
+  // Largest Army (>= 3 knights played; disabled in Cities & Knights)
   const nextArmyAward = state.config.enableCitiesAndKnights
     ? { ownerId: null as string | null, size: 0 }
     : nextPlayers.reduce(
@@ -154,50 +159,28 @@ export function recalculateAwardsPure(state: CatanState): CatanState {
         { ownerId: state.largestArmyOwnerId, size: state.largestArmySize }
       );
 
-  // 3. Harbormaster (>= 3 harbor points; freshly recomputed so pillaged harbor cities update properly)
-  const nextHarborAward = (() => {
-    if (!state.config.enableHarbormaster) {
-      return {
+  const nextHarborAward = state.config.enableHarbormaster
+    ? resolveHoldableAward(
+        nextPlayers,
+        (p) => p.harborPoints,
+        AWARD_THRESHOLDS.harbormasterMinPoints,
+        state.harbormasterOwnerId
+      )
+    : {
         ownerId: state.harbormasterOwnerId,
-        points: state.harbormasterPoints,
+        value: state.harbormasterPoints,
       };
-    }
-    const maxHarbor = Math.max(0, ...nextPlayers.map((p) => p.harborPoints));
-    if (maxHarbor < AWARD_THRESHOLDS.harbormasterMinPoints) {
-      return { ownerId: null as string | null, points: 0 };
-    }
-    const leaders = nextPlayers.filter((p) => p.harborPoints === maxHarbor);
-    if (
-      state.harbormasterOwnerId &&
-      leaders.some((p) => p.id === state.harbormasterOwnerId)
-    ) {
-      return { ownerId: state.harbormasterOwnerId, points: maxHarbor };
-    }
-    if (leaders.length === 1) {
-      return { ownerId: leaders[0]!.id, points: maxHarbor };
-    }
-    return { ownerId: null as string | null, points: 0 };
-  })();
 
   return {
     ...state,
     players: nextPlayers,
     longestRoadOwnerId: nextRoadAward.ownerId,
-    longestRoadLength: nextRoadAward.length,
+    longestRoadLength: nextRoadAward.value,
     largestArmyOwnerId: nextArmyAward.ownerId,
     largestArmySize: nextArmyAward.size,
     harbormasterOwnerId: nextHarborAward.ownerId,
-    harbormasterPoints: nextHarborAward.points,
+    harbormasterPoints: nextHarborAward.value,
   };
-}
-
-/**
- * Backwards-compatible wrapper around `recalculateAwardsPure`.
- */
-export function recalculateAwards(state: CatanState): CatanState {
-  const next = recalculateAwardsPure(state);
-  Object.assign(state, next);
-  return next;
 }
 
 /**

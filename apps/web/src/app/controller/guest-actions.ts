@@ -8,7 +8,7 @@ import { resolveGuestSignInPure } from "../reducers/session-init-and-signin.ts";
 import {
   renameGuestInModelPure,
   signOutGuestFromModelPure,
-} from "../reducers/session-signout-and-match.ts";
+} from "../reducers/guest-profile-reducers.ts";
 import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
 import type { GuestSession } from "../types.ts";
 import {

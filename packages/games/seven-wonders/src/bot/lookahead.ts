@@ -86,6 +86,34 @@ export function chooseBabylonSeventhCardLookahead(
     return null;
   }
 
+  const evaluateDraftStep = (
+    st: SevenWondersState,
+    act: Extract<SevenWondersAction, { type: "SELECT_DRAFT_ACTION" }>,
+    card: (typeof me.hand)[number]
+  ) => {
+    const pay = act.payment ?? { leftCoins: 0, rightCoins: 0 };
+    const stepEval =
+      act.kind === "build"
+        ? evaluateMasterCardUtility(st, pIdx, card, wheel)
+        : act.kind === "wonder"
+          ? evaluateMasterWonderStage(st, pIdx, wheel)
+          : {
+              nonCoinUtility: 0,
+              immediateCoinsGained: SEVEN_WONDERS_DISCARD_COINS,
+            };
+    const viaChain =
+      act.kind === "build" && canPlayerBuildViaChain(st.players[pIdx]!, card);
+    const spent =
+      act.kind === "build"
+        ? viaChain || act.useFreeBuild
+          ? 0
+          : card.coinCost + pay.leftCoins + pay.rightCoins
+        : act.kind === "wonder"
+          ? pay.leftCoins + pay.rightCoins
+          : 0;
+    return { pay, stepEval, spent };
+  };
+
   let bestComboAct: SevenWondersAction | null = null;
   let bestComboScore = -1e9;
 
@@ -96,27 +124,11 @@ export function chooseBabylonSeventhCardLookahead(
 
     const card1 = me.hand.find((c) => c.id === act1.cardId)!;
     const card2 = me.hand.find((c) => c.id !== act1.cardId)!;
-    const pay1 = act1.payment ?? { leftCoins: 0, rightCoins: 0 };
-
-    const step1Eval =
-      act1.kind === "build"
-        ? evaluateMasterCardUtility(state, pIdx, card1, wheel)
-        : act1.kind === "wonder"
-          ? evaluateMasterWonderStage(state, pIdx, wheel)
-          : {
-              nonCoinUtility: 0,
-              immediateCoinsGained: SEVEN_WONDERS_DISCARD_COINS,
-            };
-    const viaChain1 =
-      act1.kind === "build" && canPlayerBuildViaChain(me, card1);
-    const spent1 =
-      act1.kind === "build"
-        ? viaChain1 || act1.useFreeBuild
-          ? 0
-          : card1.coinCost + pay1.leftCoins + pay1.rightCoins
-        : act1.kind === "wonder"
-          ? pay1.leftCoins + pay1.rightCoins
-          : 0;
+    const { pay: pay1, stepEval: step1Eval, spent: spent1 } = evaluateDraftStep(
+      state,
+      act1,
+      card1
+    );
 
     let bestStep2Score = 0;
     if (unlocksSeventh) {
@@ -158,28 +170,11 @@ export function chooseBabylonSeventhCardLookahead(
       bestStep2Score = -1e9;
       for (const act2 of legal2) {
         if (act2.type !== "SELECT_DRAFT_ACTION") continue;
-        const pay2 = act2.payment ?? { leftCoins: 0, rightCoins: 0 };
-        const step2Eval =
-          act2.kind === "build"
-            ? evaluateMasterCardUtility(simState2, pIdx, card2, wheel)
-            : act2.kind === "wonder"
-              ? evaluateMasterWonderStage(simState2, pIdx, wheel)
-              : {
-                  nonCoinUtility: 0,
-                  immediateCoinsGained: SEVEN_WONDERS_DISCARD_COINS,
-                };
-        const viaChain2 =
-          act2.kind === "build" &&
-          canPlayerBuildViaChain(simPlayersStep2[pIdx]!, card2);
-        const spent2 =
-          act2.kind === "build"
-            ? viaChain2 || act2.useFreeBuild
-              ? 0
-              : card2.coinCost + pay2.leftCoins + pay2.rightCoins
-            : act2.kind === "wonder"
-              ? pay2.leftCoins + pay2.rightCoins
-              : 0;
-
+        const {
+          pay: pay2,
+          stepEval: step2Eval,
+          spent: spent2,
+        } = evaluateDraftStep(simState2, act2, card2);
         const coinUtil2 = evaluateCoinFlowUtility(
           simState2,
           pIdx,
@@ -195,24 +190,23 @@ export function chooseBabylonSeventhCardLookahead(
     }
 
     const coinUtil1 = evaluateCoinFlowUtility(
-      { ...state, phase: "AGE_DRAFT" },
+      state,
       pIdx,
       spent1,
       step1Eval.immediateCoinsGained,
       pay1
     );
-    const ownC1 = hasDuplicateCardName(me, card1.name)
-      ? { nonCoinUtility: 0, immediateCoinsGained: 0 }
-      : evaluateMasterCardUtility(state, pIdx, card1, wheel);
-    const leak1 =
-      act1.kind === "build"
-        ? 0
-        : Math.max(
-            0,
-            ownC1.nonCoinUtility +
-              ownC1.immediateCoinsGained *
-                SEVEN_WONDERS_MASTER_BOT_WEIGHTS.ownOpportunityLeakCoinWeight
-          ) * SEVEN_WONDERS_MASTER_BOT_WEIGHTS.ownOpportunityLeakScale;
+    let leak1 = 0;
+    if (act1.kind !== "build" && !hasDuplicateCardName(me, card1.name)) {
+      const ownC1 = evaluateMasterCardUtility(state, pIdx, card1, wheel);
+      leak1 =
+        Math.max(
+          0,
+          ownC1.nonCoinUtility +
+            ownC1.immediateCoinsGained *
+              SEVEN_WONDERS_MASTER_BOT_WEIGHTS.ownOpportunityLeakCoinWeight
+        ) * SEVEN_WONDERS_MASTER_BOT_WEIGHTS.ownOpportunityLeakScale;
+    }
 
     const comboTotal =
       step1Eval.nonCoinUtility + coinUtil1 - leak1 + bestStep2Score;

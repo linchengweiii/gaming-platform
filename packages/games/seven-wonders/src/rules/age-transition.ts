@@ -17,7 +17,7 @@ import {
 } from "./helpers.ts";
 import { refreshAllPlayerScores } from "./scoring.ts";
 
-export function resolveEndOfAgeOrFinish(
+function resolveEndOfAgeOrFinish(
   state: SevenWondersState,
   incomingEvents: readonly GameEvent[]
 ): { state: SevenWondersState; events: GameEvent[] } {

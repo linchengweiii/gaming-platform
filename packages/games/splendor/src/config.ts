@@ -10,10 +10,10 @@ export const GEM_COLORS = [
   "ruby",
 ] as const;
 
-export type SplendorGemColorId = (typeof GEM_COLORS)[number];
-export type SplendorTokenColorId = SplendorGemColorId | "gold";
+export type GemColor = (typeof GEM_COLORS)[number];
+export type TokenColor = GemColor | "gold";
 
-export const ALL_TOKEN_COLORS: readonly SplendorTokenColorId[] = [
+export const ALL_TOKEN_COLORS: readonly TokenColor[] = [
   ...GEM_COLORS,
   "gold",
 ];
@@ -35,10 +35,6 @@ export const SPLENDOR_MARKET_SIZE_PER_TIER = 4;
 export const SPLENDOR_TARGET_PRESTIGE_POINTS = 15;
 export const SPLENDOR_DEFAULT_MAX_TURNS = 300;
 
-export function getSplendorNobleCount(playerCount: number): number {
-  return playerCount + 1;
-}
-
 export interface SplendorMasterWeights {
   basePointWeight: number;
   sprintPointWeight: number;
@@ -50,34 +46,27 @@ export interface SplendorMasterWeights {
   sprintZeroPointPenalty: number;
   reserveBoost: number;
   distanceExponent: number;
-  singleColorBottleneckMult: number;
   draftedCountBonus: number;
   overflowPenalty: number;
   unlockOneTurnWeight: number;
   unlockTwoTurnWeight: number;
 }
 
-export const DEFAULT_SPLENDOR_MASTER_WEIGHTS: Readonly<SplendorMasterWeights> =
-  {
-    basePointWeight: 6.7,
-    sprintPointWeight: 10.2,
-    nobleImmediateWeight: 8.8,
-    nobleProgressWeight: 7.2,
-    earlyDiscountWeight: 1.45,
-    midDiscountWeight: 0.85,
-    costEfficiencyPenalty: 0.36,
-    sprintZeroPointPenalty: 0.92,
-    reserveBoost: 1.75,
-    distanceExponent: 2.05,
-    singleColorBottleneckMult: 1.32,
-    draftedCountBonus: 1.45,
-    overflowPenalty: 7.8,
-    unlockOneTurnWeight: 1.15,
-    unlockTwoTurnWeight: 0.32,
-  };
-
 export let SPLENDOR_MASTER_WEIGHTS: SplendorMasterWeights = {
-  ...DEFAULT_SPLENDOR_MASTER_WEIGHTS,
+  basePointWeight: 6.7,
+  sprintPointWeight: 10.2,
+  nobleImmediateWeight: 8.8,
+  nobleProgressWeight: 7.2,
+  earlyDiscountWeight: 1.45,
+  midDiscountWeight: 0.85,
+  costEfficiencyPenalty: 0.36,
+  sprintZeroPointPenalty: 0.92,
+  reserveBoost: 1.75,
+  distanceExponent: 2.05,
+  draftedCountBonus: 1.45,
+  overflowPenalty: 7.8,
+  unlockOneTurnWeight: 1.15,
+  unlockTwoTurnWeight: 0.32,
 };
 
 export function setMasterSplendorBotWeights(
@@ -91,8 +80,6 @@ export function setMasterSplendorBotWeights(
 
 export const SPLENDOR_BOT_TUNING = {
   easy: {
-    cardPointWeight: 3,
-    cardBaseBonus: 1,
     buyTokenThreshold: 8,
   },
   normal: {

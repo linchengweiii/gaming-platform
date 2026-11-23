@@ -35,7 +35,7 @@ import { grantsNewIslandBonusVp } from "./utils.ts";
 /**
  * Score Settlements vs Cities (including Foreign Island +2 VP, Harbormaster +2 VP, Exact Road-Break, & Early City Engine!).
  */
-export function chooseBestSettlementOrCityBuildAction(
+function chooseBestSettlementOrCityBuildAction(
   state: CatanState,
   player: CatanPlayerState,
   playerId: string,
@@ -284,8 +284,7 @@ export function chooseMainOrSpecialBuildAction(
       state,
       player,
       weights,
-      scarcity,
-      myProd
+      scarcity
     );
     if (domesticOffer) return domesticOffer;
   }

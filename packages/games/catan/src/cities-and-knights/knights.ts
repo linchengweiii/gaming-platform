@@ -27,7 +27,7 @@ export function getTotalActiveKnightStrength(state: CatanState): number {
  * Returns true iff `vertexId` borders at least one land hex (non-sea, non-fog).
  * Official Seafarers + C&K rule: Knights may only stand on land intersections.
  */
-export function isLandVertexPure(state: CatanState, vertexId: VertexId): boolean {
+function isLandVertexPure(state: CatanState, vertexId: VertexId): boolean {
   const vNode = state.topology.vertices[vertexId];
   if (!vNode) return false;
   return vNode.adjacentHexIds.some((hId) => {
@@ -117,7 +117,7 @@ export function getLegalActivateKnightVertices(
  * Pure BFS along `playerId`'s own roads (land intersections only) from `startVertexId`,
  * stopping at vertices blocked by an opponent's building or knight.
  */
-export function getReachableKnightVertices(
+function getReachableKnightVertices(
   state: CatanState,
   playerId: string,
   startVertexId: VertexId,
@@ -255,36 +255,32 @@ export function getLegalChaseRobberActions(
     });
 }
 
+function adjustKnightSupplyPure(
+  player: CatanPlayerState,
+  level: KnightLevel,
+  delta: 1 | -1
+): CatanPlayerState {
+  if (level === 1) {
+    return { ...player, basicKnightsRemaining: player.basicKnightsRemaining + delta };
+  }
+  if (level === 2) {
+    return { ...player, strongKnightsRemaining: player.strongKnightsRemaining + delta };
+  }
+  return { ...player, mightyKnightsRemaining: player.mightyKnightsRemaining + delta };
+}
+
 export function returnKnightToSupplyPure(
   player: CatanPlayerState,
   level: KnightLevel
 ): CatanPlayerState {
-  if (level === 1) {
-    return { ...player, basicKnightsRemaining: player.basicKnightsRemaining + 1 };
-  }
-  if (level === 2) {
-    return {
-      ...player,
-      strongKnightsRemaining: player.strongKnightsRemaining + 1,
-    };
-  }
-  return { ...player, mightyKnightsRemaining: player.mightyKnightsRemaining + 1 };
+  return adjustKnightSupplyPure(player, level, 1);
 }
 
 export function takeKnightFromSupplyPure(
   player: CatanPlayerState,
   level: KnightLevel
 ): CatanPlayerState {
-  if (level === 1) {
-    return { ...player, basicKnightsRemaining: player.basicKnightsRemaining - 1 };
-  }
-  if (level === 2) {
-    return {
-      ...player,
-      strongKnightsRemaining: player.strongKnightsRemaining - 1,
-    };
-  }
-  return { ...player, mightyKnightsRemaining: player.mightyKnightsRemaining - 1 };
+  return adjustKnightSupplyPure(player, level, -1);
 }
 
 /**

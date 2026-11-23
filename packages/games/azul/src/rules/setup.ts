@@ -9,6 +9,7 @@ import {
   AZUL_COLORS,
   AZUL_DEFAULT_MAX_ROUNDS,
   AZUL_TILES_PER_COLOR,
+  AZUL_TILES_PER_FACTORY,
 } from "../config.ts";
 import type {
   AzulConfig,
@@ -64,81 +65,27 @@ export function fillFactoriesPure(
   rngState: RngState;
 } {
   const factoryCount = getFactoryCount(playerCount);
-  const factoryIndices = Array.from({ length: factoryCount }, (_, idx) => idx);
-  const fourSlots = [0, 1, 2, 3] as const;
+  let curBag = [...bag];
+  let curDiscard = [...discardLid];
+  let curRng = rngState;
+  const factories: AzulTileColor[][] = [];
 
-  return factoryIndices.reduce<{
-    factories: AzulTileColor[][];
-    bag: AzulTileColor[];
-    discardLid: AzulTileColor[];
-    rngState: RngState;
-  }>(
-    (outerAcc) => {
-      const filledOne = fourSlots.reduce<{
-        tiles: AzulTileColor[];
-        bag: AzulTileColor[];
-        discardLid: AzulTileColor[];
-        rngState: RngState;
-      }>(
-        (slotAcc) => {
-          const refilled =
-            slotAcc.bag.length === 0 && slotAcc.discardLid.length > 0
-              ? (() => {
-                  const [shuffled, nextRng] = shufflePure(
-                    slotAcc.rngState,
-                    slotAcc.discardLid
-                  );
-                  return {
-                    bag: shuffled,
-                    discardLid: [] as AzulTileColor[],
-                    rngState: nextRng,
-                  };
-                })()
-              : {
-                  bag: slotAcc.bag,
-                  discardLid: slotAcc.discardLid,
-                  rngState: slotAcc.rngState,
-                };
-
-          if (refilled.bag.length === 0) {
-            return {
-              tiles: slotAcc.tiles,
-              bag: refilled.bag,
-              discardLid: refilled.discardLid,
-              rngState: refilled.rngState,
-            };
-          }
-
-          const drawn = refilled.bag[refilled.bag.length - 1]!;
-          return {
-            tiles: [...slotAcc.tiles, drawn],
-            bag: refilled.bag.slice(0, -1),
-            discardLid: refilled.discardLid,
-            rngState: refilled.rngState,
-          };
-        },
-        {
-          tiles: [],
-          bag: outerAcc.bag,
-          discardLid: outerAcc.discardLid,
-          rngState: outerAcc.rngState,
-        }
-      );
-
-      return {
-        factories: [...outerAcc.factories, filledOne.tiles],
-        bag: filledOne.bag,
-        discardLid: filledOne.discardLid,
-        rngState: filledOne.rngState,
-      };
-    },
-    {
-      factories: [],
-      bag: [...bag],
-      discardLid: [...discardLid],
-      rngState,
+  for (let f = 0; f < factoryCount; f++) {
+    const tiles: AzulTileColor[] = [];
+    for (let s = 0; s < AZUL_TILES_PER_FACTORY; s++) {
+      if (curBag.length === 0 && curDiscard.length > 0) {
+        const [shuffled, nextRng] = shufflePure(curRng, curDiscard);
+        curBag = shuffled;
+        curDiscard = [];
+        curRng = nextRng;
+      }
+      if (curBag.length === 0) break;
+      tiles.push(curBag.pop()!);
     }
-  );
+    factories.push(tiles);
+  }
+
+  return { factories, bag: curBag, discardLid: curDiscard, rngState: curRng };
 }
 
 export function initAzulGame(

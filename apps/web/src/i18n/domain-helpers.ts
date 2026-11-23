@@ -33,7 +33,6 @@ import {
   DISCIPLINE_META,
   RESOURCE_META,
   TERRAIN_META,
-  TRADE_GOOD_META,
 } from "../config/catan-palette-config.ts";
 import { GAME_REFERENCE_GUIDES } from "../config/guides-config.ts";
 import { TUTORIAL_LESSONS } from "../config/tutorials-config.ts";
@@ -168,7 +167,7 @@ export const getCatanTradeGoodLabelLocalized = (
     ? isCommodityType(good)
       ? ZH_TW_CATAN_COMMODITIES[good].label
       : ZH_TW_CATAN_RESOURCES[good].label
-    : TRADE_GOOD_META[good].label;
+    : (isCommodityType(good) ? COMMODITY_META[good] : RESOURCE_META[good]).label;
 
 export const getCatanDevCardTextLocalized = (
   devType: DevCardType,
@@ -188,12 +187,10 @@ export function getCatanDisciplineTextLocalized(
 ): {
   readonly label: string;
   readonly shortCode: string;
-  readonly perkTitle: string;
-  readonly perkRule: string;
 } {
   if (locale === "zh-TW") return ZH_TW_CATAN_DISCIPLINES[discipline];
-  const { label, shortCode, perkTitle, perkRule } = DISCIPLINE_META[discipline];
-  return { label, shortCode, perkTitle, perkRule };
+  const { label, shortCode } = DISCIPLINE_META[discipline];
+  return { label, shortCode };
 }
 
 export const getCatanProgressCardTextLocalized = (

@@ -2,15 +2,11 @@ import type { ResourceType } from "@gaming-platform/catan";
 import { COPY_LINK_RESET_DELAY_MS } from "../../config/app-config.ts";
 import {
   type SupportedLocale,
-  getLocaleMeta,
   normalizeLocale,
   t,
 } from "../../i18n/index.ts";
 import { buildRoomShareUrlPure } from "../helpers/room-hash-and-links.ts";
-import {
-  removeRoomFromModelPure,
-  setRoomInModelPure,
-} from "../helpers/room-queries.ts";
+import { setRoomInModelPure } from "../helpers/room-queries.ts";
 import type {
   AppModel,
   ClientRoom,
@@ -406,46 +402,6 @@ export function createAppRuntimeContext(
     has(roomId: string) {
       return Object.prototype.hasOwnProperty.call(ctx.model.rooms, roomId);
     },
-    set(roomId: string, room: ClientRoom) {
-      ctx.model = setRoomInModelPure(ctx.model, { ...room, roomId });
-      return roomsFacade;
-    },
-    delete(roomId: string) {
-      const existed = Object.prototype.hasOwnProperty.call(
-        ctx.model.rooms,
-        roomId
-      );
-      if (existed) {
-        ctx.model = removeRoomFromModelPure(ctx.model, roomId);
-        roomLensCache.delete(roomId);
-      }
-      return existed;
-    },
-    keys() {
-      return [...ctx.model.roomOrder][Symbol.iterator]();
-    },
-    values() {
-      return ctx.model.roomOrder
-        .filter((id) => Object.prototype.hasOwnProperty.call(ctx.model.rooms, id))
-        .map((id) => getOrCreateRoomLens(id))[Symbol.iterator]();
-    },
-    entries() {
-      return ctx.model.roomOrder
-        .filter((id) => Object.prototype.hasOwnProperty.call(ctx.model.rooms, id))
-        .map(
-          (id) => [id, getOrCreateRoomLens(id)] as [string, ClientRoom]
-        )[Symbol.iterator]();
-    },
-    forEach(cb: (room: ClientRoom, roomId: string) => void) {
-      ctx.model.roomOrder.forEach((id) => {
-        if (Object.prototype.hasOwnProperty.call(ctx.model.rooms, id)) {
-          cb(getOrCreateRoomLens(id), id);
-        }
-      });
-    },
-    [Symbol.iterator]() {
-      return roomsFacade.entries();
-    },
   };
 
   const setLocale = (rawLocale: SupportedLocale): void => {
@@ -459,12 +415,6 @@ export function createAppRuntimeContext(
         : "",
     };
     saveLocaleToStorage(resolved);
-    if (typeof document !== "undefined") {
-      if (document.documentElement) {
-        document.documentElement.lang = getLocaleMeta(resolved).htmlLang;
-      }
-      document.title = t(resolved, "app.pageTitle");
-    }
     ctx.render();
   };
 

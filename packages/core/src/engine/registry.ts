@@ -77,12 +77,12 @@ export interface GameRegistry {
   list(): GameMetadata[];
 }
 
-export interface GameRegistryConstructor {
+interface GameRegistryConstructor {
   new (initial?: GameRegistryState): GameRegistry;
   (initial?: GameRegistryState): GameRegistry;
 }
 
-export function createGameRegistry(
+function createGameRegistry(
   initial: GameRegistryState = createEmptyRegistryState()
 ): GameRegistry {
   let state = initial;

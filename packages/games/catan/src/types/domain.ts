@@ -85,8 +85,7 @@ export interface ProgressCardInstance {
 export interface ActiveTurnDiscounts {
   crane: boolean;
   medicine: boolean;
-  merchantFleetGood: TradeGoodType | null;
-  merchantFleetGoods?: readonly TradeGoodType[];
+  merchantFleetGoods: readonly TradeGoodType[];
 }
 
 export type TerrainType =
@@ -176,7 +175,6 @@ export interface Harbor {
   type: HarborType;
   edgeId: EdgeId;
   vertexIds: [VertexId, VertexId];
-  seaHexId?: HexId;
 }
 
 export interface VertexBuilding {

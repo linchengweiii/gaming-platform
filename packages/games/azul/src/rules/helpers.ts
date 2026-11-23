@@ -1,21 +1,17 @@
 import type { GameEvent } from "@gaming-platform/core";
 import {
   AZUL_FACTORY_COUNTS_BY_PLAYER,
-  AZUL_FLOOR_CAPACITY,
   AZUL_WALL_PATTERN,
 } from "../config.ts";
 import type {
   AzulPlayerState,
   AzulState,
-  AzulTargetLine,
   AzulTileColor,
-  FloorToken,
   PatternLineState,
 } from "../types.ts";
 
 export const ROW_INDICES = [0, 1, 2, 3, 4] as const;
 export const COL_INDICES = [0, 1, 2, 3, 4] as const;
-export const TARGET_LINES: readonly AzulTargetLine[] = [0, 1, 2, 3, 4, "floor"];
 
 export function getFactoryCount(playerCount: number): number {
   return AZUL_FACTORY_COUNTS_BY_PLAYER[playerCount] ?? 9;
@@ -70,27 +66,6 @@ export function setPatternLineAt(
   return lines.map((l, idx) =>
     idx === row ? updated : l
   ) as AzulPlayerState["patternLines"];
-}
-
-export function appendFloorOverflow(
-  floorLine: readonly FloorToken[],
-  discardLid: readonly AzulTileColor[],
-  color: AzulTileColor,
-  count: number
-): { floorLine: FloorToken[]; discardLid: AzulTileColor[] } {
-  const freeFloorSlots = Math.max(0, AZUL_FLOOR_CAPACITY - floorLine.length);
-  const toFloor = Math.min(freeFloorSlots, count);
-  const toDiscard = Math.max(0, count - toFloor);
-  return {
-    floorLine: [
-      ...floorLine,
-      ...Array.from({ length: toFloor }, () => color),
-    ],
-    discardLid: [
-      ...discardLid,
-      ...Array.from({ length: toDiscard }, () => color),
-    ],
-  };
 }
 
 export function appendAzulEvent(

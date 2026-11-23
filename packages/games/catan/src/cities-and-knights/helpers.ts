@@ -79,7 +79,6 @@ export function emptyTurnDiscounts(): ActiveTurnDiscounts {
   return {
     crane: false,
     medicine: false,
-    merchantFleetGood: null,
     merchantFleetGoods: [],
   };
 }

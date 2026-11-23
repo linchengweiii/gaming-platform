@@ -4,12 +4,12 @@
  * ========================================================================== */
 
 :root {
+  color-scheme: dark;
   --p-bg: #18191b;
   --p-surface: #222427;
   --p-ink: #eff0f1;
   --p-muted: #9c9ea3;
   --p-accent: #ff4a1f;
-  --p-accent-ink: #18191b;
   --p-action: #ff4a1f;
   --p-action-ink: #18191b;
 
@@ -18,8 +18,6 @@
   --ink: var(--p-ink);
   --muted: var(--p-muted);
   --accent: var(--p-accent);
-  --accent-ink: var(--p-accent-ink);
-  --card: var(--p-surface);
   --action: var(--p-action);
   --action-ink: var(--p-action-ink);
   --line: color-mix(in oklab, var(--ink) 11%, transparent);
@@ -91,7 +89,7 @@
 
 /* ---------------------------------------------------------------- Base Reset */
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; scroll-padding-top: 0; scroll-behavior: auto; margin: 0; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-top: 0; scroll-behavior: auto; margin: 0; scrollbar-gutter: stable; }
 body {
   margin: 0;
   background: var(--bg);
@@ -198,4 +196,228 @@ p { text-wrap: pretty; }
   .btn:hover,
   .btn:active,
   :is(a, button):is(:hover, :focus-visible) > .m-arrow .m-arrow__head { transform: none; }
+}
+
+/* ---------------------------------------------------------------- Page Shell & Navigation */
+#app {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.ga-nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  min-height: var(--nav);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+}
+
+.ga-nav__inner {
+  width: min(100% - 2 * var(--gut), var(--container));
+  margin-inline: auto;
+  padding-block: var(--s-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.ga-nav--room .ga-nav__inner {
+  width: min(100% - 32px, 1780px);
+  min-height: 52px;
+}
+
+.ga-nav__left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.ga-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+.ga-brand__mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+.ga-brand__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.ga-brand__sub {
+  font-family: var(--font-text);
+  font-size: var(--t-label);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+/* Navigation page tabs */
+.ga-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 3px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.ga-tab {
+  height: 34px;
+  padding: 0 var(--s-3);
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: 500 var(--t-small)/1 var(--font-text);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.ga-tab:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.ga-tab.is-active {
+  background: var(--bg);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.ga-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ga-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* Active toggle state for secondary buttons (build modes, auto-sim) */
+.btn.is-selected {
+  border-color: var(--action);
+  background: color-mix(in oklab, var(--action) 16%, var(--bg));
+  color: var(--ink);
+}
+
+.btn:disabled {
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- Status Chips & Numerals */
+.ga-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font: 500 var(--t-label)/1 var(--font-text);
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.ga-chip--accent {
+  color: var(--ink);
+  border-color: color-mix(in oklab, var(--action) 55%, var(--line));
+  background: color-mix(in oklab, var(--action) 14%, var(--surface));
+}
+
+.ga-chip--ok {
+  color: #a7f3d0;
+  border-color: rgba(52, 211, 153, 0.36);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.ga-chip--warn {
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.38);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.ga-chip--danger {
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.42);
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.ga-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- Form Controls */
+.ga-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ga-field label,
+.ga-inline-label {
+  font-size: var(--t-label);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.ga-input {
+  height: 44px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-btn);
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 var(--t-body)/1.2 var(--font-text);
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+
+.ga-input:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--ink) 36%, transparent);
+  background-color: color-mix(in oklab, var(--ink) 3%, var(--bg));
+}
+
+.ga-input:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 2px;
+  border-color: var(--action);
+}
+
+.ga-input:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }

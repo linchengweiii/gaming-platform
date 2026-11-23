@@ -1,7 +1,7 @@
 import type { InvariantCheckResult } from "@gaming-platform/core";
 import {
-  CK_THRESHOLDS,
   PROGRESS_CARD_CATALOG,
+  PROGRESS_DECK_SIZE_PER_DISCIPLINE,
 } from "../config/cities-knights-config.ts";
 import {
   BANK_LIMITS,
@@ -275,10 +275,9 @@ export function checkCatanInvariants(state: CatanState): InvariantCheckResult {
                   ).length,
                 0
               );
-              return inDeck + inHands !==
-                CK_THRESHOLDS.progressDeckSizePerDiscipline
+              return inDeck + inHands !== PROGRESS_DECK_SIZE_PER_DISCIPLINE
                 ? [
-                    `Progress deck ${d} conservation violated: deck(${inDeck}) + hands/public(${inHands}) !== ${CK_THRESHOLDS.progressDeckSizePerDiscipline}`,
+                    `Progress deck ${d} conservation violated: deck(${inDeck}) + hands/public(${inHands}) !== ${PROGRESS_DECK_SIZE_PER_DISCIPLINE}`,
                   ]
                 : [];
             })

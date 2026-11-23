@@ -17,8 +17,6 @@ export interface ProgressCardPlayParams {
   vertexId?: VertexId;
   /** Smith: up to 2 knight vertices to promote */
   vertexIds?: VertexId[];
-  /** Deserter: optional own vertex to place a deserted knight */
-  placeVertexId?: VertexId;
   /** Bishop or Merchant: target hex */
   hexId?: HexId;
   /** Inventor: two land hexes (excluding 2, 6, 8, 12) whose number tokens swap */

@@ -206,25 +206,6 @@ export function handleCatanVertexSpotClick(
           }
         }
       }
-      if (
-        card?.type === "deserter" &&
-        ctx.model.deserterTargetPlayerId &&
-        !bld &&
-        !state.knights[vertexId] &&
-        state.topology.vertices[vertexId]?.incidentEdgeIds.some(
-          (eId) => state.edges[eId]?.ownerId === actingPlayerId
-        )
-      ) {
-        ctx.dispatchUiAction(actingPlayerId, {
-          type: "PLAY_PROGRESS_CARD",
-          cardId: card.id,
-          params: {
-            targetPlayerId: ctx.model.deserterTargetPlayerId,
-            placeVertexId: vertexId,
-          },
-        });
-        return;
-      }
     }
   }
 

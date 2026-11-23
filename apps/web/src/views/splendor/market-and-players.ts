@@ -13,11 +13,8 @@ import {
   getSplendorNobleNameLocalized,
   t,
 } from "../../i18n/index.ts";
-import {
-  GEM_STYLES,
-  escapeSplendorHtml as escapeHtml,
-  renderSplendorGemToken,
-} from "./gems-and-cards.ts";
+import { escapeHtml } from "../../app/helpers/html-and-dropdown.ts";
+import { GEM_STYLES, renderSplendorGemToken } from "./gems-and-cards.ts";
 
 export function renderSplendorNoblesRowHtml(
   state: SplendorState,

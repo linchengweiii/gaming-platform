@@ -1,6 +1,10 @@
-import { SEVEN_WONDERS_COINS_PER_TREASURY_VP } from "../config/game-config.ts";
+import {
+  SEVEN_WONDERS_COINS_PER_TREASURY_VP,
+  SEVEN_WONDERS_SCIENCE_SET_BONUS_VP,
+} from "../config/game-config.ts";
 import { getWonderBoardDefinition } from "../config/wonders-config.ts";
 import type {
+  CardColor,
   ScienceMap,
   SevenWondersCard,
   SevenWondersPlayerState,
@@ -11,9 +15,64 @@ import {
   getRightNeighborIndex,
   hasWonderStageEffect,
 } from "./helpers.ts";
-import { computeOptimalScienceScorePure } from "./science.ts";
 
-export function evaluateCardVpForOwner(
+export function computeOptimalScienceScorePure(
+  baseCounts: ScienceMap,
+  wildcards: number
+): { readonly points: number; readonly finalCounts: ScienceMap } {
+  let bestPoints = -1;
+  let bestCounts: ScienceMap = { ...baseCounts };
+
+  for (let wc = 0; wc <= wildcards; wc++) {
+    for (let wg = 0; wg <= wildcards - wc; wg++) {
+      const wt = wildcards - wc - wg;
+      const c = baseCounts.compass + wc;
+      const g = baseCounts.gear + wg;
+      const t = baseCounts.tablet + wt;
+      const sets = Math.min(c, g, t);
+      const pts = c * c + g * g + t * t + sets * SEVEN_WONDERS_SCIENCE_SET_BONUS_VP;
+      if (pts > bestPoints) {
+        bestPoints = pts;
+        bestCounts = { compass: c, gear: g, tablet: t };
+      }
+    }
+  }
+
+  return { points: Math.max(0, bestPoints), finalCounts: bestCounts };
+}
+
+function countMatchingCards(
+  owner: SevenWondersPlayerState,
+  left: SevenWondersPlayerState,
+  right: SevenWondersPlayerState,
+  targetColors: readonly CardColor[],
+  includeSelf: boolean,
+  includeNeighbors: boolean
+): number {
+  const colorSet = new Set(targetColors);
+  let count = 0;
+  if (includeSelf) count += owner.tableau.filter((c) => colorSet.has(c.color)).length;
+  if (includeNeighbors) {
+    count += left.tableau.filter((c) => colorSet.has(c.color)).length;
+    count += right.tableau.filter((c) => colorSet.has(c.color)).length;
+  }
+  return count;
+}
+
+function countMatchingWonderStages(
+  owner: SevenWondersPlayerState,
+  left: SevenWondersPlayerState,
+  right: SevenWondersPlayerState,
+  includeSelf: boolean,
+  includeNeighbors: boolean
+): number {
+  return (
+    (includeSelf ? owner.builtWonderStages : 0) +
+    (includeNeighbors ? left.builtWonderStages + right.builtWonderStages : 0)
+  );
+}
+
+function evaluateCardVpForOwner(
   players: readonly SevenWondersPlayerState[],
   ownerIndex: number,
   card: SevenWondersCard
@@ -27,30 +86,31 @@ export function evaluateCardVpForOwner(
     if (ef.kind === "vp") {
       vp += ef.points;
     } else if (ef.kind === "per_card_reward" && ef.vpPerMatch > 0) {
-      const colorSet = new Set(ef.targetColors);
-      let count = 0;
-      if (ef.includeSelf) {
-        count += owner.tableau.filter((c) => colorSet.has(c.color)).length;
-      }
-      if (ef.includeNeighbors) {
-        count += left.tableau.filter((c) => colorSet.has(c.color)).length;
-        count += right.tableau.filter((c) => colorSet.has(c.color)).length;
-      }
-      vp += count * ef.vpPerMatch;
+      vp +=
+        countMatchingCards(
+          owner,
+          left,
+          right,
+          ef.targetColors,
+          ef.includeSelf,
+          ef.includeNeighbors
+        ) * ef.vpPerMatch;
     } else if (ef.kind === "per_wonder_stage_reward" && ef.vpPerStage > 0) {
-      let stages = 0;
-      if (ef.includeSelf) stages += owner.builtWonderStages;
-      if (ef.includeNeighbors) {
-        stages += left.builtWonderStages + right.builtWonderStages;
-      }
-      vp += stages * ef.vpPerStage;
+      vp +=
+        countMatchingWonderStages(
+          owner,
+          left,
+          right,
+          ef.includeSelf,
+          ef.includeNeighbors
+        ) * ef.vpPerStage;
     } else if (ef.kind === "per_defeat_token_vp") {
-      let defeats = 0;
       if (ef.includeNeighbors) {
-        defeats += left.militaryTokens.filter((t) => t.points < 0).length;
-        defeats += right.militaryTokens.filter((t) => t.points < 0).length;
+        const defeats =
+          left.militaryTokens.filter((t) => t.points < 0).length +
+          right.militaryTokens.filter((t) => t.points < 0).length;
+        vp += defeats * ef.vpPerToken;
       }
-      vp += defeats * ef.vpPerToken;
     } else if (ef.kind === "complete_wonder_vp") {
       const board = getWonderBoardDefinition(owner.wonderId, owner.wonderSide);
       if (owner.builtWonderStages >= board.stages.length) {
@@ -76,23 +136,24 @@ export function evaluateImmediateCardCoins(
     if (ef.kind === "coins") {
       coins += ef.coins;
     } else if (ef.kind === "per_card_reward" && ef.coinsPerMatch > 0) {
-      const colorSet = new Set(ef.targetColors);
-      let count = 0;
-      if (ef.includeSelf) {
-        count += owner.tableau.filter((c) => colorSet.has(c.color)).length;
-      }
-      if (ef.includeNeighbors) {
-        count += left.tableau.filter((c) => colorSet.has(c.color)).length;
-        count += right.tableau.filter((c) => colorSet.has(c.color)).length;
-      }
-      coins += count * ef.coinsPerMatch;
+      coins +=
+        countMatchingCards(
+          owner,
+          left,
+          right,
+          ef.targetColors,
+          ef.includeSelf,
+          ef.includeNeighbors
+        ) * ef.coinsPerMatch;
     } else if (ef.kind === "per_wonder_stage_reward" && ef.coinsPerStage > 0) {
-      let stages = 0;
-      if (ef.includeSelf) stages += owner.builtWonderStages;
-      if (ef.includeNeighbors) {
-        stages += left.builtWonderStages + right.builtWonderStages;
-      }
-      coins += stages * ef.coinsPerStage;
+      coins +=
+        countMatchingWonderStages(
+          owner,
+          left,
+          right,
+          ef.includeSelf,
+          ef.includeNeighbors
+        ) * ef.coinsPerStage;
     }
   }
   return coins;

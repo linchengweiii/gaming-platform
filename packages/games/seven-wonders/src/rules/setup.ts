@@ -5,11 +5,14 @@ import {
   nextIntPure,
   shufflePure,
 } from "@gaming-platform/core";
-import { buildAgeDeckPure } from "../cards/deck-builder.ts";
+import { SEVEN_WONDERS_AGE_I_CARDS } from "../cards/age1.ts";
+import { SEVEN_WONDERS_AGE_II_CARDS } from "../cards/age2.ts";
+import { SEVEN_WONDERS_AGE_III_BASE_CARDS } from "../cards/age3.ts";
+import { SEVEN_WONDERS_GUILD_CARDS } from "../cards/guilds.ts";
 import {
   DEFAULT_SEVEN_WONDERS_COLORS,
-  SEVEN_WONDERS_COINS_PER_TREASURY_VP,
   SEVEN_WONDERS_DEFAULT_SEED,
+  SEVEN_WONDERS_EXTRA_GUILDS_OVER_PLAYER_COUNT,
   SEVEN_WONDERS_MAX_PLAYERS,
   SEVEN_WONDERS_MIN_PLAYERS,
   SEVEN_WONDERS_PASS_DIRECTION_BY_AGE,
@@ -20,6 +23,8 @@ import {
   getWonderBoardDefinition,
 } from "../config/wonders-config.ts";
 import type {
+  SevenWondersAge,
+  SevenWondersCard,
   SevenWondersConfig,
   SevenWondersPlayerState,
   SevenWondersScoreBreakdown,
@@ -29,6 +34,53 @@ import type {
 } from "../types.ts";
 import { dealHandsToPlayers } from "./helpers.ts";
 import { refreshAllPlayerScores } from "./scoring.ts";
+
+const EMPTY_SCORE_BREAKDOWN: SevenWondersScoreBreakdown = {
+  militaryVp: 0,
+  treasuryVp: 0,
+  wonderVp: 0,
+  civilianVp: 0,
+  scientificVp: 0,
+  commercialVp: 0,
+  guildVp: 0,
+  totalVp: 0,
+  coinsTiebreaker: 0,
+  scienceCounts: { compass: 0, gear: 0, tablet: 0 },
+  copiedGuildName: null,
+};
+
+function buildAgeDeckPure(
+  rngState: number,
+  age: SevenWondersAge,
+  playerCount: number
+): { readonly deck: SevenWondersCard[]; readonly rngState: number } {
+  if (age === 1 || age === 2) {
+    const source =
+      age === 1 ? SEVEN_WONDERS_AGE_I_CARDS : SEVEN_WONDERS_AGE_II_CARDS;
+    const [deck, nextRng] = shufflePure(
+      rngState,
+      source.filter((c) => c.minPlayers <= playerCount)
+    );
+    return { deck, rngState: nextRng };
+  }
+
+  const base = SEVEN_WONDERS_AGE_III_BASE_CARDS.filter(
+    (c) => c.minPlayers <= playerCount
+  );
+  const [shuffledGuilds, rngAfterGuilds] = shufflePure(
+    rngState,
+    SEVEN_WONDERS_GUILD_CARDS
+  );
+  const selectedGuilds = shuffledGuilds.slice(
+    0,
+    playerCount + SEVEN_WONDERS_EXTRA_GUILDS_OVER_PLAYER_COUNT
+  );
+  const [deck, rngAfterAge3] = shufflePure(rngAfterGuilds, [
+    ...base,
+    ...selectedGuilds,
+  ]);
+  return { deck, rngState: rngAfterAge3 };
+}
 
 export function initSevenWondersGame(
   players: readonly PlayerDescriptor[],
@@ -70,10 +122,6 @@ export function initSevenWondersGame(
   const [shuffledWonders, rngAfterWonders] = shufflePure(rng, ALL_WONDER_IDS);
   rng = rngAfterWonders;
 
-  const initialTreasuryVp = Math.floor(
-    SEVEN_WONDERS_STARTING_COINS / SEVEN_WONDERS_COINS_PER_TREASURY_VP
-  );
-
   const initialPlayersDraft: SevenWondersPlayerState[] = [];
   for (let idx = 0; idx < players.length; idx++) {
     const desc = players[idx]!;
@@ -88,19 +136,6 @@ export function initSevenWondersGame(
     }
 
     const board = getWonderBoardDefinition(wonderId, wonderSide);
-    const emptyBreakdown: SevenWondersScoreBreakdown = {
-      militaryVp: 0,
-      treasuryVp: initialTreasuryVp,
-      wonderVp: 0,
-      civilianVp: 0,
-      scientificVp: 0,
-      commercialVp: 0,
-      guildVp: 0,
-      totalVp: initialTreasuryVp,
-      coinsTiebreaker: SEVEN_WONDERS_STARTING_COINS,
-      scienceCounts: { compass: 0, gear: 0, tablet: 0 },
-      copiedGuildName: null,
-    };
 
     initialPlayersDraft.push({
       id: desc.id,
@@ -120,7 +155,7 @@ export function initSevenWondersGame(
       hand: [],
       militaryTokens: [],
       usedFreeBuildInAge: { 1: false, 2: false, 3: false },
-      scoreBreakdown: emptyBreakdown,
+      scoreBreakdown: EMPTY_SCORE_BREAKDOWN,
     });
   }
 

@@ -1,4 +1,4 @@
-import { CatanEngine, type CatanState } from "@gaming-platform/catan";
+import type { CatanState } from "@gaming-platform/catan";
 import type { SplendorState } from "@gaming-platform/splendor";
 import type { AzulState } from "@gaming-platform/azul";
 import {
@@ -39,11 +39,10 @@ import {
 import { renderCatanSpotPopoverPure } from "../catan-spot-popover-view.ts";
 import { renderActiveTradeOfferCardPure } from "../catan-trade-and-popup-view.ts";
 import {
-  extractBotMoveFeedPure,
   renderBotBannerControlsPure,
   renderBotMoveFeedBarPure,
 } from "./bot-move-feed.ts";
-import { renderFullscreenBannerControlsPure } from "./fullscreen-controls.ts";
+import { renderFullscreenBannerControlsPure } from "./overlays-and-modals.ts";
 import type { InGameComputedContext } from "./view-state.ts";
 
 export function renderInGameBoardStagePure(
@@ -96,7 +95,7 @@ export function renderInGameBoardStagePure(
         : ""
     : "";
 
-  const botMoveFeed = extractBotMoveFeedPure(room.gameId, state);
+  const { botMoveFeed } = ctx;
   const canAdjustRoomPace = !usesServer || isOwner || Boolean(mySeatedPlayer);
   const botBannerControlsHtml = renderBotBannerControlsPure(
     model,
@@ -468,7 +467,7 @@ ${botMoveFeedBarHtml}
                         state as CatanState,
                         handPlayer,
                         isMyTurn && actingPlayerId === handPlayer.id
-                          ? CatanEngine.getLegalActions(state, handPlayer.id)
+                          ? catanLegalActions
                           : [],
                         locale
                       )
@@ -476,9 +475,7 @@ ${botMoveFeedBarHtml}
                     ? renderCatanVisualHandTray(
                         state as CatanState,
                         actingPlayer,
-                        isMyTurn
-                          ? CatanEngine.getLegalActions(state, actingPlayer.id)
-                          : [],
+                        isMyTurn ? catanLegalActions : [],
                         locale
                       )
                     : `

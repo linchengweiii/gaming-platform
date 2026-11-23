@@ -3,9 +3,9 @@ import type { DropdownSpec } from "../types.ts";
 
 export const DRAWN_ARROW_SVG = `<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg>`;
 
-export const DROPDOWN_CHEV_SVG = `<svg class="ga-dropdown__chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const DROPDOWN_CHEV_SVG = `<svg class="ga-dropdown__chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
-export const DROPDOWN_CHECK_SVG = `<svg class="ga-dropdown__check" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.6 7.3L5.6 10.3L11.4 3.9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const DROPDOWN_CHECK_SVG = `<svg class="ga-dropdown__check" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.6 7.3L5.6 10.3L11.4 3.9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 export const BRAND_MARK_SVG = `
   <svg class="ga-brand__mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -109,7 +109,6 @@ export function formatPhaseLabel(
   if (translated !== key) {
     return translated;
   }
-  if (phase === "CK_INTERACTION") return t(locale, "phase.CK_INTERACTION");
   const clean = phase.replace(/_/g, " ").toLowerCase();
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }

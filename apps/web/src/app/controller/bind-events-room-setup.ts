@@ -26,8 +26,7 @@ export function bindRoomSetupEvents(
   ctx: AppRuntimeContext,
   room: ClientRoom,
   canEditSetup: boolean,
-  maxBots: number,
-  _bounds: { minPlayers: number; maxPlayers: number }
+  maxBots: number
 ): void {
   const { root } = ctx;
   bindCommonIdentityEvents(ctx);

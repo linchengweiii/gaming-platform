@@ -3,7 +3,7 @@
  */
 
 export const AZUL_COLORS = ["blue", "yellow", "red", "black", "teal"] as const;
-export type AzulColorId = (typeof AZUL_COLORS)[number];
+export type AzulTileColor = (typeof AZUL_COLORS)[number];
 
 export const AZUL_TILES_PER_COLOR = 20;
 export const AZUL_TILES_PER_FACTORY = 4;
@@ -23,7 +23,7 @@ export const FLOOR_PENALTIES = [-1, -1, -2, -2, -2, -3, -3] as const;
  * Standard 5x5 Portuguese Azulejo Wall color pattern.
  * Each row shifts the color cycle right by 1 so no row or column repeats a color.
  */
-export const AZUL_WALL_PATTERN: readonly (readonly AzulColorId[])[] = [
+export const AZUL_WALL_PATTERN: readonly (readonly AzulTileColor[])[] = [
   ["blue", "yellow", "red", "black", "teal"],
   ["teal", "blue", "yellow", "red", "black"],
   ["black", "teal", "blue", "yellow", "red"],
@@ -40,7 +40,6 @@ export const AZUL_BONUS_POINTS = {
 export interface AzulMasterWeights {
   placedTileWeight: number;
   floorPenaltyWeight: number;
-  firstMarkerCleanBonus: number;
   completeLineBaseBonus: number;
   marginalWallGainWeight: number;
   reachableFutureWallWeight: number;
@@ -53,13 +52,11 @@ export interface AzulMasterWeights {
   rowEndgameWinBonus: number;
   rowEndgameBehindPenalty: number;
   centerColSynergyBonus: number;
-  opponentDenialBonus: number;
 }
 
-export const DEFAULT_AZUL_MASTER_WEIGHTS: Readonly<AzulMasterWeights> = {
+export let AZUL_MASTER_WEIGHTS: AzulMasterWeights = {
   placedTileWeight: 2.65,
   floorPenaltyWeight: 2.5,
-  firstMarkerCleanBonus: 1.5,
   completeLineBaseBonus: 7.3,
   marginalWallGainWeight: 2.48,
   reachableFutureWallWeight: 1.32,
@@ -72,11 +69,6 @@ export const DEFAULT_AZUL_MASTER_WEIGHTS: Readonly<AzulMasterWeights> = {
   rowEndgameWinBonus: 28.0,
   rowEndgameBehindPenalty: 46.0,
   centerColSynergyBonus: 1.05,
-  opponentDenialBonus: 1.96,
-};
-
-export let AZUL_MASTER_WEIGHTS: AzulMasterWeights = {
-  ...DEFAULT_AZUL_MASTER_WEIGHTS,
 };
 
 export function setMasterAzulBotWeights(

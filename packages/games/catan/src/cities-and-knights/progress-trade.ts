@@ -1,4 +1,6 @@
 import { TERRAIN_TO_RESOURCE } from "../config/costs-and-limits.ts";
+import { computePlayerVictoryPoints } from "../rules/awards-and-vp.ts";
+import { getPlayerResourceCount } from "../rules/helpers.ts";
 import type { ProgressCardPlayParams } from "../types/actions.ts";
 import {
   type ProgressCardInstance,
@@ -12,20 +14,19 @@ import type {
 } from "../types/state.ts";
 import {
   type StateEventsPair,
+  getPlayerGoodCount,
   isCommodityType,
   isResourceType,
   pushCkEvent,
-  totalCommodityCount,
   transferGoodBetweenPlayersPure,
 } from "./helpers.ts";
-import { getCommercialHarborEligibleTargetsPure } from "./interactions.ts";
+import { getCommercialHarborEligibleTargetsPure } from "./interactions-legal.ts";
 
 export function applyTradeProgressCardPure(
   stateAfterConsume: CatanState,
   playerId: string,
   card: ProgressCardInstance,
-  params: ProgressCardPlayParams | undefined,
-  computeVpFn: (s: CatanState, pid: string, visibleOnly?: boolean) => number
+  params: ProgressCardPlayParams | undefined
 ): StateEventsPair {
   const actor = stateAfterConsume.players.find((p) => p.id === playerId)!;
 
@@ -61,65 +62,32 @@ export function applyTradeProgressCardPure(
       );
     }
 
-    case "resource_monopoly": {
-      const res = params?.resource;
-      if (!res || !isResourceType(res)) {
-        throw new Error("Invalid Resource Monopoly resource");
-      }
-      const taken = stateAfterConsume.players.reduce<{
-        players: CatanPlayerState[];
-        total: number;
-      }>(
-        (acc, opp) => {
-          if (opp.id === playerId) return acc;
-          const amt = Math.min(2, opp.resources[res]);
-          if (amt <= 0) return acc;
-          return {
-            players: transferGoodBetweenPlayersPure(
-              acc.players,
-              opp.id,
-              playerId,
-              res,
-              amt
-            ),
-            total: acc.total + amt,
-          };
-        },
-        { players: stateAfterConsume.players, total: 0 }
-      );
-      const nextState: CatanState = {
-        ...stateAfterConsume,
-        players: taken.players,
-      };
-      return pushCkEvent(
-        nextState,
-        [],
-        "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Resource Monopoly on ${res} and collected ${taken.total} card(s).`,
-        playerId,
-        { cardType: card.type, resource: res, total: taken.total }
-      );
-    }
-
+    case "resource_monopoly":
     case "trade_monopoly": {
-      const comm = params?.commodity;
-      if (!comm || !isCommodityType(comm)) {
-        throw new Error("Invalid Trade Monopoly commodity");
+      const isResource = card.type === "resource_monopoly";
+      const good = isResource ? params?.resource : params?.commodity;
+      if (!good || !(isResource ? isResourceType(good) : isCommodityType(good))) {
+        throw new Error(
+          isResource
+            ? "Invalid Resource Monopoly resource"
+            : "Invalid Trade Monopoly commodity"
+        );
       }
+      const cap = isResource ? 2 : 1;
       const taken = stateAfterConsume.players.reduce<{
         players: CatanPlayerState[];
         total: number;
       }>(
         (acc, opp) => {
           if (opp.id === playerId) return acc;
-          const amt = Math.min(1, opp.commodities[comm]);
+          const amt = Math.min(cap, getPlayerGoodCount(opp, good));
           if (amt <= 0) return acc;
           return {
             players: transferGoodBetweenPlayersPure(
               acc.players,
               opp.id,
               playerId,
-              comm,
+              good,
               amt
             ),
             total: acc.total + amt,
@@ -127,17 +95,15 @@ export function applyTradeProgressCardPure(
         },
         { players: stateAfterConsume.players, total: 0 }
       );
-      const nextState: CatanState = {
-        ...stateAfterConsume,
-        players: taken.players,
-      };
       return pushCkEvent(
-        nextState,
+        { ...stateAfterConsume, players: taken.players },
         [],
         "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Trade Monopoly on ${comm} and collected ${taken.total} card(s).`,
+        `${actor.name} played ${isResource ? "Resource" : "Trade"} Monopoly on ${good} and collected ${taken.total} card(s).`,
         playerId,
-        { cardType: card.type, commodity: comm, total: taken.total }
+        isResource
+          ? { cardType: card.type, resource: good, total: taken.total }
+          : { cardType: card.type, commodity: good, total: taken.total }
       );
     }
 
@@ -150,18 +116,13 @@ export function applyTradeProgressCardPure(
         ...stateAfterConsume,
         players: stateAfterConsume.players.map((p) => {
           if (p.id !== playerId) return p;
-          const prevGoods = [
-            ...(p.activeTurnDiscounts.merchantFleetGoods ?? []),
-            ...(p.activeTurnDiscounts.merchantFleetGood
-              ? [p.activeTurnDiscounts.merchantFleetGood]
-              : []),
-          ];
-          const nextGoods = Array.from(new Set([...prevGoods, good]));
+          const nextGoods = Array.from(
+            new Set([...(p.activeTurnDiscounts.merchantFleetGoods ?? []), good])
+          );
           return {
             ...p,
             activeTurnDiscounts: {
               ...p.activeTurnDiscounts,
-              merchantFleetGood: good,
               merchantFleetGoods: nextGoods,
             },
           };
@@ -179,18 +140,16 @@ export function applyTradeProgressCardPure(
 
     case "master_merchant": {
       const targetPid = params?.targetPlayerId;
-      const myVp = computeVpFn(stateAfterConsume, playerId, true);
+      const myVp = computePlayerVictoryPoints(stateAfterConsume, playerId, true);
       const victim = stateAfterConsume.players.find((p) => p.id === targetPid);
       if (
         !victim ||
         victim.id === playerId ||
-        computeVpFn(stateAfterConsume, victim.id, true) <= myVp
+        computePlayerVictoryPoints(stateAfterConsume, victim.id, true) <= myVp
       ) {
         throw new Error("Invalid Master Merchant target");
       }
-      const targetHandTotal =
-        RESOURCES.reduce<number>((s, r) => s + victim.resources[r], 0) +
-        totalCommodityCount(victim.commodities);
+      const targetHandTotal = getPlayerResourceCount(victim);
       if (targetHandTotal <= 0) {
         return pushCkEvent(
           stateAfterConsume,

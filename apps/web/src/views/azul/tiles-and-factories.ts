@@ -50,14 +50,6 @@ export const AZUL_TILE_STYLES: Record<
   },
 };
 
-export function escapeAzulHtml(raw: string): string {
-  return raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 export function computeMarginalFloorPenaltyUi(
   currentFloorLen: number,
   addedItems: number
@@ -77,33 +69,28 @@ export function computeProjectedLineWallGainUi(
   targetRow: number,
   color: AzulTileColor
 ): number {
-  const baseWall = player.wall.map((r) => [...r]);
-  let baseRoundPts = 0;
-  for (let r = 0; r < 5; r++) {
-    const line = player.patternLines[r]!;
-    if (r !== targetRow && line.color && line.count === line.capacity) {
-      const col = getWallColumnForColor(r, line.color);
-      baseWall[r]![col] = line.color;
-      baseRoundPts += scoreWallPlacement(baseWall, r, col);
+  const simulateRoundPts = (includeTarget: boolean): number => {
+    const wall = player.wall.map((r) => [...r]);
+    let pts = 0;
+    for (let r = 0; r < 5; r++) {
+      const line = player.patternLines[r]!;
+      const placed =
+        r === targetRow
+          ? includeTarget
+            ? color
+            : null
+          : line.color && line.count === line.capacity
+            ? line.color
+            : null;
+      if (placed) {
+        const col = getWallColumnForColor(r, placed);
+        wall[r]![col] = placed;
+        pts += scoreWallPlacement(wall, r, col);
+      }
     }
-  }
-
-  const afterWall = player.wall.map((r) => [...r]);
-  let afterRoundPts = 0;
-  for (let r = 0; r < 5; r++) {
-    const line = player.patternLines[r]!;
-    if (r === targetRow) {
-      const col = getWallColumnForColor(r, color);
-      afterWall[r]![col] = color;
-      afterRoundPts += scoreWallPlacement(afterWall, r, col);
-    } else if (line.color && line.count === line.capacity) {
-      const col = getWallColumnForColor(r, line.color);
-      afterWall[r]![col] = line.color;
-      afterRoundPts += scoreWallPlacement(afterWall, r, col);
-    }
-  }
-
-  return afterRoundPts - baseRoundPts;
+    return pts;
+  };
+  return simulateRoundPts(true) - simulateRoundPts(false);
 }
 
 export function renderAzulTile(

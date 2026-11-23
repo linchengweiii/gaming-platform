@@ -64,14 +64,9 @@ export function getPolygonPoints(
   centerY: number,
   size: number
 ): string {
-  const pts: string[] = [];
-  for (let i = 0; i < 6; i++) {
-    const angleRad = ((60 * i - 90) * Math.PI) / 180;
-    const x = (centerX + size * Math.cos(angleRad)).toFixed(2);
-    const y = (centerY + size * Math.sin(angleRad)).toFixed(2);
-    pts.push(`${x},${y}`);
-  }
-  return pts.join(" ");
+  return getHexCornerCoords(centerX, centerY, size)
+    .map((c) => `${c.x.toFixed(2)},${c.y.toFixed(2)}`)
+    .join(" ");
 }
 
 export function getHexCornerCoords(
@@ -166,7 +161,6 @@ export function getBoardSpotSvgCoords(
   state: CatanState,
   spot: { kind: "edge" | "vertex" | "hex"; id: string }
 ): { x: number; y: number } {
-  const vb = getCatanBoardViewBox(state);
   if (spot.kind === "edge") {
     const e = state.topology.edges[spot.id];
     if (e) return { x: e.midX, y: e.midY };
@@ -177,6 +171,7 @@ export function getBoardSpotSvgCoords(
     const h = state.topology.hexes[spot.id];
     if (h) return { x: h.centerX, y: h.centerY };
   }
+  const vb = getCatanBoardViewBox(state);
   return { x: vb.vbX + vb.vbW / 2, y: vb.vbY + vb.vbH / 2 };
 }
 

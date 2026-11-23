@@ -1,3 +1,4 @@
+import { BUILDING_COSTS } from "../config/costs-and-limits.ts";
 import { computePlayerVictoryPoints } from "../rules/awards-and-vp.ts";
 import { getPlayerTradeRatios } from "../rules/helpers.ts";
 import {
@@ -13,14 +14,18 @@ import {
 } from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import { simulateRouteLengthWithEdge } from "./route-eval.ts";
-import { grantsNewIslandBonusVp } from "./utils.ts";
+import {
+  claimsHarbormasterAt,
+  grantsNewIslandBonusVp,
+  isOpenLandSettlementVertex,
+} from "./utils.ts";
 
 /**
  * Computes all deterministic lethal resource targets reachable on `player`'s current board this turn,
  * including 1-build and 2-build combos (Settlement, City, Longest Road, Foreign Island, Harbormaster, Road+Settlement).
  */
-export interface LethalResourceTarget {
-  cost: ResourceMap;
+interface LethalResourceTarget {
+  cost: Partial<ResourceMap>;
   directFirstAction?: CatanAction;
 }
 
@@ -34,14 +39,6 @@ export function buildBoardLethalResourceTargets(
   const vpNeeded = targetVp - currentVp;
   if (vpNeeded <= 0) return targets;
 
-  const claimsHarbormasterAt = (vId: string): boolean =>
-    Boolean(
-      state.config.enableHarbormaster &&
-        state.harbormasterOwnerId !== player.id &&
-        state.harbors.some((h) => h.vertexIds.includes(vId)) &&
-        player.harborPoints + 1 >= Math.max(3, state.harbormasterPoints + 1)
-    );
-
   const neededRoadLen = Math.max(5, state.longestRoadLength + 1);
   const canClaimLongest = state.longestRoadOwnerId !== player.id;
 
@@ -54,10 +51,10 @@ export function buildBoardLethalResourceTargets(
   for (const vId of openSettlementSpots) {
     let gain = 1;
     if (grantsNewIslandBonusVp(state, player, vId)) gain += 2;
-    if (claimsHarbormasterAt(vId)) gain += 2;
+    if (claimsHarbormasterAt(state, player, vId)) gain += 2;
     if (gain >= vpNeeded) {
       targets.push({
-        cost: { brick: 1, lumber: 1, wool: 1, grain: 1, ore: 0 },
+        cost: BUILDING_COSTS.settlement,
         directFirstAction: { type: "BUILD_SETTLEMENT", vertexId: vId },
       });
       break;
@@ -70,10 +67,10 @@ export function buildBoardLethalResourceTargets(
     .map(([vId]) => vId);
   if (player.citiesRemaining > 0) {
     for (const vId of mySettlementVertices) {
-      const gain = 1 + (claimsHarbormasterAt(vId) ? 2 : 0);
+      const gain = 1 + (claimsHarbormasterAt(state, player, vId) ? 2 : 0);
       if (gain >= vpNeeded) {
         targets.push({
-          cost: { brick: 0, lumber: 0, wool: 0, grain: 2, ore: 3 },
+          cost: BUILDING_COSTS.city,
           directFirstAction: { type: "BUILD_CITY", vertexId: vId },
         });
         break;
@@ -100,7 +97,7 @@ export function buildBoardLethalResourceTargets(
         neededRoadLen
       ) {
         targets.push({
-          cost: { brick: 1, lumber: 1, wool: 0, grain: 0, ore: 0 },
+          cost: BUILDING_COSTS.road,
           directFirstAction: { type: "BUILD_ROAD", edgeId: eId },
         });
         break;
@@ -112,7 +109,7 @@ export function buildBoardLethalResourceTargets(
         neededRoadLen
       ) {
         targets.push({
-          cost: { brick: 0, lumber: 1, wool: 1, grain: 0, ore: 0 },
+          cost: BUILDING_COSTS.ship,
           directFirstAction: { type: "BUILD_SHIP", edgeId: eId },
         });
         break;
@@ -120,81 +117,60 @@ export function buildBoardLethalResourceTargets(
     }
   }
 
-  // 4. 1-Hop Road + Settlement (+1 to +5 VP, e.g. Road claims Longest Road +2 AND opens Settlement +1 = +3 VP!)
-  if (
-    player.settlementsRemaining > 0 &&
-    legalRoads.length > 0 &&
-    vpNeeded <= 5
-  ) {
-    for (const eId of legalRoads) {
+  // 4 & 5. 1-Hop Road/Ship + Settlement (+1 to +5 VP)
+  const addOneHopRouteSettlementTargets = (
+    edges: readonly string[],
+    kind: "road" | "ship",
+    comboCost: ResourceMap
+  ) => {
+    if (
+      player.settlementsRemaining <= 0 ||
+      edges.length === 0 ||
+      vpNeeded > 5
+    ) {
+      return;
+    }
+    for (const eId of edges) {
       const eNode = state.topology.edges[eId];
       if (!eNode) continue;
-      const roadClaimsLongest =
+      const edgeClaimsLongest =
         canClaimLongest &&
         player.longestRoadLength + 1 >= neededRoadLen &&
-        simulateRouteLengthWithEdge(state, player.id, eId, "road") >=
+        simulateRouteLengthWithEdge(state, player.id, eId, kind) >=
           neededRoadLen;
       for (const vId of [eNode.v1, eNode.v2]) {
-        if (state.buildings[vId]) continue;
-        const distOk = (
-          state.topology.vertices[vId]?.adjacentVertexIds ?? []
-        ).every((nb) => !state.buildings[nb]);
-        if (!distOk) continue;
-        const touchesLand = (
-          state.topology.vertices[vId]?.adjacentHexIds ?? []
-        ).some((hId) => state.hexes[hId]?.terrain !== "sea");
-        if (!touchesLand) continue;
-        let gain = 1 + (roadClaimsLongest ? 2 : 0);
+        if (!isOpenLandSettlementVertex(state, vId)) continue;
+        let gain = 1 + (edgeClaimsLongest ? 2 : 0);
         if (grantsNewIslandBonusVp(state, player, vId)) gain += 2;
-        if (claimsHarbormasterAt(vId)) gain += 2;
+        if (claimsHarbormasterAt(state, player, vId)) gain += 2;
         if (gain >= vpNeeded) {
           targets.push({
-            cost: { brick: 2, lumber: 2, wool: 1, grain: 1, ore: 0 },
-            directFirstAction: { type: "BUILD_ROAD", edgeId: eId },
+            cost: comboCost,
+            directFirstAction:
+              kind === "road"
+                ? { type: "BUILD_ROAD", edgeId: eId }
+                : { type: "BUILD_SHIP", edgeId: eId },
           });
           break;
         }
       }
     }
-  }
+  };
 
-  // 5. 1-Hop Ship + Settlement in Seafarers (+1 to +5 VP)
-  if (
-    player.settlementsRemaining > 0 &&
-    legalShips.length > 0 &&
-    vpNeeded <= 5
-  ) {
-    for (const eId of legalShips) {
-      const eNode = state.topology.edges[eId];
-      if (!eNode) continue;
-      const shipClaimsLongest =
-        canClaimLongest &&
-        player.longestRoadLength + 1 >= neededRoadLen &&
-        simulateRouteLengthWithEdge(state, player.id, eId, "ship") >=
-          neededRoadLen;
-      for (const vId of [eNode.v1, eNode.v2]) {
-        if (state.buildings[vId]) continue;
-        const distOk = (
-          state.topology.vertices[vId]?.adjacentVertexIds ?? []
-        ).every((nb) => !state.buildings[nb]);
-        if (!distOk) continue;
-        const touchesLand = (
-          state.topology.vertices[vId]?.adjacentHexIds ?? []
-        ).some((hId) => state.hexes[hId]?.terrain !== "sea");
-        if (!touchesLand) continue;
-        let gain = 1 + (shipClaimsLongest ? 2 : 0);
-        if (grantsNewIslandBonusVp(state, player, vId)) gain += 2;
-        if (claimsHarbormasterAt(vId)) gain += 2;
-        if (gain >= vpNeeded) {
-          targets.push({
-            cost: { brick: 1, lumber: 2, wool: 2, grain: 1, ore: 0 },
-            directFirstAction: { type: "BUILD_SHIP", edgeId: eId },
-          });
-          break;
-        }
-      }
-    }
-  }
+  addOneHopRouteSettlementTargets(legalRoads, "road", {
+    brick: 2,
+    lumber: 2,
+    wool: 1,
+    grain: 1,
+    ore: 0,
+  });
+  addOneHopRouteSettlementTargets(legalShips, "ship", {
+    brick: 1,
+    lumber: 2,
+    wool: 2,
+    grain: 1,
+    ore: 0,
+  });
 
   // 6. Double City or Settlement + City (+2 VP)
   if (vpNeeded <= 2) {
@@ -233,7 +209,7 @@ export function checkHandPortConvertibleToCost(
   state: CatanState,
   ratios: Record<ResourceType, number>,
   hand: ResourceMap,
-  cost: ResourceMap
+  cost: Partial<ResourceMap>
 ): {
   reachable: boolean;
   missingCount: number;
@@ -247,7 +223,7 @@ export function checkHandPortConvertibleToCost(
   let bestGiveRatio = 99;
 
   for (const r of RESOURCES) {
-    const req = cost[r];
+    const req = cost[r] ?? 0;
     if (hand[r] < req) {
       const need = req - hand[r];
       if (state.bank[r] < need) {

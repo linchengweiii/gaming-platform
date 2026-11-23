@@ -101,7 +101,7 @@ function renderHandResourceCardsHtml(
 export function renderCatanVisualHandTray(
   state: CatanState,
   player: CatanPlayerState,
-  legalActions: CatanAction[],
+  legalActions: readonly CatanAction[],
   locale: SupportedLocale = "en"
 ): string {
   const safeLimit = getPlayerSafeHandLimit(state, player.id);

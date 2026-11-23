@@ -6,7 +6,7 @@ import type { BotDifficulty, PlayerDescriptor } from "../../packages/core/src/in
 
 const PARITY_DIR = path.dirname(fileURLToPath(import.meta.url));
 
-export const GOLDEN_SNAPSHOT_PATH = path.resolve(
+const GOLDEN_SNAPSHOT_PATH = path.resolve(
   PARITY_DIR,
   "../__snapshots__/functional-parity.golden.json"
 );
@@ -85,7 +85,7 @@ export function makePlayers(
   }));
 }
 
-export function readGoldenStore(): Record<string, unknown> {
+function readGoldenStore(): Record<string, unknown> {
   if (!fs.existsSync(GOLDEN_SNAPSHOT_PATH)) {
     return {};
   }
@@ -96,7 +96,7 @@ export function readGoldenStore(): Record<string, unknown> {
   return JSON.parse(raw) as Record<string, unknown>;
 }
 
-export function writeMergedGoldenKey<T>(key: string, value: T): T {
+function writeMergedGoldenKey<T>(key: string, value: T): T {
   fs.mkdirSync(path.dirname(GOLDEN_SNAPSHOT_PATH), { recursive: true });
   const existing = readGoldenStore();
   const normalizedValue = JSON.parse(JSON.stringify(value)) as T;

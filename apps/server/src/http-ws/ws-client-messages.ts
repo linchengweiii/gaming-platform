@@ -6,7 +6,7 @@ import type {
   createPresenceTracker,
 } from "./ws-hub-types-and-presence.ts";
 
-export interface WsMessageHandlerDeps {
+interface WsMessageHandlerDeps {
   readonly roomManager: PlatformRoomManager;
   readonly guestSessions: GuestSessionStore;
   readonly presence: ReturnType<typeof createPresenceTracker>;
@@ -18,6 +18,53 @@ export interface WsMessageHandlerDeps {
   readonly broadcastLobbyRooms: () => void;
   readonly broadcastRoomState: (roomId: string) => void;
   readonly scheduleRoomBotTurn: (roomId: string) => void;
+}
+
+const nonEmptyTrimmed = (value: unknown): string | null =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
+function syncAffectedRooms(
+  deps: WsMessageHandlerDeps,
+  prevRoomId: string | null,
+  prevPlayerId: string | null,
+  nextPlayerId: string | null,
+  nextRoomId: string | null,
+  skipRoomId?: string | null
+): Set<string> {
+  const affected = new Set<string>();
+  if (prevRoomId && prevRoomId !== nextRoomId) affected.add(prevRoomId);
+  if (prevPlayerId && prevPlayerId !== nextPlayerId) {
+    if (prevRoomId) affected.add(prevRoomId);
+    deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
+      if (seen.has(prevPlayerId)) affected.add(rid);
+    });
+  }
+  if (nextPlayerId && nextPlayerId !== prevPlayerId) {
+    deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
+      if (seen.has(nextPlayerId)) affected.add(rid);
+    });
+  }
+  affected.forEach((rid) => {
+    if (rid !== skipRoomId) {
+      deps.refreshRoomDisconnectClock(rid);
+      deps.broadcastRoomState(rid);
+    }
+  });
+  return affected;
+}
+
+function finishRoomAction(
+  deps: WsMessageHandlerDeps,
+  room: RoomInstance,
+  prevStatus: RoomInstance["status"]
+): void {
+  const roomId = room.roomId;
+  deps.presence.touchRoomActivity(roomId);
+  deps.broadcastRoomState(roomId);
+  if (room.status !== prevStatus) {
+    deps.broadcastLobbyRooms();
+  }
+  deps.scheduleRoomBotTurn(roomId);
 }
 
 export function handleClientJsonMessage(
@@ -34,14 +81,8 @@ export function handleClientJsonMessage(
   }
 
   if (msg.type === "IDENTIFY_PLAYER") {
-    const claimedPlayerId =
-      typeof msg.playerId === "string" && msg.playerId.trim()
-        ? msg.playerId.trim()
-        : null;
-    const rawToken =
-      typeof msg.token === "string" && msg.token.trim()
-        ? msg.token.trim()
-        : null;
+    const claimedPlayerId = nonEmptyTrimmed(msg.playerId);
+    const rawToken = nonEmptyTrimmed(msg.token);
     const prevPlayerId = curClient.playerId;
     const prevRoomId = curClient.roomId;
 
@@ -49,22 +90,8 @@ export function handleClientJsonMessage(
     if (claimedPlayerId || rawToken) {
       const verifiedId = deps.guestSessions.verifyToken(rawToken);
       if (!verifiedId || (claimedPlayerId && verifiedId !== claimedPlayerId)) {
-        deps.upsertWsClient({
-          ...curClient,
-          playerId: null,
-          roomId: null,
-        });
-        const affected = new Set<string>();
-        if (prevRoomId) affected.add(prevRoomId);
-        if (prevPlayerId) {
-          deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
-            if (seen.has(prevPlayerId)) affected.add(rid);
-          });
-        }
-        affected.forEach((rid) => {
-          deps.refreshRoomDisconnectClock(rid);
-          deps.broadcastRoomState(rid);
-        });
+        deps.upsertWsClient({ ...curClient, playerId: null, roomId: null });
+        syncAffectedRooms(deps, prevRoomId, prevPlayerId, null, null);
         curClient.transport.sendJson({
           type: "ERROR",
           code: "INVALID_GUEST_TOKEN",
@@ -83,24 +110,13 @@ export function handleClientJsonMessage(
       roomId: nextRoomId,
     });
 
-    const affectedRooms = new Set<string>();
-    if (prevRoomId && !nextRoomId) affectedRooms.add(prevRoomId);
-    if (prevPlayerId && prevPlayerId !== nextPlayerId) {
-      if (prevRoomId) affectedRooms.add(prevRoomId);
-      deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
-        if (seen.has(prevPlayerId)) affectedRooms.add(rid);
-      });
-    }
-    if (nextPlayerId && nextPlayerId !== prevPlayerId) {
-      const targetNextId = nextPlayerId;
-      deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
-        if (seen.has(targetNextId)) affectedRooms.add(rid);
-      });
-    }
-    affectedRooms.forEach((rid) => {
-      deps.refreshRoomDisconnectClock(rid);
-      deps.broadcastRoomState(rid);
-    });
+    const affectedRooms = syncAffectedRooms(
+      deps,
+      prevRoomId,
+      prevPlayerId,
+      nextPlayerId,
+      nextRoomId
+    );
 
     if (nextRoomId && nextPlayerId) {
       deps.presence.recordPlayerRoomPresence(nextRoomId, nextPlayerId);
@@ -120,14 +136,8 @@ export function handleClientJsonMessage(
   if (msg.type === "SUBSCRIBE_ROOM") {
     const prevRoomId = curClient.roomId;
     const prevPlayerId = curClient.playerId;
-    const claimedPlayerId =
-      typeof msg.playerId === "string" && msg.playerId.trim()
-        ? msg.playerId.trim()
-        : null;
-    const rawToken =
-      typeof msg.token === "string" && msg.token.trim()
-        ? msg.token.trim()
-        : null;
+    const claimedPlayerId = nonEmptyTrimmed(msg.playerId);
+    const rawToken = nonEmptyTrimmed(msg.token);
     let nextPlayerId = curClient.playerId;
     if (rawToken) {
       const verifiedId = deps.guestSessions.verifyToken(rawToken);
@@ -149,72 +159,44 @@ export function handleClientJsonMessage(
       return;
     }
 
-    const syncPreviousPresence = (newRoomId: string | null): void => {
-      const affected = new Set<string>();
-      if (prevRoomId && prevRoomId !== newRoomId) affected.add(prevRoomId);
-      if (prevPlayerId && prevPlayerId !== nextPlayerId) {
-        if (prevRoomId) affected.add(prevRoomId);
-        deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
-          if (seen.has(prevPlayerId)) affected.add(rid);
-        });
-      }
-      if (nextPlayerId && nextPlayerId !== prevPlayerId) {
-        const targetNextId = nextPlayerId;
-        deps.presence.seenConnectedPlayersByRoom.forEach((seen, rid) => {
-          if (seen.has(targetNextId)) affected.add(rid);
-        });
-      }
-      affected.forEach((rid) => {
-        if (rid !== newRoomId) {
-          deps.refreshRoomDisconnectClock(rid);
-          deps.broadcastRoomState(rid);
-        }
-      });
-    };
-
-    const requestedRoomId =
-      typeof msg.roomId === "string" ? msg.roomId.trim() : "";
-    if (!requestedRoomId) {
-      deps.upsertWsClient({
-        ...curClient,
-        roomId: null,
-        playerId: nextPlayerId,
-      });
-      syncPreviousPresence(null);
-      if (prevRoomId || prevPlayerId !== nextPlayerId) {
-        deps.broadcastLobbyRooms();
-      }
-      return;
-    }
+    const requestedRoomId = nonEmptyTrimmed(msg.roomId) ?? "";
     let targetRoom: RoomInstance | null = null;
-    try {
-      targetRoom = deps.roomManager.getRoom(requestedRoomId);
-    } catch {
-      targetRoom = null;
+    if (requestedRoomId) {
+      try {
+        targetRoom = deps.roomManager.getRoom(requestedRoomId);
+      } catch {
+        targetRoom = null;
+      }
     }
     if (!targetRoom) {
-      deps.upsertWsClient({
-        ...curClient,
-        roomId: null,
-        playerId: nextPlayerId,
-      });
-      syncPreviousPresence(null);
+      deps.upsertWsClient({ ...curClient, roomId: null, playerId: nextPlayerId });
+      syncAffectedRooms(deps, prevRoomId, prevPlayerId, nextPlayerId, null, null);
       if (prevRoomId || prevPlayerId !== nextPlayerId) {
         deps.broadcastLobbyRooms();
       }
-      curClient.transport.sendJson({
-        type: "ROOM_CLOSED",
-        roomId: requestedRoomId,
-      });
+      if (requestedRoomId) {
+        curClient.transport.sendJson({
+          type: "ROOM_CLOSED",
+          roomId: requestedRoomId,
+        });
+      }
       return;
     }
+
     const canonicalId = targetRoom.roomId;
     deps.upsertWsClient({
       ...curClient,
       roomId: canonicalId,
       playerId: nextPlayerId,
     });
-    syncPreviousPresence(canonicalId);
+    syncAffectedRooms(
+      deps,
+      prevRoomId,
+      prevPlayerId,
+      nextPlayerId,
+      canonicalId,
+      canonicalId
+    );
     deps.presence.recordPlayerRoomPresence(canonicalId, nextPlayerId);
     deps.broadcastRoomState(canonicalId);
     deps.broadcastLobbyRooms();
@@ -250,12 +232,7 @@ export function handleClientJsonMessage(
     }
     const prevStatus = room.status;
     deps.roomManager.dispatchAction(curClient.roomId, msg.playerId, msg.action);
-    deps.presence.touchRoomActivity(curClient.roomId);
-    deps.broadcastRoomState(curClient.roomId);
-    if (room.status !== prevStatus) {
-      deps.broadcastLobbyRooms();
-    }
-    deps.scheduleRoomBotTurn(curClient.roomId);
+    finishRoomAction(deps, room, prevStatus);
     return;
   }
 
@@ -269,11 +246,6 @@ export function handleClientJsonMessage(
     }
     const prevStatus = room.status;
     deps.roomManager.stepBot(curClient.roomId, { onlyBots: true });
-    deps.presence.touchRoomActivity(curClient.roomId);
-    deps.broadcastRoomState(curClient.roomId);
-    if (room.status !== prevStatus) {
-      deps.broadcastLobbyRooms();
-    }
-    deps.scheduleRoomBotTurn(curClient.roomId);
+    finishRoomAction(deps, room, prevStatus);
   }
 }

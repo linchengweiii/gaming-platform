@@ -89,7 +89,7 @@ describe("Audit Regressions: Core, Azul, Splendor, and 7 Wonders", () => {
     ) as typeof state.players[0]["wall"];
     const preTileState = {
       ...state,
-      factories: state.factories.map((f, i) => (i === 0 ? ["blue" as const] : [])),
+      factories: state.factories.map((_, i) => (i === 0 ? ["blue" as const] : [])),
       centerPool: [],
       players: state.players.map((p, idx) =>
         idx === 0

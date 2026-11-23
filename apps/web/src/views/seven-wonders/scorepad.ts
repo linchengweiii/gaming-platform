@@ -12,11 +12,8 @@ import {
   getSevenWondersWonderNameLocalized,
   t,
 } from "../../i18n/index.ts";
-import {
-  escapeSwHtml as escapeHtml,
-  renderSwCoinSvg,
-  renderSwShieldSvg,
-} from "./icons.ts";
+import { escapeHtml } from "../../app/helpers/html-and-dropdown.ts";
+import { renderSwCoinSvg, renderSwShieldSvg } from "./icons.ts";
 
 export function renderScorepadHtml(
   state: SevenWondersState,

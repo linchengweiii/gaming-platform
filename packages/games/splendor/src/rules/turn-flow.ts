@@ -1,12 +1,47 @@
 import type { GameEvent } from "@gaming-platform/core";
 import { SPLENDOR_HAND_TOKEN_LIMIT } from "../config.ts";
-import type { SplendorPlayerState, SplendorState } from "../types.ts";
+import type {
+  SplendorNoble,
+  SplendorPlayerState,
+  SplendorState,
+} from "../types.ts";
 import {
   appendSplendorEvent,
   qualifiesForNoble,
   replacePlayerAt,
   totalTokens,
 } from "./helpers.ts";
+
+export function awardNobleAndFinishTurn(
+  state: SplendorState,
+  events: readonly GameEvent[],
+  noble: SplendorNoble
+): { state: SplendorState; events: GameEvent[] } {
+  const player = state.players[state.activePlayerIndex]!;
+  const updatedPlayer: SplendorPlayerState = {
+    ...player,
+    nobles: [...player.nobles, noble],
+    points: player.points + noble.points,
+  };
+  const withNoble: SplendorState = {
+    ...state,
+    nobles: state.nobles.filter((n) => n.id !== noble.id),
+    eligibleNobleIds: [],
+    players: replacePlayerAt(
+      state.players,
+      state.activePlayerIndex,
+      updatedPlayer
+    ),
+  };
+  const logged = appendSplendorEvent(
+    withNoble,
+    events,
+    "NOBLE_VISITED",
+    `👑 Noble ${noble.name} visited ${player.name} (+${noble.points} VP)!`,
+    player.id
+  );
+  return finishTurnTransition(logged.state, logged.events);
+}
 
 export function resolvePostMainAction(
   state: SplendorState,
@@ -29,29 +64,7 @@ export function resolveNoblesAndAdvanceTurn(
   const player = state.players[state.activePlayerIndex]!;
   const matching = state.nobles.filter((n) => qualifiesForNoble(player, n));
   if (matching.length === 1) {
-    const noble = matching[0]!;
-    const updatedPlayer: SplendorPlayerState = {
-      ...player,
-      nobles: [...player.nobles, noble],
-      points: player.points + noble.points,
-    };
-    const withNoble: SplendorState = {
-      ...state,
-      nobles: state.nobles.filter((n) => n.id !== noble.id),
-      players: replacePlayerAt(
-        state.players,
-        state.activePlayerIndex,
-        updatedPlayer
-      ),
-    };
-    const logged = appendSplendorEvent(
-      withNoble,
-      events,
-      "NOBLE_VISITED",
-      `👑 Noble ${noble.name} visited ${player.name} (+${noble.points} VP)!`,
-      player.id
-    );
-    return finishTurnTransition(logged.state, logged.events);
+    return awardNobleAndFinishTurn(state, events, matching[0]!);
   }
 
   if (matching.length > 1) {
@@ -75,8 +88,6 @@ export function finishTurnTransition(
   const player = state.players[state.activePlayerIndex]!;
   const justTriggeredFinalRound =
     !state.finalRoundTriggered && player.points >= state.config.targetPoints;
-  const finalRoundTriggered =
-    state.finalRoundTriggered || player.points >= state.config.targetPoints;
 
   const baseTransition = justTriggeredFinalRound
     ? appendSplendorEvent(
@@ -96,7 +107,7 @@ export function finishTurnTransition(
   const isLastPlayerInRound = nextIdx === startIdx;
 
   if (
-    (finalRoundTriggered && isLastPlayerInRound) ||
+    (curState.finalRoundTriggered && isLastPlayerInRound) ||
     curState.turn >= curState.config.maxTurns
   ) {
     const sorted = [...curState.players].sort((a, b) =>
@@ -105,14 +116,8 @@ export function finishTurnTransition(
         : a.purchasedCards.length - b.purchasedCards.length
     );
     const winner = sorted[0]!;
-    const finishedState: SplendorState = {
-      ...curState,
-      finalRoundTriggered,
-      winnerId: winner.id,
-      phase: "GAME_OVER",
-    };
     return appendSplendorEvent(
-      finishedState,
+      { ...curState, winnerId: winner.id, phase: "GAME_OVER" },
       curEvents,
       "GAME_OVER",
       `${winner.name} wins Splendor with ${winner.points} Prestige Points (${winner.purchasedCards.length} cards)!`,
@@ -123,10 +128,9 @@ export function finishTurnTransition(
   return {
     state: {
       ...curState,
-      finalRoundTriggered,
       activePlayerIndex: nextIdx,
       turn: curState.turn + 1,
-      round: nextIdx === startIdx ? curState.round + 1 : curState.round,
+      round: isLastPlayerInRound ? curState.round + 1 : curState.round,
       phase: "MAIN_ACTION",
     },
     events: curEvents,

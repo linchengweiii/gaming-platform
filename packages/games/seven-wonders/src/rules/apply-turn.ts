@@ -195,15 +195,7 @@ export function applySevenWondersAction(
         `Player ${playerId} does not have an unrevealed draft pick to unlock`
       );
     }
-    const nextPending: Record<
-      string,
-      NonNullable<SevenWondersState["pendingChoices"][string]>
-    > = {};
-    for (const [pid, ch] of Object.entries(state.pendingChoices)) {
-      if (pid !== playerId && ch) {
-        nextPending[pid] = ch;
-      }
-    }
+    const { [playerId]: _removed, ...nextPending } = state.pendingChoices;
     return {
       state: {
         ...state,
@@ -306,13 +298,18 @@ export function applySevenWondersAction(
     }
   }
 
-  if (state.phase === "SEVENTH_CARD_PLAY" && action.type === "SELECT_DRAFT_ACTION") {
-    const choice = {
-      kind: action.kind,
-      cardId: action.cardId,
-      payment: action.payment ?? { leftCoins: 0, rightCoins: 0 },
-      useFreeBuild: action.useFreeBuild,
-    };
+  if (action.type !== "SELECT_DRAFT_ACTION") {
+    throw new Error(`Expected SELECT_DRAFT_ACTION during ${state.phase}`);
+  }
+
+  const choice = {
+    kind: action.kind,
+    cardId: action.cardId,
+    payment: action.payment ?? { leftCoins: 0, rightCoins: 0 },
+    useFreeBuild: action.useFreeBuild,
+  };
+
+  if (state.phase === "SEVENTH_CARD_PLAY") {
     const applied = applySingleChoiceEffectsToTables(
       state.players,
       { [playerId]: choice },
@@ -339,16 +336,6 @@ export function applySevenWondersAction(
   }
 
   // state.phase === "AGE_DRAFT"
-  if (action.type !== "SELECT_DRAFT_ACTION") {
-    throw new Error(`Expected SELECT_DRAFT_ACTION during AGE_DRAFT`);
-  }
-
-  const choice = {
-    kind: action.kind,
-    cardId: action.cardId,
-    payment: action.payment ?? { leftCoins: 0, rightCoins: 0 },
-    useFreeBuild: action.useFreeBuild,
-  };
   const nextPending = {
     ...state.pendingChoices,
     [playerId]: choice,

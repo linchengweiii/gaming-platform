@@ -39,7 +39,6 @@ export interface RealtimeHub {
   removePlayerRoomPresence(roomId: string, playerId: string): void;
   evictPlayerFromRoom(roomId: string, targetPlayerId: string): void;
   signOutGuestConnections(playerId: string): void;
-  cleanupDeletedRoomMeta(roomId: string): void;
   notifyRoomClosed(roomId: string): void;
   checkHeartbeats(nowMs?: number, timeoutMs?: number): string[];
   sweepAbandonedRooms(nowMs?: number, maxIdleMs?: number): string[];
@@ -56,7 +55,7 @@ export interface RealtimeHub {
   shutdown(): void;
 }
 
-export function sendWsFrameSafe(socket: Duplex, payload: unknown): boolean {
+function sendWsFrameSafe(socket: Duplex, payload: unknown): boolean {
   if (socket.destroyed || !socket.writable) return false;
   const writableLen = (socket as any).writableLength;
   if (
@@ -75,7 +74,7 @@ export function sendWsFrameSafe(socket: Duplex, payload: unknown): boolean {
   }
 }
 
-export function createDuplexWsTransport(socket: Duplex): WsTransport {
+function createDuplexWsTransport(socket: Duplex): WsTransport {
   const pingFrame = encodeWsControlFramePure(0x09);
   return {
     isClosed: () => socket.destroyed,
@@ -259,9 +258,7 @@ export function createPresenceTracker(roomManager: PlatformRoomManager) {
     try {
       room = roomManager.getRoom(roomId);
     } catch {
-      seenConnectedPlayersByRoom.delete(roomId);
-      roomAllDisconnectedSince.delete(roomId);
-      roomLastActivityMs.delete(roomId);
+      clearRoomPresenceMeta(roomId);
       return;
     }
     const connectedIds = getConnectedPlayerIds(wsClients);

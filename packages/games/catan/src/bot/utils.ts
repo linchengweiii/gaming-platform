@@ -1,11 +1,12 @@
 import { TERRAIN_TO_COMMODITY } from "../config/cities-knights-config.ts";
 import {
+  BANK_LIMITS,
   NUMBER_TOKEN_PIPS,
   TERRAIN_TO_RESOURCE,
 } from "../config/costs-and-limits.ts";
 import { computePlayerVictoryPoints } from "../rules/awards-and-vp.ts";
-import { getCatanPlayerViewPure } from "../rules/redaction.ts";
 import {
+  type CommodityType,
   IMPROVEMENT_DISCIPLINES,
   RESOURCES,
   type ResourceMap,
@@ -163,15 +164,57 @@ export function grantsNewIslandBonusVp(
   return false;
 }
 
-/**
- * Redacts hidden deck order, fog pool, RNG seed, and opponent hands so direct calls
- * to `chooseCatanBotAction` are 100% fair even if the caller passes an unredacted state.
- */
-export function redactStateForBotPlayerPure(
+export function isOpenLandSettlementVertex(
   state: CatanState,
-  viewerPlayerId: string
-): CatanState {
-  return getCatanPlayerViewPure(state, viewerPlayerId);
+  vertexId: string
+): boolean {
+  if (state.buildings[vertexId]) return false;
+  const vNode = state.topology.vertices[vertexId];
+  if (!vNode) return false;
+  return (
+    vNode.adjacentVertexIds.every((nb) => !state.buildings[nb]) &&
+    vNode.adjacentHexIds.some((hId) => state.hexes[hId]?.terrain !== "sea")
+  );
+}
+
+export function claimsHarbormasterAt(
+  state: CatanState,
+  player: CatanPlayerState,
+  vertexId: string
+): boolean {
+  return Boolean(
+    state.config.enableHarbormaster &&
+      state.harbormasterOwnerId !== player.id &&
+      state.harbors.some((h) => h.vertexIds.includes(vertexId)) &&
+      player.harborPoints + 1 >= Math.max(3, state.harbormasterPoints + 1)
+  );
+}
+
+export function getPublicOpponentResourceCount(
+  state: CatanState,
+  player: CatanPlayerState,
+  res: ResourceType
+): number {
+  const bankTotal =
+    state.players.length >= 5
+      ? BANK_LIMITS.expandedPerResource
+      : BANK_LIMITS.standardPerResource;
+  return Math.max(0, bankTotal - state.bank[res] - player.resources[res]);
+}
+
+export function getPublicOpponentCommodityCount(
+  state: CatanState,
+  player: CatanPlayerState,
+  comm: CommodityType
+): number {
+  const bankTotal =
+    state.players.length >= 5
+      ? BANK_LIMITS.expandedPerCommodity
+      : BANK_LIMITS.standardPerCommodity;
+  return Math.max(
+    0,
+    bankTotal - state.commodityBank[comm] - player.commodities[comm]
+  );
 }
 
 export function getOpponentProgressCardCountFair(

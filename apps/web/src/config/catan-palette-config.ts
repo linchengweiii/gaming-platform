@@ -4,32 +4,20 @@ import type {
   ImprovementDiscipline,
   ResourceType,
   TerrainType,
-  TradeGoodType,
 } from "@gaming-platform/catan";
 
 export const TERRAIN_META: Readonly<
-  Record<
-    TerrainType,
-    {
-      readonly label: string;
-      readonly gradientId: string;
-      readonly accent: string;
-    }
-  >
+  Record<TerrainType, { readonly label: string }>
 > = {
-  forest: { label: "Forest", gradientId: "grad-forest", accent: "#16a34a" },
-  hills: { label: "Hills", gradientId: "grad-hills", accent: "#ea580c" },
-  pasture: { label: "Pasture", gradientId: "grad-pasture", accent: "#65a30d" },
-  fields: { label: "Fields", gradientId: "grad-fields", accent: "#eab308" },
-  mountains: {
-    label: "Mountains",
-    gradientId: "grad-mountains",
-    accent: "#64748b",
-  },
-  desert: { label: "Desert", gradientId: "grad-desert", accent: "#d97706" },
-  sea: { label: "Sea", gradientId: "grad-sea", accent: "#0284c7" },
-  gold: { label: "Gold River", gradientId: "grad-gold", accent: "#eab308" },
-  fog: { label: "Uncharted Fog", gradientId: "grad-fog", accent: "#1e3a52" },
+  forest: { label: "Forest" },
+  hills: { label: "Hills" },
+  pasture: { label: "Pasture" },
+  fields: { label: "Fields" },
+  mountains: { label: "Mountains" },
+  desert: { label: "Desert" },
+  sea: { label: "Sea" },
+  gold: { label: "Gold River" },
+  fog: { label: "Uncharted Fog" },
 };
 
 export const RESOURCE_META: Record<
@@ -169,29 +157,11 @@ export const COMMODITY_META: Record<
   },
 };
 
-export const TRADE_GOOD_META: Record<
-  TradeGoodType,
-  {
-    label: string;
-    subtitle: string;
-    accent: string;
-    bgTop: string;
-    bgBottom: string;
-    border: string;
-  }
-> = {
-  ...RESOURCE_META,
-  ...COMMODITY_META,
-};
-
 export const DISCIPLINE_META: Record<
   ImprovementDiscipline,
   {
     label: string;
     shortCode: string;
-    commodity: CommodityType;
-    perkTitle: string;
-    perkRule: string;
     accent: string;
     border: string;
     bg: string;
@@ -200,9 +170,6 @@ export const DISCIPLINE_META: Record<
   trade: {
     label: "Trade",
     shortCode: "T",
-    commodity: "cloth",
-    perkTitle: "Trading House",
-    perkRule: "Lv 3: Trade all commodities 2:1 with the bank",
     accent: "#f59e0b",
     border: "#fbbf24",
     bg: "#2b1908",
@@ -210,9 +177,6 @@ export const DISCIPLINE_META: Record<
   politics: {
     label: "Politics",
     shortCode: "P",
-    commodity: "coin",
-    perkTitle: "Fortress",
-    perkRule: "Lv 3: Promote Strong Knights to Mighty Knights (Lv 3)",
     accent: "#3b82f6",
     border: "#60a5fa",
     bg: "#122142",
@@ -220,9 +184,6 @@ export const DISCIPLINE_META: Record<
   science: {
     label: "Science",
     shortCode: "S",
-    commodity: "paper",
-    perkTitle: "Aqueduct",
-    perkRule: "Lv 3: Gain 1 free resource on non-7 zero-yield rolls",
     accent: "#10b981",
     border: "#34d399",
     bg: "#092b22",

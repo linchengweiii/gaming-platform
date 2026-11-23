@@ -69,7 +69,7 @@ export function getNextActingPlayerId(state: CatanState): string | null {
   return state.players[state.activePlayerIndex]?.id ?? null;
 }
 
-export function advanceToNextPlayerTurnPure(
+function advanceToNextPlayerTurnPure(
   state: CatanState,
   emitted: readonly GameEvent[]
 ): StateWithEvents {
@@ -153,12 +153,8 @@ export function applyEndTurnPure(
   if (currentState.activeTradeOffer) {
     throw new Error("Resolve the active domestic trade offer first");
   }
-  const clearedOffer: CatanState = {
-    ...currentState,
-    activeTradeOffer: null,
-  };
 
-  const checked = checkAndAssignWinnerPure(clearedOffer, playerId);
+  const checked = checkAndAssignWinnerPure(currentState, playerId);
   if (checked.won) {
     return { state: checked.state, events: [] };
   }
@@ -205,6 +201,43 @@ export function applyEndTurnPure(
 
   const advanced = advanceToNextPlayerTurnPure(checked.state, []);
   return { state: advanced.state, events: advanced.emitted };
+}
+
+export function applyEndSpecialBuildPure(
+  currentState: CatanState,
+  playerId: string
+): { state: CatanState; events: GameEvent[] } {
+  if (
+    currentState.phase !== "SPECIAL_BUILDING" ||
+    currentState.specialBuildPlayerIndex === null ||
+    currentState.players[currentState.specialBuildPlayerIndex]?.id !== playerId
+  ) {
+    throw new Error("Not your Special Building turn");
+  }
+
+  const checked = checkAndAssignWinnerPure(currentState, playerId);
+  if (checked.won) {
+    return { state: checked.state, events: [] };
+  }
+
+  const nextSbIndex =
+    ((checked.state.specialBuildPlayerIndex ?? 0) + 1) %
+    checked.state.players.length;
+  if (nextSbIndex === checked.state.activePlayerIndex) {
+    const advanced = advanceToNextPlayerTurnPure(
+      { ...checked.state, specialBuildPlayerIndex: null },
+      []
+    );
+    return { state: advanced.state, events: advanced.emitted };
+  }
+
+  return {
+    state: {
+      ...checked.state,
+      specialBuildPlayerIndex: nextSbIndex,
+    },
+    events: [],
+  };
 }
 
 const IRREVERSIBLE_CATAN_ACTIONS = new Set<CatanAction["type"]>([

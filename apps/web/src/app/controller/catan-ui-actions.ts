@@ -59,8 +59,7 @@ function setGoodCountInModel(
   model: Readonly<AppModel>,
   kind: "discard" | "domesticGive" | "maritimeGive",
   good: TradeGoodType,
-  value: number,
-  extra?: Partial<AppModel>
+  value: number
 ): AppModel {
   if (isCommodityType(good)) {
     const key =
@@ -69,7 +68,7 @@ function setGoodCountInModel(
         : kind === "domesticGive"
           ? "domesticCommGive"
           : "maritimeCommGive";
-    return { ...model, ...extra, [key]: { ...model[key], [good]: value } };
+    return { ...model, [key]: { ...model[key], [good]: value } };
   }
   const key =
     kind === "discard"
@@ -77,7 +76,7 @@ function setGoodCountInModel(
       : kind === "domesticGive"
         ? "domesticGive"
         : "maritimeGive";
-  return { ...model, ...extra, [key]: { ...model[key], [good]: value } };
+  return { ...model, [key]: { ...model[key], [good]: value } };
 }
 
 export function attachCatanUiActions(ctx: AppRuntimeContext): void {
@@ -182,12 +181,11 @@ export function handleCatanPlayProgressCardClick(
     selectedProgressCardId: cardId,
     inventorHex1: null,
     smithVertex1: null,
-    deserterTargetPlayerId: null,
   };
   ctx.render();
 }
 
-function adjustMaritimeGive(
+export function adjustCatanMaritimeGive(
   ctx: AppRuntimeContext,
   state: CatanState,
   actingPlayerId: string,
@@ -205,9 +203,8 @@ function adjustMaritimeGive(
     if (!actingPlayer || getPlayerGoodCount(actingPlayer, good) < cur + step) {
       return;
     }
-    const extra = isCommodityType(good) ? undefined : { tradeGiveRes: good };
     ctx.model = setSharedTradeGoodWantPure(
-      setGoodCountInModel(ctx.model, "maritimeGive", good, cur + step, extra),
+      setGoodCountInModel(ctx.model, "maritimeGive", good, cur + step),
       good,
       0
     );
@@ -217,34 +214,6 @@ function adjustMaritimeGive(
   }
   ctx.render();
 }
-
-export const handleCatanMaritimeGiveInc = (
-  ctx: AppRuntimeContext,
-  state: CatanState,
-  actingPlayerId: string,
-  r: ResourceType
-): void => adjustMaritimeGive(ctx, state, actingPlayerId, r, 1, false);
-
-export const handleCatanMaritimeGiveDec = (
-  ctx: AppRuntimeContext,
-  state: CatanState,
-  actingPlayerId: string,
-  r: ResourceType
-): void => adjustMaritimeGive(ctx, state, actingPlayerId, r, -1, false);
-
-export const handleCatanCkMaritimeGiveInc = (
-  ctx: AppRuntimeContext,
-  state: CatanState,
-  actingPlayerId: string,
-  g: TradeGoodType
-): void => adjustMaritimeGive(ctx, state, actingPlayerId, g, 1, true);
-
-export const handleCatanCkMaritimeGiveDec = (
-  ctx: AppRuntimeContext,
-  state: CatanState,
-  actingPlayerId: string,
-  g: TradeGoodType
-): void => adjustMaritimeGive(ctx, state, actingPlayerId, g, -1, true);
 
 export function executeCatanMaritimeTrade(
   ctx: AppRuntimeContext,

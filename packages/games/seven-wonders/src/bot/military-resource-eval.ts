@@ -1,7 +1,4 @@
-import {
-  SEVEN_WONDERS_BOT_RESOURCES,
-  SEVEN_WONDERS_MASTER_BOT_WEIGHTS,
-} from "../config/bot-config.ts";
+import { SEVEN_WONDERS_MASTER_BOT_WEIGHTS } from "../config/bot-config.ts";
 import {
   SEVEN_WONDERS_MILITARY_DEFEAT_POINTS,
   SEVEN_WONDERS_MILITARY_VICTORY_POINTS_BY_AGE,
@@ -9,30 +6,20 @@ import {
 } from "../config/game-config.ts";
 import { getWonderBoardDefinition } from "../config/wonders-config.ts";
 import {
+  emptyWonderResourceMap,
   getLeftNeighborIndex,
   getNeighborTradableProfile,
   getOwnResourceProfile,
   getPlayerShields,
   getPlayerTradeRates,
   getRightNeighborIndex,
+  isRawResource,
 } from "../rules.ts";
 import {
-  RAW_RESOURCES,
   type SevenWondersState,
+  WONDER_RESOURCES,
   type WonderResource,
 } from "../types.ts";
-
-export function emptyResRecord(): Record<WonderResource, number> {
-  return {
-    wood: 0,
-    stone: 0,
-    clay: 0,
-    ore: 0,
-    glass: 0,
-    loom: 0,
-    papyrus: 0,
-  };
-}
 
 export function computeOpponentContenderWeight(
   fairView: SevenWondersState,
@@ -103,13 +90,8 @@ export function evaluateMasterMilitarySwing(
 
   const oppWeight = computeOpponentContenderWeight(fairView, myIdx, oppIdx);
   const tableDenialScale =
-    fairView.players.length === 3
-      ? milCfg.tableDenialByPlayers[3]
-      : fairView.players.length === 4
-        ? milCfg.tableDenialByPlayers[4]
-        : fairView.players.length === 5
-          ? milCfg.tableDenialByPlayers[5]
-          : milCfg.tableDenialByPlayers.default;
+    milCfg.tableDenialByPlayers[fairView.players.length as 3 | 4 | 5] ??
+    milCfg.tableDenialByPlayers.default;
 
   const meHasStrategists = me.tableau.some(
     (c) => c.name === "Strategists Guild"
@@ -179,14 +161,14 @@ export function getMasterResourceProfileWithNeighbors(
     for (const r of opts) ownEff[r] += share;
   }
   const totalOwnResourceUnits =
-    SEVEN_WONDERS_BOT_RESOURCES.reduce((s, r) => s + own.fixed[r], 0) +
+    WONDER_RESOURCES.reduce((s, r) => s + own.fixed[r], 0) +
     own.choices.length;
 
-  const cheapNeighborSupply = emptyResRecord();
-  const anyNeighborSupply = emptyResRecord();
+  const cheapNeighborSupply = emptyWonderResourceMap();
+  const anyNeighborSupply = emptyWonderResourceMap();
 
-  for (const r of SEVEN_WONDERS_BOT_RESOURCES) {
-    const isRaw = (RAW_RESOURCES as readonly string[]).includes(r);
+  for (const r of WONDER_RESOURCES) {
+    const isRaw = isRawResource(r);
     const lRate = isRaw ? rates.rawLeft : rates.manufacturedLeft;
     const rRate = isRaw ? rates.rawRight : rates.manufacturedRight;
     const lAmt =
@@ -201,10 +183,10 @@ export function getMasterResourceProfileWithNeighbors(
   }
 
   const board = getWonderBoardDefinition(me.wonderId, me.wonderSide);
-  const wonderNeed = emptyResRecord();
+  const wonderNeed = emptyWonderResourceMap();
   board.stages.slice(me.builtWonderStages).forEach((st, offset) => {
     const mult = offset === 0 ? 1.08 : offset === 1 ? 0.52 : 0.22;
-    for (const r of SEVEN_WONDERS_BOT_RESOURCES) {
+    for (const r of WONDER_RESOURCES) {
       const req = st.resourceCost[r] ?? 0;
       if (req > ownEff[r]) {
         wonderNeed[r] += (req - ownEff[r]) * mult;
@@ -212,12 +194,12 @@ export function getMasterResourceProfileWithNeighbors(
     }
   });
 
-  const neighborWonderDemand = emptyResRecord();
+  const neighborWonderDemand = emptyWonderResourceMap();
   for (const nb of [left, right]) {
     const nbOwn = getOwnResourceProfile(nb);
     const nbBoard = getWonderBoardDefinition(nb.wonderId, nb.wonderSide);
     nbBoard.stages.slice(nb.builtWonderStages).forEach((st, idx) => {
-      for (const r of SEVEN_WONDERS_BOT_RESOURCES) {
+      for (const r of WONDER_RESOURCES) {
         const req = st.resourceCost[r] ?? 0;
         if (req > nbOwn.fixed[r]) {
           neighborWonderDemand[r] += idx === 0 ? 0.45 : 0.25;

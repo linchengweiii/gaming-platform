@@ -1,6 +1,5 @@
 import {
   type CatanState,
-  type ResourceType,
   type TradeGoodType,
   emptyCommodities,
   emptyResources,
@@ -9,11 +8,8 @@ import {
 } from "@gaming-platform/catan";
 import { setSharedTradeGoodWantPure } from "../reducers/trade-and-draft-reducers.ts";
 import {
+  adjustCatanMaritimeGive,
   executeCatanMaritimeTrade,
-  handleCatanCkMaritimeGiveDec,
-  handleCatanCkMaritimeGiveInc,
-  handleCatanMaritimeGiveDec,
-  handleCatanMaritimeGiveInc,
 } from "./catan-ui-actions.ts";
 import type { AppRuntimeContext } from "./context.ts";
 import { onClick, onDataClick, patchModelAndRender } from "./dom-events.ts";
@@ -153,18 +149,23 @@ export function bindCatanTradeEvents(
     }
   });
 
-  onDataClick(root, "data-maritime-give", (r) =>
-    handleCatanMaritimeGiveInc(ctx, state, actingPlayerId, r as ResourceType)
-  );
-  onDataClick(root, "data-maritime-give-dec", (r) =>
-    handleCatanMaritimeGiveDec(ctx, state, actingPlayerId, r as ResourceType)
-  );
-  onDataClick(root, "data-ck-maritime-give", (g) =>
-    handleCatanCkMaritimeGiveInc(ctx, state, actingPlayerId, g as TradeGoodType)
-  );
-  onDataClick(root, "data-ck-maritime-give-dec", (g) =>
-    handleCatanCkMaritimeGiveDec(ctx, state, actingPlayerId, g as TradeGoodType)
-  );
+  for (const [attr, delta, useCk] of [
+    ["data-maritime-give", 1, false],
+    ["data-maritime-give-dec", -1, false],
+    ["data-ck-maritime-give", 1, true],
+    ["data-ck-maritime-give-dec", -1, true],
+  ] as const) {
+    onDataClick(root, attr, (g) =>
+      adjustCatanMaritimeGive(
+        ctx,
+        state,
+        actingPlayerId,
+        g as TradeGoodType,
+        delta,
+        useCk
+      )
+    );
+  }
 
   const adjustMaritimeReceive = (good: TradeGoodType, delta: 1 | -1): void => {
     const cur = isCommodityType(good)
@@ -172,11 +173,7 @@ export function bindCatanTradeEvents(
       : ctx.model.maritimeWant[good];
     if (delta > 0 && cur >= getBankGoodCount(state, good)) return;
     if (delta < 0 && cur <= 0) return;
-    const next = setSharedTradeGoodWantPure(ctx.model, good, cur + delta);
-    ctx.model =
-      delta > 0 && !isCommodityType(good)
-        ? { ...next, tradeReceiveRes: good }
-        : next;
+    ctx.model = setSharedTradeGoodWantPure(ctx.model, good, cur + delta);
     ctx.render();
   };
   for (const [attr, delta] of [

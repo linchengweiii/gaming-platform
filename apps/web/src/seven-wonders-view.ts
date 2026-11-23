@@ -1,7 +1,4 @@
 export {
-  SW_RESOURCE_META,
-  SW_CARD_COLOR_META,
-  renderSwResourceIconSvg,
   renderSwScienceIconSvg,
   renderSwShieldSvg,
   renderSwCoinSvg,

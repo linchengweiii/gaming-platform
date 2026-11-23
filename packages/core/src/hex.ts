@@ -70,7 +70,7 @@ export interface HexBoardTopology {
 
 const SQRT3 = Math.sqrt(3);
 
-export const AXIAL_DIRECTIONS: readonly AxialCoord[] = [
+const AXIAL_DIRECTIONS: readonly AxialCoord[] = [
   { q: 1, r: -1 }, // 0: NE
   { q: 1, r: 0 }, // 1: E
   { q: 0, r: 1 }, // 2: SE
@@ -79,27 +79,19 @@ export const AXIAL_DIRECTIONS: readonly AxialCoord[] = [
   { q: 0, r: -1 }, // 5: NW
 ];
 
-const SIX_INDICES = [0, 1, 2, 3, 4, 5] as const;
-
-function appendUnique<T>(items: readonly T[], candidate: T): T[] {
-  return items.includes(candidate) ? [...items] : [...items, candidate];
-}
-
-function rangeInclusive(min: number, max: number): number[] {
-  return max < min
-    ? []
-    : Array.from({ length: max - min + 1 }, (_, idx) => min + idx);
+function pushUnique<T>(items: T[], candidate: T): void {
+  if (!items.includes(candidate)) items.push(candidate);
 }
 
 export function hexId(q: number, r: number): HexId {
   return `${q},${r}`;
 }
 
-export function vertexId(q: number, r: number, dir: VertexDir): VertexId {
+function vertexId(q: number, r: number, dir: VertexDir): VertexId {
   return `${q},${r}:${dir}`;
 }
 
-export function edgeId(q: number, r: number, dir: EdgeDir): EdgeId {
+function edgeId(q: number, r: number, dir: EdgeDir): EdgeId {
   return `${q},${r}:${dir}`;
 }
 
@@ -119,11 +111,15 @@ export function axialNeighbors(coord: AxialCoord): AxialCoord[] {
  * Radius 2 produces the standard 19 hexes of Catan.
  */
 export function generateHexRadiusCoords(radius: number): AxialCoord[] {
-  return rangeInclusive(-radius, radius).flatMap((r) => {
+  const out: AxialCoord[] = [];
+  for (let r = -radius; r <= radius; r++) {
     const qMin = Math.max(-radius, -r - radius);
     const qMax = Math.min(radius, -r + radius);
-    return rangeInclusive(qMin, qMax).map((q) => ({ q, r }));
-  });
+    for (let q = qMin; q <= qMax; q++) {
+      out.push({ q, r });
+    }
+  }
+  return out;
 }
 
 /**
@@ -137,10 +133,7 @@ export function hexToPixel(
   return { x: hexSize * SQRT3 * (q + r / 2), y: hexSize * 1.5 * r };
 }
 
-/**
- * Computes pixel position of a canonical vertex `(q, r, dir)`.
- */
-export function vertexToPixel(
+function vertexToPixel(
   q: number,
   r: number,
   dir: VertexDir,
@@ -150,12 +143,7 @@ export function vertexToPixel(
   return { x: center.x, y: dir === "N" ? center.y - hexSize : center.y + hexSize };
 }
 
-/**
- * Returns the 6 canonical vertex IDs of hex `(q, r)` in clockwise order:
- * 0: N (Top), 1: NE (Top-Right), 2: SE (Bottom-Right),
- * 3: S (Bottom), 4: SW (Bottom-Left), 5: NW (Top-Left).
- */
-export function getHexCornerVertexIds(
+function getHexCornerVertexIds(
   q: number,
   r: number
 ): [VertexId, VertexId, VertexId, VertexId, VertexId, VertexId] {
@@ -169,12 +157,7 @@ export function getHexCornerVertexIds(
   ];
 }
 
-/**
- * Returns the 6 canonical edge IDs of hex `(q, r)` in clockwise order:
- * 0: NE (connects corner 0..1), 1: E (1..2), 2: SE (2..3),
- * 3: SW (3..4), 4: W (4..5), 5: NW (5..0).
- */
-export function getHexSideEdgeIds(
+function getHexSideEdgeIds(
   q: number,
   r: number
 ): [EdgeId, EdgeId, EdgeId, EdgeId, EdgeId, EdgeId] {
@@ -257,100 +240,54 @@ export function buildHexBoardTopology(
   coords: readonly AxialCoord[],
   hexSize = 56
 ): HexBoardTopology {
-  const initialTopology: HexBoardTopology = {
-    hexSize,
-    hexes: {},
-    vertices: {},
-    edges: {},
-    hexOrder: [],
-    vertexOrder: [],
-    edgeOrder: [],
-  };
+  const hexes: Record<HexId, HexNode> = {};
+  const vertices: Record<VertexId, VertexNode> = {};
+  const edges: Record<EdgeId, EdgeNode> = {};
+  const hexOrder: HexId[] = [];
+  const vertexOrder: VertexId[] = [];
+  const edgeOrder: EdgeId[] = [];
 
-  return coords.reduce<HexBoardTopology>((acc, { q, r }) => {
+  for (const { q, r } of coords) {
     const hId = hexId(q, r);
     const { x: centerX, y: centerY } = hexToPixel(q, r, hexSize);
     const cornerVertexIds = getHexCornerVertexIds(q, r);
     const sideEdgeIds = getHexSideEdgeIds(q, r);
 
-    const hexNode: HexNode = {
-      id: hId,
-      q,
-      r,
-      centerX,
-      centerY,
-      cornerVertexIds,
-      sideEdgeIds,
-    };
+    hexes[hId] = { id: hId, q, r, centerX, centerY, cornerVertexIds, sideEdgeIds };
+    hexOrder.push(hId);
 
-    const withCorners = cornerVertexIds.reduce<{
-      vertices: Record<VertexId, VertexNode>;
-      vertexOrder: VertexId[];
-    }>(
-      (vAcc, vId) => {
-        const existing = vAcc.vertices[vId];
-        const baseNode = existing ?? createVertexNode(vId, hexSize);
-        const updatedNode: VertexNode = {
-          ...baseNode,
-          adjacentHexIds: appendUnique(baseNode.adjacentHexIds, hId),
-        };
-        return {
-          vertices: { ...vAcc.vertices, [vId]: updatedNode },
-          vertexOrder: existing ? vAcc.vertexOrder : [...vAcc.vertexOrder, vId],
-        };
-      },
-      { vertices: acc.vertices, vertexOrder: acc.vertexOrder }
-    );
+    for (const vId of cornerVertexIds) {
+      let vNode = vertices[vId];
+      if (!vNode) {
+        vNode = createVertexNode(vId, hexSize);
+        vertices[vId] = vNode;
+        vertexOrder.push(vId);
+      }
+      pushUnique(vNode.adjacentHexIds, hId);
+    }
 
-    const withEdges = SIX_INDICES.reduce<{
-      vertices: Record<VertexId, VertexNode>;
-      edges: Record<EdgeId, EdgeNode>;
-      edgeOrder: EdgeId[];
-    }>(
-      (eAcc, sideIdx) => {
-        const eId = sideEdgeIds[sideIdx]!;
-        const vA = cornerVertexIds[sideIdx]!;
-        const vB = cornerVertexIds[(sideIdx + 1) % 6]!;
-        const existingEdge = eAcc.edges[eId];
-        const baseEdge =
-          existingEdge ?? createEdgeNode(eId, vA, vB, eAcc.vertices);
-        const updatedEdge: EdgeNode = {
-          ...baseEdge,
-          adjacentHexIds: appendUnique(baseEdge.adjacentHexIds, hId),
-        };
+    for (let sideIdx = 0; sideIdx < 6; sideIdx++) {
+      const eId = sideEdgeIds[sideIdx]!;
+      const vA = cornerVertexIds[sideIdx]!;
+      const vB = cornerVertexIds[(sideIdx + 1) % 6]!;
+      let eNode = edges[eId];
+      if (!eNode) {
+        eNode = createEdgeNode(eId, vA, vB, vertices);
+        edges[eId] = eNode;
+        edgeOrder.push(eId);
+      }
+      pushUnique(eNode.adjacentHexIds, hId);
 
-        const vANode = eAcc.vertices[vA]!;
-        const vBNode = eAcc.vertices[vB]!;
-        const updatedVA: VertexNode = {
-          ...vANode,
-          adjacentVertexIds: appendUnique(vANode.adjacentVertexIds, vB),
-          incidentEdgeIds: appendUnique(vANode.incidentEdgeIds, eId),
-        };
-        const updatedVB: VertexNode = {
-          ...vBNode,
-          adjacentVertexIds: appendUnique(vBNode.adjacentVertexIds, vA),
-          incidentEdgeIds: appendUnique(vBNode.incidentEdgeIds, eId),
-        };
+      const vANode = vertices[vA]!;
+      const vBNode = vertices[vB]!;
+      pushUnique(vANode.adjacentVertexIds, vB);
+      pushUnique(vANode.incidentEdgeIds, eId);
+      pushUnique(vBNode.adjacentVertexIds, vA);
+      pushUnique(vBNode.incidentEdgeIds, eId);
+    }
+  }
 
-        return {
-          vertices: { ...eAcc.vertices, [vA]: updatedVA, [vB]: updatedVB },
-          edges: { ...eAcc.edges, [eId]: updatedEdge },
-          edgeOrder: existingEdge ? eAcc.edgeOrder : [...eAcc.edgeOrder, eId],
-        };
-      },
-      { vertices: withCorners.vertices, edges: acc.edges, edgeOrder: acc.edgeOrder }
-    );
-
-    return {
-      hexSize,
-      hexes: { ...acc.hexes, [hId]: hexNode },
-      vertices: withEdges.vertices,
-      edges: withEdges.edges,
-      hexOrder: [...acc.hexOrder, hId],
-      vertexOrder: withCorners.vertexOrder,
-      edgeOrder: withEdges.edgeOrder,
-    };
-  }, initialTopology);
+  return { hexSize, hexes, vertices, edges, hexOrder, vertexOrder, edgeOrder };
 }
 
 function pickLongerPath(

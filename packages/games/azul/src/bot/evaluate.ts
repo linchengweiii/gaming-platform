@@ -6,7 +6,8 @@ import {
   AZUL_MASTER_WEIGHTS,
   FLOOR_PENALTIES,
 } from "../config.ts";
-import { getWallColumnForColor, scoreWallPlacement } from "../rules.ts";
+import { getWallColumnForColor, setWallCell } from "../rules/helpers.ts";
+import { scoreWallPlacement } from "../rules/scoring.ts";
 import type {
   AzulAction,
   AzulPlayerState,
@@ -19,36 +20,16 @@ import {
   countRemainingColorInOffer,
 } from "./tracker.ts";
 
-export function withWallTile(
-  wall: readonly (readonly (AzulTileColor | null)[])[],
-  row: number,
-  col: number,
-  color: AzulTileColor
-): (AzulTileColor | null)[][] {
-  return wall.map((rCells, rIdx) =>
-    rIdx === row
-      ? rCells.map((cell, cIdx) => (cIdx === col ? color : cell))
-      : [...rCells]
-  );
-}
-
 export function computeTotalFloorPenalty(floorLen: number): number {
-  let s = 0;
-  const cap =
-    floorLen < FLOOR_PENALTIES.length ? floorLen : FLOOR_PENALTIES.length;
-  for (let i = 0; i < cap; i++) s += -FLOOR_PENALTIES[i]!;
-  return s;
+  return computeMarginalFloorPenalty(0, floorLen);
 }
 
-export function computeMarginalFloorPenalty(
+function computeMarginalFloorPenalty(
   currentFloorLen: number,
   addedFloorItems: number
 ): number {
   let s = 0;
-  const end =
-    currentFloorLen + addedFloorItems < FLOOR_PENALTIES.length
-      ? currentFloorLen + addedFloorItems
-      : FLOOR_PENALTIES.length;
+  const end = Math.min(currentFloorLen + addedFloorItems, FLOOR_PENALTIES.length);
   for (let i = currentFloorLen; i < end; i++) s += -FLOOR_PENALTIES[i]!;
   return s;
 }
@@ -208,7 +189,7 @@ export function evaluateDraftAction(
       ? 0
       : countRemainingColorInOffer(state, action.color, action);
     const isStranded = !completesLine && stillNeeded > remColor;
-    const hypoWall = withWallTile(afterSmartWall, row, col, action.color);
+    const hypoWall = setWallCell(afterSmartWall, row, col, action.color);
     const futureWallScore = scoreWallPlacement(hypoWall, row, col);
     const filledInCol = (completesLine ? afterSmartWall : hypoWall).filter(
       (r) => r[col] !== null
@@ -310,7 +291,7 @@ export function evaluateDraftAction(
   } else {
     const remColor = countRemainingColorInOffer(state, action.color, action);
     const stillNeeded = space - placed;
-    const hypoWall = withWallTile(afterProj.wall, row, col, action.color);
+    const hypoWall = setWallCell(afterProj.wall, row, col, action.color);
     const futPts = scoreWallPlacement(hypoWall, row, col);
 
     if (remColor >= stillNeeded) {

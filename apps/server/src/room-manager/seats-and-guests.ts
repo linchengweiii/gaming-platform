@@ -1,14 +1,34 @@
-import type { PlayerDescriptor } from "@gaming-platform/core";
+import type {
+  MatchSessionState,
+  PlayerDescriptor,
+} from "@gaming-platform/core";
 import { PLAYER_COLORS } from "@gaming-platform/catan";
 import { MAX_GUEST_DISPLAY_NAME_LENGTH } from "../config.ts";
 import {
+  findRoomRecord,
   getRoomPlayerBoundsPure,
   getRoomRecordPure,
+  isPlayerInRoomPure,
   rebuildRoomPlayersPure,
   removeRoomRecordFromState,
   setRoomRecordInState,
 } from "./helpers.ts";
 import type { RoomManagerState, RoomRecord } from "./types.ts";
+
+function mapSessionSnapshotPlayers(
+  sessionState: MatchSessionState<any, any> | null,
+  mapPlayer: (sp: any) => any
+): MatchSessionState<any, any> | null {
+  if (!sessionState) return null;
+  return {
+    ...sessionState,
+    snapshots: sessionState.snapshots.map((snap) =>
+      snap && Array.isArray(snap.players)
+        ? { ...snap, players: snap.players.map(mapPlayer) }
+        : snap
+    ),
+  };
+}
 
 export function joinRoomPure(
   managerState: RoomManagerState,
@@ -31,7 +51,7 @@ export function joinRoomPure(
       (p) => p.id === preferredPlayerId
     );
     if (existingHuman) {
-      if (room.status !== "in_progress" && cleanName) {
+      if (room.status !== "in_progress") {
         const updatedHumans = room.humanPlayers.map((p) =>
           p.id === preferredPlayerId ? { ...p, name: cleanName } : p
         );
@@ -168,17 +188,19 @@ export function leaveRoomPure(
 export function closeRoomPure(
   managerState: RoomManagerState,
   roomId: string
-): { state: RoomManagerState; closed: boolean } {
-  if (!managerState.rooms[roomId]) {
-    return { state: managerState, closed: false };
+): { state: RoomManagerState; closed: boolean; canonicalId: string } {
+  const target = findRoomRecord(managerState, roomId);
+  if (!target) {
+    return { state: managerState, closed: false, canonicalId: roomId };
   }
   return {
-    state: removeRoomRecordFromState(managerState, roomId),
+    state: removeRoomRecordFromState(managerState, target.roomId),
     closed: true,
+    canonicalId: target.roomId,
   };
 }
 
-export function signOutPlayerFromRoomPure(
+function signOutPlayerFromRoomPure(
   managerState: RoomManagerState,
   roomId: string,
   playerId: string
@@ -186,34 +208,10 @@ export function signOutPlayerFromRoomPure(
   state: RoomManagerState;
   closed: boolean;
   updated: boolean;
-  convertedToBot: boolean;
 } {
   const room = managerState.rooms[roomId];
-  if (!room || !playerId) {
-    return {
-      state: managerState,
-      closed: false,
-      updated: false,
-      convertedToBot: false,
-    };
-  }
-
-  const isOwnedOrSeated =
-    room.ownerId === playerId ||
-    room.humanPlayers.some(
-      (p) => p.id === playerId || p.controllerId === playerId
-    ) ||
-    room.players.some(
-      (p) => !p.isBot && (p.id === playerId || p.controllerId === playerId)
-    );
-
-  if (!isOwnedOrSeated) {
-    return {
-      state: managerState,
-      closed: false,
-      updated: false,
-      convertedToBot: false,
-    };
+  if (!room || !playerId || !isPlayerInRoomPure(room, playerId)) {
+    return { state: managerState, closed: false, updated: false };
   }
 
   if (room.status !== "in_progress") {
@@ -222,7 +220,6 @@ export function signOutPlayerFromRoomPure(
       state: left.state,
       closed: left.closed,
       updated: !left.closed && left.state !== managerState,
-      convertedToBot: false,
     };
   }
 
@@ -238,7 +235,6 @@ export function signOutPlayerFromRoomPure(
       state: removeRoomRecordFromState(managerState, roomId),
       closed: true,
       updated: false,
-      convertedToBot: false,
     };
   }
 
@@ -270,28 +266,16 @@ export function signOutPlayerFromRoomPure(
       : p
   );
 
-  const nextSessionState = room.sessionState
-    ? {
-        ...room.sessionState,
-        snapshots: room.sessionState.snapshots.map((snap) =>
-          snap && Array.isArray(snap.players)
-            ? {
-                ...snap,
-                players: snap.players.map((sp: any) =>
-                  leavingSeatIds.has(sp.id)
-                    ? {
-                        ...sp,
-                        name: toBotName(sp.name),
-                        isBot: true,
-                        botDifficulty: room.botDifficulty,
-                      }
-                    : sp
-                ),
-              }
-            : snap
-        ),
-      }
-    : null;
+  const nextSessionState = mapSessionSnapshotPlayers(room.sessionState, (sp) =>
+    leavingSeatIds.has(sp.id)
+      ? {
+          ...sp,
+          name: toBotName(sp.name),
+          isBot: true,
+          botDifficulty: room.botDifficulty,
+        }
+      : sp
+  );
 
   const updatedRoom: RoomRecord = {
     ...room,
@@ -307,7 +291,6 @@ export function signOutPlayerFromRoomPure(
     state: setRoomRecordInState(managerState, updatedRoom),
     closed: false,
     updated: true,
-    convertedToBot: leavingSeatIds.size > 0,
   };
 }
 
@@ -381,23 +364,10 @@ export function renameGuestEverywherePure(
       const nextPlayers = room.players.map((p) =>
         !p.isBot && p.id === playerId ? { ...p, name: cleanName } : p
       );
-      const nextSessionState = room.sessionState
-        ? {
-            ...room.sessionState,
-            snapshots: room.sessionState.snapshots.map((snap) =>
-              snap && Array.isArray(snap.players)
-                ? {
-                    ...snap,
-                    players: snap.players.map((sp: any) =>
-                      !sp.isBot && sp.id === playerId
-                        ? { ...sp, name: cleanName }
-                        : sp
-                    ),
-                  }
-                : snap
-            ),
-          }
-        : null;
+      const nextSessionState = mapSessionSnapshotPlayers(
+        room.sessionState,
+        (sp) => (!sp.isBot && sp.id === playerId ? { ...sp, name: cleanName } : sp)
+      );
 
       const updatedRoom: RoomRecord = {
         ...room,

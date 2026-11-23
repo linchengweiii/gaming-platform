@@ -46,7 +46,7 @@ import {
   t,
 } from "../../i18n/index.ts";
 import { escapeAttr } from "../helpers/html-and-dropdown.ts";
-import { renderMapFullscreenButtonPure } from "./in-game/fullscreen-controls.ts";
+import { renderMapFullscreenButtonPure } from "./in-game/overlays-and-modals.ts";
 
 export function renderCostPipStripPure(
   cost: Partial<ResourceMap>,

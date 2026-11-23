@@ -14,20 +14,17 @@ import {
   getLegalShipEdges,
 } from "../rules/network.ts";
 import type { CatanAction } from "../types/actions.ts";
-import {
-  RESOURCES,
-  type ResourceMap,
-  type ResourceType,
-} from "../types/domain.ts";
+import type { ResourceMap, ResourceType } from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import { scoreExpansionEdge } from "./edge-eval.ts";
+import { checkHandPortConvertibleToCost } from "./lethal-targets.ts";
 import {
   analyzeExpansionNetwork,
   simulateRouteLengthWithEdge,
 } from "./route-eval.ts";
 import { evaluateHandStrategicValue } from "./trade-eval.ts";
 
-export type ResourceMaritimeTradeAction = Extract<
+type ResourceMaritimeTradeAction = Extract<
   CatanAction,
   { type: "MARITIME_TRADE" }
 > & {
@@ -178,45 +175,20 @@ export function chooseMainMaritimeTradeAction(
 
     // Evaluate strictly in strategic build-value order (City > Open Settlement > Longest-Road Edge > Road+Settlement > Dev Card)!
     for (const cost of comboTargets) {
-      let totalMissing = 0;
-      let firstMissing: ResourceType | null = null;
-      let bankCanSupply = true;
-      let totalConvertibleTrades = 0;
-      let bestGiveRes: ResourceType | null = null;
-      let bestGiveRatio = 99;
-
-      for (const r of RESOURCES) {
-        const req = cost[r] ?? 0;
-        if (player.resources[r] < req) {
-          const need = req - player.resources[r];
-          if (state.bank[r] < need) {
-            bankCanSupply = false;
-            break;
-          }
-          totalMissing += need;
-          if (!firstMissing) firstMissing = r;
-        } else if (player.resources[r] > req) {
-          const spare = player.resources[r] - req;
-          const tradesHere = Math.floor(spare / ratios[r]);
-          if (tradesHere > 0) {
-            totalConvertibleTrades += tradesHere;
-            if (ratios[r] < bestGiveRatio) {
-              bestGiveRatio = ratios[r];
-              bestGiveRes = r;
-            }
-          }
-        }
-      }
-
+      const conv = checkHandPortConvertibleToCost(
+        state,
+        ratios,
+        player.resources,
+        cost
+      );
       if (
-        bankCanSupply &&
-        totalMissing > 0 &&
-        totalConvertibleTrades >= totalMissing &&
-        firstMissing &&
-        bestGiveRes
+        conv.reachable &&
+        conv.missingCount > 0 &&
+        conv.firstGive &&
+        conv.firstReceive
       ) {
         const matchTrade = maritimeTrades.find(
-          (t) => t.give === bestGiveRes && t.receive === firstMissing
+          (t) => t.give === conv.firstGive && t.receive === conv.firstReceive
         );
         if (matchTrade) return matchTrade;
       }
@@ -294,6 +266,15 @@ export function chooseEndOfTurnSevenShieldTradeAction(
   scarcity: Record<ResourceType, number>,
   myProd: Record<ResourceType, number>
 ): CatanAction | null {
+  const offTurnBefore = evaluateHandStrategicValue(
+    state,
+    player,
+    player.resources,
+    weights,
+    scarcity,
+    myProd,
+    false
+  );
   let bestShieldTrade: CatanAction | null = null;
   let bestShieldScore = -Infinity;
   for (const t of maritimeTrades) {
@@ -304,15 +285,6 @@ export function chooseEndOfTurnSevenShieldTradeAction(
       [t.receive]: player.resources[t.receive] + 1,
     };
     // Evaluate using `isOwnActiveTurn = false` (off-turn survival value!)
-    const offTurnBefore = evaluateHandStrategicValue(
-      state,
-      player,
-      player.resources,
-      weights,
-      scarcity,
-      myProd,
-      false
-    );
     const offTurnAfter = evaluateHandStrategicValue(
       state,
       player,

@@ -60,14 +60,6 @@ export const GEM_STYLES: Record<
   },
 };
 
-export function escapeSplendorHtml(raw: string): string {
-  return raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 export function renderSplendorGemToken(
   color: TokenColor,
   count: number,

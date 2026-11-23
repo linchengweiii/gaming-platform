@@ -102,22 +102,3 @@ export function grantCardFromDeckForTest(
   const player = state.players.find((p) => p.id === playerId)!;
   player.progressCards.push({ id: cardId, type, discipline });
 }
-
-export function TERRAIN_TO_RESOURCE_FOR_TEST(
-  terrain: string
-): "brick" | "lumber" | "wool" | "grain" | "ore" | null {
-  switch (terrain) {
-    case "hills":
-      return "brick";
-    case "forest":
-      return "lumber";
-    case "pasture":
-      return "wool";
-    case "fields":
-      return "grain";
-    case "mountains":
-      return "ore";
-    default:
-      return null;
-  }
-}

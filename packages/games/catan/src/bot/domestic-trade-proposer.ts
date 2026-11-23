@@ -70,8 +70,7 @@ export function findStrategicDomesticTradeOffer(
   state: CatanState,
   player: CatanPlayerState,
   weights: CatanBotWeights,
-  scarcity: Record<ResourceType, number>,
-  _prod: Record<ResourceType, number>
+  scarcity: Record<ResourceType, number>
 ): CatanAction | null {
   if (weights.maxDomesticOffersPerTurn <= 0) return null;
   if (state.activeTradeOffer) return null;

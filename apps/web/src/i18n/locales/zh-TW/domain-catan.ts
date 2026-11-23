@@ -179,29 +179,12 @@ export const ZH_TW_CATAN_DISCIPLINES: Readonly<
     {
       readonly label: string;
       readonly shortCode: string;
-      readonly perkTitle: string;
-      readonly perkRule: string;
     }
   >
 > = {
-  trade: {
-    label: "貿易",
-    shortCode: "貿",
-    perkTitle: "貿易館",
-    perkRule: "Lv 3：所有商品皆可 2:1 與銀行交易",
-  },
-  politics: {
-    label: "政治",
-    shortCode: "政",
-    perkTitle: "堡壘",
-    perkRule: "Lv 3：可將精銳騎士晉升為強力騎士（Lv 3）",
-  },
-  science: {
-    label: "科學",
-    shortCode: "科",
-    perkTitle: "水道",
-    perkRule: "Lv 3：非 7 點擲骰無產出時免費任選 1 張資源",
-  },
+  trade: { label: "貿易", shortCode: "貿" },
+  politics: { label: "政治", shortCode: "政" },
+  science: { label: "科學", shortCode: "科" },
 };
 
 export const ZH_TW_CATAN_PROGRESS_CARDS: Readonly<

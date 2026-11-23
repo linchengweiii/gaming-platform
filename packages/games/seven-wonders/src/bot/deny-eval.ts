@@ -59,35 +59,38 @@ export function estimateOpponentBestUseOfCard(
   );
 }
 
-export function doesAnyOpponentHaveActiveHalikarnassus(
+export function getActiveHalikarnassusOpponents(
   state: SevenWondersState,
   myIdx: number
-): boolean {
-  return state.players.some((p, idx) => {
-    if (idx === myIdx) return false;
+): number[] {
+  const result: number[] = [];
+  for (let idx = 0; idx < state.players.length; idx++) {
+    if (idx === myIdx) continue;
+    const p = state.players[idx]!;
     const b = getWonderBoardDefinition(p.wonderId, p.wonderSide);
-    return b.stages
-      .slice(p.builtWonderStages)
-      .some((st) => st.effects.some((e) => e.kind === "build_from_discard"));
-  });
+    if (
+      b.stages
+        .slice(p.builtWonderStages)
+        .some((st) => st.effects.some((e) => e.kind === "build_from_discard"))
+    ) {
+      result.push(idx);
+    }
+  }
+  return result;
 }
 
 export function computeHalikarnassusDiscardFeedPenalty(
   state: SevenWondersState,
   myIdx: number,
-  card: SevenWondersCard
+  card: SevenWondersCard,
+  halikarnassusOpponentIndices: readonly number[]
 ): number {
   const denCfg = SEVEN_WONDERS_MASTER_BOT_WEIGHTS.denial;
   const coinW = SEVEN_WONDERS_MASTER_BOT_WEIGHTS.ownOpportunityLeakCoinWeight;
   let penalty = 0;
-  for (let idx = 0; idx < state.players.length; idx++) {
-    if (idx === myIdx) continue;
+  for (const idx of halikarnassusOpponentIndices) {
     const p = state.players[idx]!;
-    const b = getWonderBoardDefinition(p.wonderId, p.wonderSide);
-    const hasDiscardPower = b.stages
-      .slice(p.builtWonderStages)
-      .some((st) => st.effects.some((e) => e.kind === "build_from_discard"));
-    if (hasDiscardPower && !hasDuplicateCardName(p, card.name)) {
+    if (!hasDuplicateCardName(p, card.name)) {
       const valForHal = evaluateMasterCardUtility(state, idx, card);
       const grossHal =
         valForHal.nonCoinUtility + valForHal.immediateCoinsGained * coinW;

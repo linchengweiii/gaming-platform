@@ -18,39 +18,19 @@ export const SPECIAL_BUILD_AUTO_END_DELAY_MS = 160;
 
 export const DEFAULT_SHOW_BOT_MOVES = true;
 export const DEFAULT_BOT_MOVE_THROTTLE_MS = 1200;
-export const MIN_BOT_MOVE_THROTTLE_MS = 150;
-export const MAX_BOT_MOVE_THROTTLE_MS = 5000;
+const MIN_BOT_MOVE_THROTTLE_MS = 150;
+const MAX_BOT_MOVE_THROTTLE_MS = 5000;
 
-export interface BotMoveThrottlePreset {
+interface BotMoveThrottlePreset {
   readonly id: "fast" | "normal" | "slow";
-  readonly label: string;
   readonly shortLabel: string;
   readonly delayMs: number;
-  readonly description: string;
 }
 
 export const BOT_MOVE_THROTTLE_PRESETS: readonly BotMoveThrottlePreset[] = [
-  {
-    id: "fast",
-    label: "Fast",
-    shortLabel: "0.35s",
-    delayMs: 350,
-    description: "Snappy bot turns for experienced players.",
-  },
-  {
-    id: "normal",
-    label: "Normal",
-    shortLabel: "1.2s",
-    delayMs: 1200,
-    description: "Balanced throttle so you can follow each bot step.",
-  },
-  {
-    id: "slow",
-    label: "Slow",
-    shortLabel: "2.2s",
-    delayMs: 2200,
-    description: "Unhurried learning pace to study every bot decision.",
-  },
+  { id: "fast", shortLabel: "0.35s", delayMs: 350 },
+  { id: "normal", shortLabel: "1.2s", delayMs: 1200 },
+  { id: "slow", shortLabel: "2.2s", delayMs: 2200 },
 ];
 
 export function clampBotMoveThrottleMsPure(rawMs: unknown): number {
@@ -90,8 +70,8 @@ export function formatBotThrottleShortPure(delayMs: number): string {
   const seconds = clamped / 1000;
   return `${Number.isInteger(seconds) ? seconds : Number(seconds.toFixed(2))}s`;
 }
-export const WS_RECONNECT_BASE_DELAY_MS = 500;
-export const WS_RECONNECT_MAX_DELAY_MS = 10_000;
+const WS_RECONNECT_BASE_DELAY_MS = 500;
+const WS_RECONNECT_MAX_DELAY_MS = 10_000;
 export const WS_CLIENT_PING_INTERVAL_MS = 20_000;
 export const WS_CLIENT_STALE_TIMEOUT_MS = 45_000;
 export const WS_DISCONNECTED_FALLBACK_SYNC_MS = 2_500;
@@ -181,11 +161,10 @@ export const BOT_DIFFICULTY_META: Record<
 export const USER_PROFILES: ReadonlyArray<{
   readonly id: string;
   readonly name: string;
-  readonly roleHint: string;
 }> = [
-  { id: "p1", name: "Player 1 (You)", roleHint: "Host seat" },
-  { id: "guest-2", name: "Guest 2", roleHint: "Guest seat" },
-  { id: "guest-3", name: "Guest 3", roleHint: "Guest seat" },
+  { id: "p1", name: "Player 1 (You)" },
+  { id: "guest-2", name: "Guest 2" },
+  { id: "guest-3", name: "Guest 3" },
 ];
 
 export const INITIAL_LOBBY_ROOM_SEEDS: readonly CreateLocalRoomOptions[] = [

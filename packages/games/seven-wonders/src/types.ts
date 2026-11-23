@@ -19,8 +19,7 @@ export type WonderResource = RawResource | ManufacturedGood;
 
 export type WonderResourceMap = Record<WonderResource, number>;
 
-export const SCIENCE_SYMBOLS = ["compass", "gear", "tablet"] as const;
-export type ScienceSymbol = (typeof SCIENCE_SYMBOLS)[number];
+export type ScienceSymbol = "compass" | "gear" | "tablet";
 export type ScienceMap = Record<ScienceSymbol, number>;
 
 export type SevenWondersAge = 1 | 2 | 3;

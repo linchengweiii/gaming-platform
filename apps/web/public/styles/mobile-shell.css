@@ -48,7 +48,6 @@ button,
 /* Prevent iOS Safari automatic zoom when focusing form fields (< 16px triggers zoom) */
 @media (max-width: 768px), (pointer: coarse) {
   input.ga-input,
-  select.ga-select,
   textarea.ga-input,
   #inp-rename-guest {
     font-size: 16px !important;
@@ -62,8 +61,7 @@ button,
   }
 
   .ga-nav__inner,
-  .ga-nav--room .ga-nav__inner,
-  .ga-nav--table .ga-nav__inner {
+  .ga-nav--room .ga-nav__inner {
     width: calc(100% - 20px);
     min-height: 44px;
     padding-block: 7px;

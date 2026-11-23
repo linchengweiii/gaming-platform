@@ -51,7 +51,6 @@ export const TUNABLE_CATAN_WEIGHT_KEYS: Array<keyof CatanBotWeights> = [
   "roadToSpotPriority",
   "longestRoadContestBonus",
   "harbormasterContestBonus",
-  "cityWallPriority",
   "robberLeaderVpWeight",
   "robberPipsWeight",
   "tradeAcceptThreshold",

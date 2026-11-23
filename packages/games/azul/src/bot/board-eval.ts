@@ -3,13 +3,13 @@ import {
   AZUL_TILES_PER_COLOR,
   AZUL_WALL_PATTERN,
 } from "../config.ts";
-import { getWallColumnForColor, scoreWallPlacement } from "../rules.ts";
+import { getWallColumnForColor, setWallCell } from "../rules/helpers.ts";
+import { scoreWallPlacement } from "../rules/scoring.ts";
 import type { AzulState } from "../types.ts";
 import {
   computeEndgameFromSimWall,
   computeTotalFloorPenalty,
   projectRoundWallPlacements,
-  withWallTile,
 } from "./evaluate.ts";
 import { type PublicTileTracker, emptyColorCounts } from "./tracker.ts";
 
@@ -25,29 +25,26 @@ export function evaluateIntraRoundBoardVector(
   for (const f of state.factories) for (const c of f) remOffer[c]++;
   for (const c of state.centerPool) remOffer[c]++;
 
-  const summaries = state.players.map((p) => {
-    const proj = projectRoundWallPlacements(p);
-    const endSummary = computeEndgameFromSimWall(
-      p,
-      proj.wall,
-      proj.roundPts,
-      proj.completedRows
-    );
-    return { p, proj, endSummary };
-  });
+  const summaries = state.players.map((p) => ({
+    p,
+    proj: projectRoundWallPlacements(p),
+  }));
 
   const gameEndsThisRound =
     summaries.some((s) => s.proj.completedRows >= 1) ||
     state.round >= state.config.maxRounds;
 
   if (gameEndsThisRound) {
-    return summaries.map((me, idx) => {
+    const endSummaries = summaries.map(({ p, proj }) =>
+      computeEndgameFromSimWall(p, proj.wall, proj.roundPts, proj.completedRows)
+    );
+    return endSummaries.map((myEnd, idx) => {
       let maxOtherTotal = -1;
       let maxOtherRowsForTie = -1;
       for (let j = 0; j < nPlayers; j++) {
         if (j === idx) continue;
-        const ot = summaries[j]!.endSummary.total;
-        const orows = summaries[j]!.endSummary.completedRows;
+        const ot = endSummaries[j]!.total;
+        const orows = endSummaries[j]!.completedRows;
         if (
           ot > maxOtherTotal ||
           (ot === maxOtherTotal && orows > maxOtherRowsForTie)
@@ -56,8 +53,8 @@ export function evaluateIntraRoundBoardVector(
           maxOtherRowsForTie = orows;
         }
       }
-      const myTot = me.endSummary.total;
-      const myRows = me.endSummary.completedRows;
+      const myTot = myEnd.total;
+      const myRows = myEnd.completedRows;
       const winsAll =
         myTot > maxOtherTotal ||
         (myTot === maxOtherTotal && myRows > maxOtherRowsForTie);
@@ -86,7 +83,7 @@ export function evaluateIntraRoundBoardVector(
       const l = p.patternLines[r]!;
       if (!l.color || l.count === 0 || l.count >= l.capacity) continue;
       const col = getWallColumnForColor(r, l.color);
-      const hypoWall = withWallTile(proj.wall, r, col, l.color);
+      const hypoWall = setWallCell(proj.wall, r, col, l.color);
       const futureWall = scoreWallPlacement(hypoWall, r, col);
       const remThisRound = remOffer[l.color];
       const stillNeeded = l.capacity - l.count;

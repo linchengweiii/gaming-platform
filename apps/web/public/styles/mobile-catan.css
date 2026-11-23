@@ -117,8 +117,6 @@
   .map-zoom-controls,
   .map-build-dock,
   .map-end-turn-hud,
-  .map-decision-popup,
-  .map-spot-popover,
   .ga-tutorial-coach {
     touch-action: manipulation;
   }

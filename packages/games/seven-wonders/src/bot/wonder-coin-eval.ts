@@ -1,7 +1,4 @@
-import {
-  SEVEN_WONDERS_BOT_RESOURCES,
-  SEVEN_WONDERS_MASTER_BOT_WEIGHTS,
-} from "../config/bot-config.ts";
+import { SEVEN_WONDERS_MASTER_BOT_WEIGHTS } from "../config/bot-config.ts";
 import {
   SEVEN_WONDERS_COINS_PER_TREASURY_VP,
   SEVEN_WONDERS_TURNS_PER_AGE,
@@ -14,10 +11,11 @@ import {
   getRightNeighborIndex,
   hasWonderStageEffect,
 } from "../rules.ts";
-import type {
-  NeighborPayment,
-  SevenWondersPlayerState,
-  SevenWondersState,
+import {
+  type NeighborPayment,
+  type SevenWondersPlayerState,
+  type SevenWondersState,
+  WONDER_RESOURCES,
 } from "../types.ts";
 import {
   computeOpponentContenderWeight,
@@ -92,7 +90,7 @@ export function evaluateMasterWonderStage(
       const ownRes = getOwnResourceProfile(me);
       const resRichness = Math.min(
         4,
-        SEVEN_WONDERS_BOT_RESOURCES.reduce((s, r) => s + ownRes.fixed[r], 0) +
+        WONDER_RESOURCES.reduce((s, r) => s + ownRes.fixed[r], 0) +
           ownRes.choices.length
       );
       const perAgeVal = 3.05 + resRichness * 0.25;
@@ -195,7 +193,7 @@ export function evaluateMasterWonderStage(
   return { nonCoinUtility: val, immediateCoinsGained: coinsGained };
 }
 
-export function concaveCoinPotential(coins: number, age: 1 | 2 | 3): number {
+function concaveCoinPotential(coins: number, age: 1 | 2 | 3): number {
   if (coins <= 0) return age < 3 ? -0.28 : 0;
   const tier1 = Math.min(4, coins);
   const tier2 = Math.max(0, Math.min(8, coins) - 4);

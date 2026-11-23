@@ -20,7 +20,7 @@ import {
   renderVertexBuildingAndKnightParts,
 } from "./pieces-svg.ts";
 
-export interface ClickableBoardTargets {
+interface ClickableBoardTargets {
   readonly clickableHexes: ReadonlySet<string>;
   readonly clickableVertices: ReadonlySet<string>;
   readonly clickableEdges: ReadonlySet<string>;
@@ -38,6 +38,21 @@ export function computeClickableBoardTargets(
   const setupShipSuggestedEdges = new Set<string>();
 
   if (actingPlayerId) {
+    const addRouteEdges = (anchor: string | null): void => {
+      const legalRoads = getLegalRoadEdges(state, actingPlayerId, anchor);
+      const legalShips = state.config.enableSeafarers
+        ? getLegalShipEdges(state, actingPlayerId, anchor)
+        : [];
+      const roadSet = new Set(legalRoads);
+      legalRoads.forEach((e) => clickableEdges.add(e));
+      legalShips.forEach((e) => {
+        clickableEdges.add(e);
+        if (options.setupEdgeKind === "ship" || !roadSet.has(e)) {
+          setupShipSuggestedEdges.add(e);
+        }
+      });
+    };
+
     if (
       state.phase === "SETUP_SETTLEMENT_1" ||
       state.phase === "SETUP_SETTLEMENT_2"
@@ -49,23 +64,7 @@ export function computeClickableBoardTargets(
       state.phase === "SETUP_ROAD_1" ||
       state.phase === "SETUP_ROAD_2"
     ) {
-      const anchor = state.lastSetupSettlementVertexId;
-      if (state.config.enableSeafarers) {
-        const legalRoads = getLegalRoadEdges(state, actingPlayerId, anchor);
-        const legalShips = getLegalShipEdges(state, actingPlayerId, anchor);
-        const roadSet = new Set(legalRoads);
-        legalRoads.forEach((e) => clickableEdges.add(e));
-        legalShips.forEach((e) => {
-          clickableEdges.add(e);
-          if (options.setupEdgeKind === "ship" || !roadSet.has(e)) {
-            setupShipSuggestedEdges.add(e);
-          }
-        });
-      } else {
-        getLegalRoadEdges(state, actingPlayerId, anchor).forEach((e) =>
-          clickableEdges.add(e)
-        );
-      }
+      addRouteEdges(state.lastSetupSettlementVertexId);
     } else if (state.phase === "MOVE_ROBBER_OR_PIRATE") {
       if (
         options.robberOrPirateMode === "pirate" &&
@@ -80,18 +79,7 @@ export function computeClickableBoardTargets(
         );
       }
     } else if (state.phase === "ROAD_BUILDING_DEV") {
-      const legalRoads = getLegalRoadEdges(state, actingPlayerId, null);
-      const legalShips = state.config.enableSeafarers
-        ? getLegalShipEdges(state, actingPlayerId, null)
-        : [];
-      const roadSet = new Set(legalRoads);
-      legalRoads.forEach((e) => clickableEdges.add(e));
-      legalShips.forEach((e) => {
-        clickableEdges.add(e);
-        if (options.setupEdgeKind === "ship" || !roadSet.has(e)) {
-          setupShipSuggestedEdges.add(e);
-        }
-      });
+      addRouteEdges(null);
     } else if (
       state.phase === "MAIN_PHASE" ||
       state.phase === "SPECIAL_BUILDING"

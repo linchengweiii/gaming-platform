@@ -145,7 +145,7 @@ describe("Bot Move Feed (Default ON + Toggle) & Move Throttle", () => {
     azulState = AzulEngine.applyAction(azulState, "b1", azulAct).state;
     const azulFeed = extractBotMoveFeedPure(
       "azul",
-      AzulEngine.getPlayerView(azulState)
+      AzulEngine.getPlayerView(azulState, "h1")
     );
     expect(azulFeed.hasBots).toBe(true);
     expect(azulFeed.latestMove?.playerId).toBe("b1");

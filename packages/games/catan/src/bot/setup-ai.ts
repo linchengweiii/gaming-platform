@@ -20,7 +20,7 @@ import { seaHopsToForeignIsland } from "./route-eval.ts";
  * Simulates subsequent opponents' snake-draft picks (`i+1..N-1`, `N-1..i+1`) to evaluate the
  * exact surviving 2nd-settlement pair `(v1, v2)` + full empire OWS/Road-Settlement coherence!
  */
-export function chooseMasterFirstSettlementWithSnakeRollout(
+function chooseMasterFirstSettlementWithSnakeRollout(
   state: CatanState,
   playerId: string,
   legalActions: CatanAction[],

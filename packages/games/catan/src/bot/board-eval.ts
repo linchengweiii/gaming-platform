@@ -1,7 +1,4 @@
-import {
-  CATAN_BOT_WEIGHTS,
-  type CatanBotWeights,
-} from "../config/bot-config.ts";
+import type { CatanBotWeights } from "../config/bot-config.ts";
 import { TERRAIN_TO_COMMODITY } from "../config/cities-knights-config.ts";
 import {
   NUMBER_TOKEN_PIPS,
@@ -15,7 +12,6 @@ import {
 import { RESOURCES, type ResourceType } from "../types/domain.ts";
 import type { CatanState } from "../types/state.ts";
 import {
-  computeBoardScarcity,
   computePlayerProductionPips,
   grantsNewIslandBonusVp,
 } from "./utils.ts";
@@ -27,15 +23,14 @@ export function evaluateVertexScore(
   state: CatanState,
   vertexId: string,
   playerId: string,
-  weights: CatanBotWeights = CATAN_BOT_WEIGHTS.smart,
-  scarcity?: Record<ResourceType, number>
+  weights: CatanBotWeights,
+  boardScarcity: Record<ResourceType, number>
 ): number {
   const vNode = state.topology.vertices[vertexId];
   if (!vNode) return -999;
 
   const player = state.players.find((p) => p.id === playerId);
   const isMaster = player?.botDifficulty === "master";
-  const boardScarcity = scarcity ?? computeBoardScarcity(state);
   const existingProd = computePlayerProductionPips(state, playerId, true);
   const existingNumbers = new Set<number>();
   for (const [vId, b] of Object.entries(state.buildings)) {

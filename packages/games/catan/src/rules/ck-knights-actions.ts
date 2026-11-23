@@ -225,7 +225,6 @@ export function applyMoveKnightPure(
 
   const movingKnight = currentState.knights[action.fromVertexId]!;
   const displacedKnight = currentState.knights[action.toVertexId];
-  const hasDisplacedTarget = Boolean(displacedKnight);
   const knightsWithMoverPlaced: CatanState["knights"] = {
     ...omitRecordKey(currentState.knights, action.fromVertexId),
     [action.toVertexId]: {
@@ -293,7 +292,7 @@ export function applyMoveKnightPure(
     {
       fromVertexId: action.fromVertexId,
       toVertexId: action.toVertexId,
-      displaced: hasDisplacedTarget,
+      displaced: false,
     }
   );
   const checked = checkAndAssignWinnerPure(logged.state, playerId);
@@ -332,53 +331,18 @@ export function applyChaseRobberWithKnightPure(
 
   const knight = currentState.knights[action.vertexId]!;
   const hNode = currentState.topology.hexes[action.hexId]!;
-
-  if (targetKind === "pirate") {
-    const candidates = getStealCandidatesForHexPure(
-      currentState,
-      action.hexId,
-      playerId,
-      "pirate"
-    );
-    const chasedState: CatanState = {
-      ...currentState,
-      pirateHexId: action.hexId,
-      phaseAfterRobber: "MAIN_PHASE",
-      knights: {
-        ...currentState.knights,
-        [action.vertexId]: {
-          ...knight,
-          active: false,
-          actedThisTurn: true,
-        },
-      },
-    };
-    const logged = appendCatanEvent(
-      chasedState,
-      [],
-      "PIRATE_CHASED",
-      `${player.name}'s Knight drove the Pirate Fleet to (${hNode.q},${hNode.r})!`,
-      playerId,
-      { vertexId: action.vertexId, hexId: action.hexId }
-    );
-    const resolved = resolvePostRobberOrPirateStealPure(
-      logged.state,
-      playerId,
-      candidates,
-      logged.emitted
-    );
-    return { state: resolved.state, events: resolved.emitted };
-  }
-
+  const isPirate = targetKind === "pirate";
   const candidates = getStealCandidatesForHexPure(
     currentState,
     action.hexId,
     playerId,
-    "robber"
+    targetKind
   );
   const chasedState: CatanState = {
     ...currentState,
-    robberHexId: action.hexId,
+    ...(isPirate
+      ? { pirateHexId: action.hexId }
+      : { robberHexId: action.hexId }),
     phaseAfterRobber: "MAIN_PHASE",
     knights: {
       ...currentState.knights,
@@ -392,8 +356,10 @@ export function applyChaseRobberWithKnightPure(
   const logged = appendCatanEvent(
     chasedState,
     [],
-    "ROBBER_CHASED",
-    `${player.name}'s Knight chased the Robber to (${hNode.q},${hNode.r})!`,
+    isPirate ? "PIRATE_CHASED" : "ROBBER_CHASED",
+    isPirate
+      ? `${player.name}'s Knight drove the Pirate Fleet to (${hNode.q},${hNode.r})!`
+      : `${player.name}'s Knight chased the Robber to (${hNode.q},${hNode.r})!`,
     playerId,
     { vertexId: action.vertexId, hexId: action.hexId }
   );

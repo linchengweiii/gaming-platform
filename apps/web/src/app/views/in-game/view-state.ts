@@ -1,10 +1,4 @@
-import {
-  type CatanAction,
-  CatanEngine,
-  type CatanState,
-} from "@gaming-platform/catan";
-import { SplendorEngine, type SplendorState } from "@gaming-platform/splendor";
-import { AzulEngine, type AzulState } from "@gaming-platform/azul";
+import { type CatanAction, CatanEngine } from "@gaming-platform/catan";
 import {
   type SevenWondersAction,
   SevenWondersEngine,
@@ -19,6 +13,10 @@ import {
 } from "../../helpers/room-queries.ts";
 import type { AppModel, ClientRoom, GuestSession } from "../../types.ts";
 import { getRoomSetupSummaryDataPure } from "../room-header-and-summary.ts";
+import {
+  type BotMoveFeedSummary,
+  extractBotMoveFeedPure,
+} from "./bot-move-feed.ts";
 import {
   computeCkBoardOptionsPure,
   computeInGameOverlayHtmlPure,
@@ -47,6 +45,7 @@ export interface InGameComputedContext {
   readonly boardActingPlayerId: string | null;
   readonly ckBoardOptions: Record<string, any>;
   readonly sevenWondersLegalActions: readonly SevenWondersAction[];
+  readonly botMoveFeed: BotMoveFeedSummary;
   readonly catanDecisionPopupHtml: string;
   readonly tutorialCoachHtml: string;
   readonly guideModalHtml: string;
@@ -141,23 +140,7 @@ export function computeInGameViewStatePure(
     return null;
   })();
 
-  const state: any =
-    room.gameId === "catan"
-      ? CatanEngine.getPlayerView(rawState as CatanState, effectiveViewerId)
-      : room.gameId === "splendor"
-        ? SplendorEngine.getPlayerView(
-            rawState as SplendorState,
-            effectiveViewerId
-          )
-        : room.gameId === "seven_wonders"
-          ? SevenWondersEngine.getPlayerView(
-              rawState as SevenWondersState,
-              effectiveViewerId
-            )
-          : AzulEngine.getPlayerView(
-              rawState as AzulState,
-              effectiveViewerId
-            );
+  const state: any = engine.getPlayerView(rawState, effectiveViewerId);
 
   const model: AppModel = (() => {
     const tut = clearedTurnModel.activeTutorial;
@@ -294,6 +277,8 @@ export function computeInGameViewStatePure(
     catanLegalActions
   );
 
+  const botMoveFeed = extractBotMoveFeedPure(room.gameId, state);
+
   return {
     usesServer,
     actingPlayerId,
@@ -317,6 +302,7 @@ export function computeInGameViewStatePure(
     boardActingPlayerId,
     ckBoardOptions,
     sevenWondersLegalActions,
+    botMoveFeed,
     ...overlays,
   };
 }
