@@ -24,9 +24,9 @@ import {
   getSevenWondersWonderNameLocalized,
   t,
 } from "../../i18n/index.ts";
+import { escapeHtml } from "../../app/helpers/html-and-dropdown.ts";
 import {
   SW_CARD_COLOR_META,
-  escapeSwHtml as escapeHtml,
   formatChoiceShortLabel,
   renderCostStripHtml,
   renderSwCoinSvg,

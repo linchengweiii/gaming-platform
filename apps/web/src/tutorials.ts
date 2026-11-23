@@ -1,9 +1,3 @@
-export type {
-  TutorialGameId,
-  TutorialLesson,
-  GameGuideSection,
-  GameReferenceGuide,
-} from "./tutorials/types.ts";
 export {
   TUTORIAL_SEEDS,
   TUTORIAL_LESSONS,

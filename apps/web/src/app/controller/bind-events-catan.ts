@@ -4,10 +4,6 @@ import {
   type ResourceType,
   type TradeGoodType,
 } from "@gaming-platform/catan";
-import {
-  canControlPlayerOnDevicePure,
-  getActiveRoomPure,
-} from "../helpers/room-queries.ts";
 import { bindCatanPhasesAndCkEvents } from "./bind-events-catan-phases-and-ck.ts";
 import { bindCatanTradeEvents } from "./bind-events-catan-trade-and-dev.ts";
 import {
@@ -51,11 +47,6 @@ export function bindCatanEvents(
   actingPlayerId: string
 ): void {
   const { root } = ctx;
-  const room = getActiveRoomPure(ctx.model);
-  if (!canControlPlayerOnDevicePure(ctx.model, room, actingPlayerId)) {
-    bindReadOnlyCatanSpotInspect(ctx);
-    return;
-  }
 
   onDataClick(root, "data-close-submodal", () =>
     patchModelAndRender(ctx, {
@@ -65,7 +56,6 @@ export function bindCatanEvents(
       selectedProgressCardId: null,
       inventorHex1: null,
       smithVertex1: null,
-      deserterTargetPlayerId: null,
     })
   );
 

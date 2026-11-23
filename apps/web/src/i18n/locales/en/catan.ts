@@ -270,9 +270,6 @@ export const EN_CATAN_MESSAGES = {
   "catan.ck.unclaimedMetroLv4": "Unclaimed +2 VP Metropolis at Lv 4",
   "catan.ck.maxLevel5": "Max level 5",
   "catan.ck.crownLv": "Crown Lv {lv}",
-  "catan.ck.deserterTargetSelected":
-    "Target {name} selected — click any highlighted open intersection on your road network to place the deserted knight:",
-  "catan.ck.changeTarget": "Change target",
   "catan.ck.targetOpp": "Target {name}",
   "catan.ck.inventorFirstSelected":
     "1st tile selected ({token}) — now click a 2nd highlighted tile on the map to swap numbers.",

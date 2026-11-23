@@ -8,13 +8,24 @@ import {
   type GuestSessionStore,
   createHttpError,
 } from "./guest-sessions.ts";
-import type { RealtimeHub } from "./realtime-hub.ts";
+import type { RealtimeHub } from "./ws-hub-types-and-presence.ts";
 import {
   isViewerSeatedOrOwnerPure,
   readJsonBody,
   resolveEffectiveViewerIdPure,
   sendJson,
 } from "./viewer-and-static.ts";
+
+const MATCH_ROUTES = new Set([
+  "start",
+  "action",
+  "bot-step",
+  "auto-bots",
+  "bot-speed",
+  "finish-setup",
+  "undo",
+  "redo",
+]);
 
 export function buildRedactedStatePayload(
   roomManager: PlatformRoomManager,
@@ -58,26 +69,15 @@ export function assertMatchesAuthPlayer(
 export async function handleRoomMatchSubRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  roomId: string,
+  currentRoom: RoomInstance,
   subRoute: string,
   roomManager: PlatformRoomManager,
   hub: RealtimeHub,
   guestSessions: GuestSessionStore
 ): Promise<boolean> {
-  if (req.method !== "POST") return false;
+  if (req.method !== "POST" || !MATCH_ROUTES.has(subRoute)) return false;
 
-  const MATCH_ROUTES = new Set([
-    "start",
-    "action",
-    "bot-step",
-    "auto-bots",
-    "bot-speed",
-    "finish-setup",
-    "undo",
-    "redo",
-  ]);
-  if (!MATCH_ROUTES.has(subRoute)) return false;
-
+  const roomId = currentRoom.roomId;
   const authPlayerId = guestSessions.requireAuthPlayerId(req);
   const body = await readJsonBody(req);
   assertMatchesAuthPlayer(body.requesterId, authPlayerId, "requesterId");
@@ -111,12 +111,9 @@ export async function handleRoomMatchSubRoute(
 
   if (subRoute === "start") {
     const rawState = roomManager.startGame(roomId, authPlayerId);
-    return replyMatchState(roomManager.getRoom(roomId), rawState, {
-      broadcastLobby: true,
-    });
+    return replyMatchState(currentRoom, rawState, { broadcastLobby: true });
   }
 
-  const currentRoom = roomManager.getRoom(roomId);
   const prevStatus = currentRoom.status;
 
   if (subRoute === "action") {
@@ -211,19 +208,15 @@ export async function handleRoomMatchSubRoute(
   }
 
   if (subRoute === "finish-setup") {
-    if (
-      currentRoom.ownerId !== authPlayerId &&
-      !isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)
-    ) {
+    if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
       throw createHttpError(403, "Only seated players can auto-place setup");
     }
     if (currentRoom.ownerId && currentRoom.ownerId !== authPlayerId) {
       throw createHttpError(403, "Only the room host can auto-place setup");
     }
     const nextState = roomManager.finishCatanSetupWithBots(roomId);
-    const room = roomManager.getRoom(roomId);
-    return replyMatchState(room, nextState, {
-      broadcastLobby: room.status !== prevStatus,
+    return replyMatchState(currentRoom, nextState, {
+      broadcastLobby: currentRoom.status !== prevStatus,
     });
   }
 
@@ -234,7 +227,5 @@ export async function handleRoomMatchSubRoute(
     subRoute === "undo"
       ? roomManager.undoAction(roomId, authPlayerId)
       : roomManager.redoAction(roomId, authPlayerId);
-  return replyMatchState(roomManager.getRoom(roomId), nextState, {
-    broadcastLobby: true,
-  });
+  return replyMatchState(currentRoom, nextState, { broadcastLobby: true });
 }

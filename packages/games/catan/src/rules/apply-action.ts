@@ -1,5 +1,5 @@
 import type { GameEvent } from "@gaming-platform/core";
-import { applyCkInteractionActionPure } from "../cities-and-knights/interactions.ts";
+import { applyCkInteractionActionPure } from "../cities-and-knights/interactions-apply.ts";
 import type { CatanAction } from "../types/actions.ts";
 import type { CatanState } from "../types/state.ts";
 import {
@@ -48,7 +48,6 @@ import {
   applyPlaceSetupEdgePure,
   applyPlaceSetupSettlementPure,
 } from "./setup-draft.ts";
-import { applyEndSpecialBuildPure } from "./special-build.ts";
 import {
   applyAcceptDomesticTradePure,
   applyCancelDomesticTradePure,
@@ -56,7 +55,10 @@ import {
   applyDeclineDomesticTradePure,
   applyOfferDomesticTradePure,
 } from "./trading.ts";
-import { applyEndTurnPure } from "./turn-flow.ts";
+import {
+  applyEndSpecialBuildPure,
+  applyEndTurnPure,
+} from "./turn-flow.ts";
 
 /**
  * Purely applies `action` by `playerId` to `currentState`, returning a new state and emitted events.

@@ -42,7 +42,6 @@ export function runHumanMimicIterations(
   let domesticTradesTested = 0;
   let undoRedoCyclesVerified = 0;
   let readonlyRoomChecksVerified = 0;
-  let invariantViolations = 0;
 
   let matchIdx = 0;
 
@@ -140,7 +139,6 @@ export function runHumanMimicIterations(
         const nextState = session.getState() as CatanState;
         const inv = CatanEngine.checkInvariants(nextState);
         if (!inv.valid) {
-          invariantViolations += inv.violations.length;
           throw new Error(
             `Human-mimic Catan invariant violation: ${inv.violations.join("; ")}`
           );
@@ -222,7 +220,6 @@ export function runHumanMimicIterations(
 
         const inv = SplendorEngine.checkInvariants(session.getState());
         if (!inv.valid) {
-          invariantViolations += inv.violations.length;
           throw new Error(
             `Human-mimic Splendor invariant violation: ${inv.violations.join("; ")}`
           );
@@ -245,7 +242,6 @@ export function runHumanMimicIterations(
 
         const inv = AzulEngine.checkInvariants(session.getState());
         if (!inv.valid) {
-          invariantViolations += inv.violations.length;
           throw new Error(
             `Human-mimic Azul invariant violation: ${inv.violations.join("; ")}`
           );
@@ -270,7 +266,7 @@ export function runHumanMimicIterations(
     domesticTradesTested,
     undoRedoCyclesVerified,
     readonlyRoomChecksVerified,
-    invariantViolations,
+    invariantViolations: 0,
     elapsedMs: Math.round(performance.now() - startTime),
   };
 }

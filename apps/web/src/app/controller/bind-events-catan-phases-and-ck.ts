@@ -275,29 +275,15 @@ export function bindCatanPhasesAndCkEvents(
 
   onDataClick(root, "data-prog-opp", (targetPlayerId) => {
     if (!ctx.model.selectedProgressCardId) return;
-    const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
-    const card = actingPlayer?.progressCards.find(
-      (c) => c.id === ctx.model.selectedProgressCardId
-    );
-    const matchingForOpp = CatanEngine.getLegalActions(
-      state,
-      actingPlayerId
-    ).filter(
+    const matching = CatanEngine.getLegalActions(state, actingPlayerId).find(
       (a): a is Extract<CatanAction, { type: "PLAY_PROGRESS_CARD" }> =>
         a.type === "PLAY_PROGRESS_CARD" &&
         a.cardId === ctx.model.selectedProgressCardId &&
         a.params?.targetPlayerId === targetPlayerId
     );
-    if (card?.type === "deserter" && matchingForOpp.length > 1) {
-      patchModelAndRender(ctx, {
-        deserterTargetPlayerId: targetPlayerId,
-        selectedBoardSpot: null,
-      });
-      return;
-    }
     ctx.dispatchUiAction(
       actingPlayerId,
-      matchingForOpp[0] ?? {
+      matching ?? {
         type: "PLAY_PROGRESS_CARD",
         cardId: ctx.model.selectedProgressCardId,
         params: { targetPlayerId },
@@ -305,9 +291,6 @@ export function bindCatanPhasesAndCkEvents(
     );
   });
 
-  onDataClick(root, "data-deserter-reset", () =>
-    patchModelAndRender(ctx, { deserterTargetPlayerId: null })
-  );
   onDataClick(root, "data-prog-action-idx", (rawIdx) => {
     if (!ctx.model.selectedProgressCardId) return;
     const legals = CatanEngine.getLegalActions(state, actingPlayerId).filter(

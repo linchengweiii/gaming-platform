@@ -148,53 +148,29 @@ export function applyPlaceSetupEdgePure(
     throw new Error("Missing setup settlement anchor");
   }
 
-  const placedEdgeState: CatanState = (() => {
-    if (action.edgeKind === "ship") {
-      const legalShips = getLegalShipEdges(currentState, playerId, anchor);
-      if (!legalShips.includes(action.edgeId)) {
-        throw new Error(`Illegal setup ship edge ${action.edgeId}`);
-      }
-      return {
-        ...currentState,
-        edges: {
-          ...currentState.edges,
-          [action.edgeId]: {
-            ownerId: playerId,
-            type: "ship",
-            builtOnTurn: 0,
-          },
-        },
-        players: updatePlayerById(currentState.players, playerId, (p) => ({
-          ...p,
-          shipsRemaining: p.shipsRemaining - 1,
-        })),
-      };
-    }
-
-    const legalRoads = getLegalRoadEdges(currentState, playerId, anchor);
-    if (!legalRoads.includes(action.edgeId)) {
-      throw new Error(`Illegal setup road edge ${action.edgeId}`);
-    }
-    return {
-      ...currentState,
-      edges: {
-        ...currentState.edges,
-        [action.edgeId]: {
-          ownerId: playerId,
-          type: "road",
-          builtOnTurn: 0,
-        },
-      },
-      players: updatePlayerById(currentState.players, playerId, (p) => ({
-        ...p,
-        roadsRemaining: p.roadsRemaining - 1,
-      })),
-    };
-  })();
-
+  const isShip = action.edgeKind === "ship";
+  const legalEdges = isShip
+    ? getLegalShipEdges(currentState, playerId, anchor)
+    : getLegalRoadEdges(currentState, playerId, anchor);
+  if (!legalEdges.includes(action.edgeId)) {
+    throw new Error(`Illegal setup ${action.edgeKind} edge ${action.edgeId}`);
+  }
   const clearedAnchor: CatanState = {
-    ...placedEdgeState,
+    ...currentState,
     lastSetupSettlementVertexId: null,
+    edges: {
+      ...currentState.edges,
+      [action.edgeId]: {
+        ownerId: playerId,
+        type: isShip ? "ship" : "road",
+        builtOnTurn: 0,
+      },
+    },
+    players: updatePlayerById(currentState.players, playerId, (p) =>
+      isShip
+        ? { ...p, shipsRemaining: p.shipsRemaining - 1 }
+        : { ...p, roadsRemaining: p.roadsRemaining - 1 }
+    ),
   };
   const logged = appendCatanEvent(
     clearedAnchor,

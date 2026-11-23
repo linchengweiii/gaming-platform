@@ -79,26 +79,3 @@
   background: rgba(56, 189, 248, 0.12);
   border-color: rgba(56, 189, 248, 0.35);
 }
-
-@media (max-width: 600px) {
-  .map-zoom-controls {
-    top: 8px;
-    right: 8px;
-    padding: 3px;
-  }
-
-  .map-zoom-controls--below-barbarian {
-    top: 88px;
-  }
-
-  .map-zoom-btn {
-    min-width: 26px;
-    height: 26px;
-    font-size: 14px;
-  }
-
-  .map-zoom-btn--reset {
-    min-width: 42px;
-    font-size: 10.5px;
-  }
-}

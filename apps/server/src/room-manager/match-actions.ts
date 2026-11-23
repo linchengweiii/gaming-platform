@@ -126,14 +126,7 @@ export function dispatchActionPure(
   );
   const nextStatus =
     dispatched.result.state.phase === "GAME_OVER" ? "finished" : room.status;
-  return {
-    state: setRoomRecordInState(managerState, {
-      ...room,
-      sessionState: dispatched.session,
-      status: nextStatus,
-    }),
-    gameState: dispatched.result.state,
-  };
+  return commitRoomSession(managerState, room, dispatched.session, nextStatus);
 }
 
 export function undoActionPure(

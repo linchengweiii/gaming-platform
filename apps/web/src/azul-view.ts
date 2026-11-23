@@ -1,7 +1,4 @@
-export {
-  AZUL_TILE_STYLES,
-  renderAzulTile,
-} from "./views/azul/tiles-and-factories.ts";
+export { renderAzulTile } from "./views/azul/tiles-and-factories.ts";
 export {
   renderAzulPlayerCard,
   renderAzulActionDock,

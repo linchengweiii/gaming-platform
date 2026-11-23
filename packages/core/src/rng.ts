@@ -10,16 +10,16 @@ export type RngState = number;
 
 const FALLBACK_RNG_STATE = 0x6d2b79f5;
 
-export function normalizeRngState(state: number): RngState {
+function normalizeRngState(state: number): RngState {
   return state >>> 0 || FALLBACK_RNG_STATE;
 }
 
-export function hashSeedString(str: string): RngState {
-  const hashed = Array.from(str).reduce<number>((acc, ch) => {
-    const xored = acc ^ ch.charCodeAt(0);
-    return Math.imul(xored, 16777619);
-  }, 2166136261 >>> 0);
-  return normalizeRngState(hashed);
+function hashSeedString(str: string): RngState {
+  let acc = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    acc = Math.imul(acc ^ str.charCodeAt(i), 16777619);
+  }
+  return normalizeRngState(acc);
 }
 
 export function createRngState(seed: number | string = 123456789): RngState {
@@ -56,7 +56,7 @@ export function nextIntPure(
   return [Math.floor(unit * (max - min + 1)) + min, nextState];
 }
 
-export function rollDiePure(
+function rollDiePure(
   state: RngState,
   sides = 6
 ): readonly [number, RngState] {
@@ -78,23 +78,18 @@ export function shufflePure<T>(
   state: RngState,
   items: readonly T[]
 ): readonly [T[], RngState] {
-  const indicesDesc = Array.from(
-    { length: Math.max(0, items.length - 1) },
-    (_, idx) => items.length - 1 - idx
-  );
-  return indicesDesc.reduce<readonly [T[], RngState]>(
-    ([arr, curState], i) => {
-      const [j, nextState] = nextIntPure(curState, 0, i);
-      if (i === j) {
-        return [arr, nextState];
-      }
-      const swapped = arr.map((item, idx) =>
-        idx === i ? arr[j]! : idx === j ? arr[i]! : item
-      );
-      return [swapped, nextState];
-    },
-    [[...items], state >>> 0]
-  );
+  const arr = [...items];
+  let curState = state >>> 0;
+  for (let i = arr.length - 1; i > 0; i--) {
+    const [j, nextState] = nextIntPure(curState, 0, i);
+    curState = nextState;
+    if (i !== j) {
+      const tmp = arr[i]!;
+      arr[i] = arr[j]!;
+      arr[j] = tmp;
+    }
+  }
+  return [arr, curState];
 }
 
 export function pickPure<T>(
@@ -118,14 +113,14 @@ export interface SeededRNG {
   pick<T>(items: readonly T[]): T;
 }
 
-export interface SeededRNGConstructor {
+interface SeededRNGConstructor {
   new (seed?: number | string): SeededRNG;
   (seed?: number | string): SeededRNG;
   readonly hashString: (str: string) => number;
   readonly fromState: (state: number) => SeededRNG;
 }
 
-export function createSeededRngFromState(initialState: RngState): SeededRNG {
+function createSeededRngFromState(initialState: RngState): SeededRNG {
   let currentState = initialState >>> 0;
 
   return {

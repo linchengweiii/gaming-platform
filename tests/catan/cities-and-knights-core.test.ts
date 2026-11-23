@@ -6,7 +6,7 @@ import {
   computePlayerVictoryPoints,
   getNextActingPlayerId,
   getPlayerGoodTradeRatios,
-  recalculateAwards,
+  recalculateAwardsPure,
 } from "@gaming-platform/catan";
 import {
   FOUR_PLAYERS,
@@ -284,7 +284,7 @@ describe("@gaming-platform/catan - Cities & Knights Core Mechanics", () => {
     state.buildings[vStart] = { ownerId: "p1", type: "city" };
     state.players[0]!.citiesRemaining--;
 
-    recalculateAwards(state);
+    state = recalculateAwardsPure(state);
     expect(state.longestRoadOwnerId).toBe("p1");
     expect(state.players[0]!.longestRoadLength).toBe(5);
 
@@ -304,7 +304,7 @@ describe("@gaming-platform/catan - Cities & Knights Core Mechanics", () => {
     };
     state.players[1]!.basicKnightsRemaining--;
 
-    recalculateAwards(state);
+    state = recalculateAwardsPure(state);
     expect(state.players[0]!.longestRoadLength).toBeLessThan(5);
     expect(state.longestRoadOwnerId).toBeNull();
 

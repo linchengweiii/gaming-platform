@@ -20,14 +20,13 @@ import {
   appendSplendorEvent,
   computeCardPurchasePayment,
   findMarketCardLocation,
-  incrementGemBonus,
   replacePlayerAt,
   subtractTokenMaps,
   takeMarketCardAndRefill,
   totalTokens,
 } from "./helpers.ts";
 import {
-  finishTurnTransition,
+  awardNobleAndFinishTurn,
   resolveNoblesAndAdvanceTurn,
   resolvePostMainAction,
 } from "./turn-flow.ts";
@@ -279,7 +278,10 @@ export function applySplendorAction(
             ? player.reservedCards
             : player.reservedCards.filter((_, idx) => idx !== reservedIdx),
           purchasedCards: [...player.purchasedCards, targetCard],
-          bonuses: incrementGemBonus(player.bonuses, targetCard.bonus),
+          bonuses: {
+            ...player.bonuses,
+            [targetCard.bonus]: player.bonuses[targetCard.bonus] + 1,
+          },
           points: player.points + targetCard.points,
         },
         {
@@ -337,7 +339,7 @@ export function applySplendorAction(
         playerId
       );
       if (totalTokens(updatedPlayer.tokens) > SPLENDOR_HAND_TOKEN_LIMIT) {
-        return { state: logged.state, events: [...logged.events] };
+        return logged;
       }
       return resolveNoblesAndAdvanceTurn(logged.state, logged.events);
     }
@@ -350,26 +352,7 @@ export function applySplendorAction(
         throw new Error(`Noble ${action.nobleId} is not eligible`);
       }
       const noble = currentState.nobles.find((n) => n.id === action.nobleId)!;
-      const afterNoble = withUpdatedActivePlayer(
-        currentState,
-        {
-          ...player,
-          nobles: [...player.nobles, noble],
-          points: player.points + noble.points,
-        },
-        {
-          nobles: currentState.nobles.filter((n) => n.id !== action.nobleId),
-          eligibleNobleIds: [],
-        }
-      );
-      const logged = appendSplendorEvent(
-        afterNoble,
-        [],
-        "NOBLE_VISITED",
-        `👑 Noble ${noble.name} visited ${player.name} (+${noble.points} VP)!`,
-        playerId
-      );
-      return finishTurnTransition(logged.state, logged.events);
+      return awardNobleAndFinishTurn(currentState, [], noble);
     }
 
     case "PASS_TURN": {

@@ -3,11 +3,7 @@ import type {
   SplendorState,
   TokenColor,
 } from "@gaming-platform/splendor";
-import type {
-  AzulState,
-  AzulTargetLine,
-  AzulTileColor,
-} from "@gaming-platform/azul";
+import type { AzulTargetLine, AzulTileColor } from "@gaming-platform/azul";
 import {
   type SevenWondersAction,
   SevenWondersEngine,
@@ -74,7 +70,6 @@ export function bindSplendorEvents(
 
 export function bindAzulEvents(
   ctx: AppRuntimeContext,
-  _state: AzulState,
   actingPlayerId: string
 ): void {
   const { root } = ctx;

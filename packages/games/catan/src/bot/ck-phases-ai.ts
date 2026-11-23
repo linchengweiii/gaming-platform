@@ -133,9 +133,8 @@ export function chooseCkAlchemistPreRollAction(
   );
   if (alchActs.length === 0) return null;
 
-  const evalRollTotal = (total: number): { myGain: number; oppGain: number } => {
-    if (total === 7) return { myGain: 0, oppGain: 0 };
-    return state.topology.hexOrder.reduce<{ myGain: number; oppGain: number }>(
+  const evalRollTotal = (total: number): { myGain: number; oppGain: number } =>
+    state.topology.hexOrder.reduce<{ myGain: number; oppGain: number }>(
       (acc, hId) => {
         if (hId === state.robberHexId) return acc;
         const tile = state.hexes[hId];
@@ -160,7 +159,6 @@ export function chooseCkAlchemistPreRollAction(
       },
       { myGain: 0, oppGain: 0 }
     );
-  };
 
   let bestAct: CatanAction | null = null;
   let bestScore = 2.5;

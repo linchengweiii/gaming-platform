@@ -1,4 +1,4 @@
-import { hexId } from "@gaming-platform/core";
+import { axialNeighbors, hexId } from "@gaming-platform/core";
 import type { CatanState } from "@gaming-platform/catan";
 import {
   renderBoardDefsAndChartHeaderPart,
@@ -27,15 +27,6 @@ function buildOceanAndShelfParts(
   const hexSize = topo.hexSize;
   const parts: string[] = [];
 
-  const neighborDirs = [
-    { dq: 1, dr: -1 },
-    { dq: 1, dr: 0 },
-    { dq: 0, dr: 1 },
-    { dq: -1, dr: 1 },
-    { dq: -1, dr: 0 },
-    { dq: 0, dr: -1 },
-  ];
-
   let oceanIdx = 0;
   const perimeterSegments: string[] = [];
   for (const oceanHex of outerOceanHexes.values()) {
@@ -51,9 +42,10 @@ function buildOceanAndShelfParts(
       hexSize + 3.5
     );
 
+    const neighbors = axialNeighbors({ q: oceanHex.q, r: oceanHex.r });
     for (let side = 0; side < 6; side++) {
-      const d = neighborDirs[side]!;
-      const nbKey = hexId(oceanHex.q + d.dq, oceanHex.r + d.dr);
+      const nb = neighbors[side]!;
+      const nbKey = hexId(nb.q, nb.r);
       if (!topo.hexes[nbKey] && !outerOceanHexes.has(nbKey)) {
         const c1 = outerCorners[side]!;
         const c2 = outerCorners[(side + 1) % 6]!;

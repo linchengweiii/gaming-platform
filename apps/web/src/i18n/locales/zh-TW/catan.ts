@@ -262,9 +262,6 @@ export const ZH_TW_CATAN_MESSAGES: Readonly<
   "catan.ck.unclaimedMetroLv4": "達 Lv 4 可奪得無人持有的大都會（+2 分）",
   "catan.ck.maxLevel5": "已達最高 Lv 5",
   "catan.ck.crownLv": "加冕 Lv {lv}",
-  "catan.ck.deserterTargetSelected":
-    "已選定目標 {name} — 請點擊你路網上任何高亮空交點放置叛逃騎士：",
-  "catan.ck.changeTarget": "更換目標",
   "catan.ck.targetOpp": "指定 {name}",
   "catan.ck.inventorFirstSelected":
     "已選擇第 1 塊地形（{token}） — 請點擊地圖上第 2 塊高亮地形以交換數字。",

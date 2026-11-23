@@ -3,6 +3,7 @@ import {
   COMMODITIES,
   CatanEngine,
   RESOURCES,
+  TERRAIN_TO_RESOURCE,
   computePlayerVictoryPoints,
   getNextActingPlayerId,
   getPlayerGoodTradeRatios,
@@ -13,7 +14,6 @@ import {
 } from "@gaming-platform/catan";
 import {
   FOUR_PLAYERS,
-  TERRAIN_TO_RESOURCE_FOR_TEST,
   completeSnakeDraftSetup,
   grantCardFromDeckForTest,
 } from "./helpers.ts";
@@ -209,7 +209,7 @@ describe("@gaming-platform/catan - Cities & Knights Barbarian Raids & Progress C
     const adjLandHex = state.topology.vertices[p1CityV]!.adjacentHexIds.find(
       (hId) =>
         state.hexes[hId] &&
-        TERRAIN_TO_RESOURCE_FOR_TEST(state.hexes[hId]!.terrain) !== null
+        TERRAIN_TO_RESOURCE[state.hexes[hId]!.terrain] !== null
     )!;
 
     grantCardFromDeckForTest(state, "p1", "pc-med", "medicine", "science");
@@ -271,7 +271,7 @@ describe("@gaming-platform/catan - Cities & Knights Barbarian Raids & Progress C
     expect(state.merchantOwnerId).toBe("p1");
     expect(state.merchantHexId).toBe(adjLandHex);
     expect(computePlayerVictoryPoints(state, "p1", true)).toBe(vpBeforeMerch + 1);
-    const merchRes = TERRAIN_TO_RESOURCE_FOR_TEST(state.hexes[adjLandHex]!.terrain)!;
+    const merchRes = TERRAIN_TO_RESOURCE[state.hexes[adjLandHex]!.terrain]!;
     expect(getPlayerGoodTradeRatios(state, "p1")[merchRes]).toBe(2);
     expect(CatanEngine.checkInvariants(state).valid).toBe(true);
   });

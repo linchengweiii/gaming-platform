@@ -24,8 +24,6 @@ import {
   createPresenceTracker,
 } from "./ws-hub-types-and-presence.ts";
 
-export type { RealtimeHub } from "./ws-hub-types-and-presence.ts";
-
 export function createRealtimeHub(
   roomManager: PlatformRoomManager,
   guestSessions: GuestSessionStore
@@ -54,11 +52,6 @@ export function createRealtimeHub(
     }
   }
 
-  function cleanupDeletedRoomMeta(roomId: string): void {
-    clearRoomBotTimer(roomId);
-    presence.clearRoomPresenceMeta(roomId);
-  }
-
   function notifyRoomClosed(roomId: string): void {
     Object.values(wsClients).forEach((client) => {
       if (client.roomId === roomId) {
@@ -66,7 +59,8 @@ export function createRealtimeHub(
         upsertWsClient({ ...client, roomId: null });
       }
     });
-    cleanupDeletedRoomMeta(roomId);
+    clearRoomBotTimer(roomId);
+    presence.clearRoomPresenceMeta(roomId);
   }
 
   function signOutGuestConnections(playerId: string): void {
@@ -290,8 +284,7 @@ export function createRealtimeHub(
     getClient: (clientId: string) => wsClients[clientId],
     upsertWsClient,
     hasRoomBotTimer: (roomId: string) => roomBotTimers.has(roomId),
-    refreshRoomDisconnectClock: (roomId: string) =>
-      refreshRoomDisconnectClock(roomId),
+    refreshRoomDisconnectClock,
     sendLobbySnapshotToClient,
     broadcastLobbyRooms,
     broadcastRoomState,
@@ -312,11 +305,11 @@ export function createRealtimeHub(
     }
   }
 
-  function registerWsClient(
-    clientId: string,
+  function attachNativeWsClient(
     rawUrl: string,
     transport: WsTransport
-  ): WsClient {
+  ): string {
+    const clientId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const initialPlayerId = resolveInitialPlayerId(rawUrl);
     const initialClient: WsClient = {
       id: clientId,
@@ -335,15 +328,6 @@ export function createRealtimeHub(
       });
     }
     sendLobbySnapshotToClient(initialClient);
-    return initialClient;
-  }
-
-  function attachNativeWsClient(
-    rawUrl: string,
-    transport: WsTransport
-  ): string {
-    const clientId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    registerWsClient(clientId, rawUrl, transport);
     return clientId;
   }
 
@@ -369,9 +353,9 @@ export function createRealtimeHub(
     }
   }
 
-  function detachNativeWsClient(clientId: string): void {
+  const detachNativeWsClient = (clientId: string): void => {
     removeWsClient(clientId);
-  }
+  };
 
   function handleUpgrade(
     req: http.IncomingMessage,
@@ -401,7 +385,6 @@ export function createRealtimeHub(
     removePlayerRoomPresence: presence.removePlayerRoomPresence,
     evictPlayerFromRoom,
     signOutGuestConnections,
-    cleanupDeletedRoomMeta,
     notifyRoomClosed,
     checkHeartbeats,
     sweepAbandonedRooms,

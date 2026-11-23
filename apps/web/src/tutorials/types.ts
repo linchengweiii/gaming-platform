@@ -7,7 +7,7 @@ export interface TutorialLesson {
   readonly actionHint: string;
 }
 
-export interface GameGuideSection {
+interface GameGuideSection {
   readonly heading: string;
   readonly items: readonly string[];
 }

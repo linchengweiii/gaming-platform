@@ -66,6 +66,26 @@ export function getPlayerTradeRates(
   };
 }
 
+function addCardResources(
+  cards: readonly SevenWondersPlayerState["tableau"][number][],
+  fixed: WonderResourceMap,
+  choices: ResourceProductionChoice[]
+): void {
+  for (const card of cards) {
+    for (const ef of card.effects) {
+      if (ef.kind !== "resources") continue;
+      const count = ef.count ?? 1;
+      if (ef.options.length === 1) {
+        fixed[ef.options[0]!] += count;
+      } else if (ef.options.length > 1) {
+        for (let i = 0; i < count; i++) {
+          choices.push(ef.options);
+        }
+      }
+    }
+  }
+}
+
 export function getOwnResourceProfile(
   player: Pick<
     SevenWondersPlayerState,
@@ -75,21 +95,7 @@ export function getOwnResourceProfile(
   const fixed = emptyWonderResourceMap();
   fixed[player.startingResource] += 1;
   const choices: ResourceProductionChoice[] = [];
-
-  for (const card of player.tableau) {
-    for (const ef of card.effects) {
-      if (ef.kind === "resources") {
-        const count = ef.count ?? 1;
-        if (ef.options.length === 1) {
-          fixed[ef.options[0]!] += count;
-        } else if (ef.options.length > 1) {
-          for (let i = 0; i < count; i++) {
-            choices.push(ef.options);
-          }
-        }
-      }
-    }
-  }
+  addCardResources(player.tableau, fixed, choices);
 
   const board = getWonderBoardDefinition(player.wonderId, player.wonderSide);
   for (const st of board.stages.slice(0, player.builtWonderStages)) {
@@ -118,23 +124,11 @@ export function getNeighborTradableProfile(
   const fixed = emptyWonderResourceMap();
   fixed[neighbor.startingResource] += 1;
   const choices: ResourceProductionChoice[] = [];
-
-  for (const card of neighbor.tableau) {
-    if (card.color !== "brown" && card.color !== "gray") continue;
-    for (const ef of card.effects) {
-      if (ef.kind === "resources") {
-        const count = ef.count ?? 1;
-        if (ef.options.length === 1) {
-          fixed[ef.options[0]!] += count;
-        } else if (ef.options.length > 1) {
-          for (let i = 0; i < count; i++) {
-            choices.push(ef.options);
-          }
-        }
-      }
-    }
-  }
-
+  addCardResources(
+    neighbor.tableau.filter((c) => c.color === "brown" || c.color === "gray"),
+    fixed,
+    choices
+  );
   return { fixed, choices };
 }
 
@@ -150,9 +144,6 @@ function reduceNeedWithChoices(
   initialNeed: WonderResourceMap,
   choices: readonly ResourceProductionChoice[]
 ): WonderResourceMap[] {
-  const seen = new Map<string, WonderResourceMap>();
-  seen.set(encodeNeedKey(initialNeed), initialNeed);
-
   let frontier: WonderResourceMap[] = [initialNeed];
   for (const opts of choices) {
     const nextMap = new Map<string, WonderResourceMap>();

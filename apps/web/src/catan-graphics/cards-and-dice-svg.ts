@@ -156,9 +156,7 @@ export function renderMiniResourceCardSvg(
   width = 56,
   height = 36
 ): string {
-  return renderResourceCardIllustrationSvg(resource)
-    .replace('width="76"', `width="${width}"`)
-    .replace('height="48"', `height="${height}"`);
+  return renderMiniTradeGoodCardSvg(resource, width, height);
 }
 
 export function renderMiniTradeGoodCardSvg(

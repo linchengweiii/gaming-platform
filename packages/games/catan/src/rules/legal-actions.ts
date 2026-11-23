@@ -12,7 +12,7 @@ import {
   getLegalChaseRobberActions,
   getLegalMoveKnightActions,
 } from "../cities-and-knights/knights.ts";
-import { getCkInteractionLegalActionsPure } from "../cities-and-knights/interactions.ts";
+import { getCkInteractionLegalActionsPure } from "../cities-and-knights/interactions-legal.ts";
 import { getLegalProgressCardActions } from "../cities-and-knights/legal-actions.ts";
 import type { CatanAction } from "../types/actions.ts";
 import {
@@ -22,7 +22,6 @@ import {
   type TradeGoodType,
 } from "../types/domain.ts";
 import type { CatanState } from "../types/state.ts";
-import { computePlayerVictoryPoints } from "./awards-and-vp.ts";
 import { getBuildActionsPure } from "./building.ts";
 import {
   canPlayDevCard,
@@ -41,7 +40,6 @@ import {
   getLegalPirateHexes,
   getLegalRobberHexes,
 } from "./robber-pirate.ts";
-import { getSpecialBuildingLegalActions } from "./special-build.ts";
 
 /**
  * Returns all legal actions for `playerId` in the current `state`.
@@ -139,7 +137,13 @@ export function getCatanLegalActions(
 
   // Special Building Phase (5-6 Player Extension)
   if (state.phase === "SPECIAL_BUILDING") {
-    return getSpecialBuildingLegalActions(state, playerId);
+    if (state.specialBuildPlayerIndex === null) return [];
+    const sbPlayer = state.players[state.specialBuildPlayerIndex]!;
+    if (sbPlayer.id !== playerId) return [];
+    return [
+      ...getBuildActionsPure(state, sbPlayer),
+      { type: "END_SPECIAL_BUILD" },
+    ];
   }
 
   // All remaining phases require `playerId === activePlayer.id`
@@ -183,14 +187,7 @@ export function getCatanLegalActions(
     }
 
     case "PRE_ROLL": {
-      const progressPreRoll = getLegalProgressCardActions(
-        state,
-        activePlayer,
-        computePlayerVictoryPoints,
-        (s, pid) => getLegalRoadEdges(s, pid, null),
-        (s, pid) => getLegalShipEdges(s, pid, null),
-        getLegalRobberHexes
-      );
+      const progressPreRoll = getLegalProgressCardActions(state, activePlayer);
       return [
         { type: "ROLL_DICE" as const },
         ...(canPlayDevCard(state, activePlayer, "knight")
@@ -274,11 +271,7 @@ export function getCatanLegalActions(
       );
       const progressCardActions = getLegalProgressCardActions(
         state,
-        activePlayer,
-        computePlayerVictoryPoints,
-        (s, pid) => getLegalRoadEdges(s, pid, null),
-        (s, pid) => getLegalShipEdges(s, pid, null),
-        getLegalRobberHexes
+        activePlayer
       );
 
       const knightActions: CatanAction[] = canPlayDevCard(

@@ -16,15 +16,6 @@ import {
 } from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 
-export function getPlayerCitiesOnBoard(
-  state: CatanState,
-  playerId: string
-): VertexId[] {
-  return Object.entries(state.buildings)
-    .filter(([, b]) => b.ownerId === playerId && b.type === "city")
-    .map(([vId]) => vId);
-}
-
 export function getPlayerVulnerableCities(
   state: CatanState,
   playerId: string
@@ -43,7 +34,7 @@ export function getEffectiveCityCost(player: CatanPlayerState): ResourceMap {
   return BUILDING_COSTS.city;
 }
 
-export function getCityImprovementCommodityCost(
+function getCityImprovementCommodityCost(
   player: CatanPlayerState,
   discipline: ImprovementDiscipline
 ): { commodity: CommodityType; amount: number; nextLevel: number } {
@@ -56,7 +47,7 @@ export function getCityImprovementCommodityCost(
   };
 }
 
-export function willUpgradeClaimMetropolis(
+function willUpgradeClaimMetropolis(
   state: CatanState,
   playerId: string,
   discipline: ImprovementDiscipline,
@@ -89,39 +80,24 @@ export function canPlayerUpgradeDiscipline(
     player,
     discipline
   );
+  const fail = (claimsMetropolis = false) => ({
+    allowed: false,
+    claimsMetropolis,
+    eligibleMetropolisVertices: [] as VertexId[],
+    costCommodity: commodity,
+    costAmount: amount,
+    nextLevel,
+  });
 
-  if (!state.config.enableCitiesAndKnights || currentLevel >= 5) {
-    return {
-      allowed: false,
-      claimsMetropolis: false,
-      eligibleMetropolisVertices: [],
-      costCommodity: commodity,
-      costAmount: amount,
-      nextLevel,
-    };
-  }
-
-  const cities = getPlayerCitiesOnBoard(state, player.id);
-  if (cities.length === 0) {
-    return {
-      allowed: false,
-      claimsMetropolis: false,
-      eligibleMetropolisVertices: [],
-      costCommodity: commodity,
-      costAmount: amount,
-      nextLevel,
-    };
-  }
-
-  if (player.commodities[commodity] < amount) {
-    return {
-      allowed: false,
-      claimsMetropolis: false,
-      eligibleMetropolisVertices: [],
-      costCommodity: commodity,
-      costAmount: amount,
-      nextLevel,
-    };
+  if (
+    !state.config.enableCitiesAndKnights ||
+    currentLevel >= 5 ||
+    !Object.values(state.buildings).some(
+      (b) => b.ownerId === player.id && b.type === "city"
+    ) ||
+    player.commodities[commodity] < amount
+  ) {
+    return fail();
   }
 
   const claimsMetropolis = willUpgradeClaimMetropolis(
@@ -133,14 +109,7 @@ export function canPlayerUpgradeDiscipline(
   const eligibleMetropolisVertices = getPlayerVulnerableCities(state, player.id);
 
   if (claimsMetropolis && eligibleMetropolisVertices.length === 0) {
-    return {
-      allowed: false,
-      claimsMetropolis: true,
-      eligibleMetropolisVertices: [],
-      costCommodity: commodity,
-      costAmount: amount,
-      nextLevel,
-    };
+    return fail(true);
   }
 
   return {
@@ -213,14 +182,7 @@ export function getPlayerGoodTradeRatios(
     : withTradingHouse;
 
   // Merchant Fleet Progress Card(s): 2:1 on chosen good(s) for the rest of this turn
-  const fleetGoods = [
-    ...(player?.activeTurnDiscounts.merchantFleetGoods ?? []),
-    ...(player?.activeTurnDiscounts.merchantFleetGood
-      ? [player.activeTurnDiscounts.merchantFleetGood]
-      : []),
-  ];
-  return fleetGoods.reduce<Record<TradeGoodType, number>>(
-    (acc, good) => ({ ...acc, [good]: 2 }),
-    withMerchant
-  );
+  return (player?.activeTurnDiscounts.merchantFleetGoods ?? []).reduce<
+    Record<TradeGoodType, number>
+  >((acc, good) => ({ ...acc, [good]: 2 }), withMerchant);
 }

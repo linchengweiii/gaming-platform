@@ -6,7 +6,7 @@ import {
 } from "../i18n/index.ts";
 import { shadeHexColor } from "./geometry.ts";
 
-export type ActionGraphicKind =
+type ActionGraphicKind =
   | "road"
   | "ship"
   | "move_ship"

@@ -3,12 +3,13 @@ import {
   SPLENDOR_BOT_TUNING,
   SPLENDOR_MAX_RESERVED_CARDS,
 } from "../config.ts";
+import { applySplendorAction } from "../rules/apply.ts";
 import {
-  applySplendorAction,
   computeCardPurchasePayment,
   emptyGemMap,
-  getSplendorLegalActions,
-} from "../rules.ts";
+  totalTokens,
+} from "../rules/helpers.ts";
+import { getSplendorLegalActions } from "../rules/legal-actions.ts";
 import type {
   SplendorAction,
   SplendorCard,
@@ -42,25 +43,18 @@ function chooseFastTacticalOpponentAction(
   const legal = getSplendorLegalActions(state, actorId);
   if (legal.length <= 1) return legal[0]!;
   const player = state.players.find((p) => p.id === actorId)!;
-  if (state.phase === "SELECT_NOBLE") {
-    return chooseBestNobleAction(state, player, legal, "master");
-  }
-  if (state.phase === "RETURN_TOKENS") {
-    return chooseBestReturnTokensAction(state, player, legal, "master");
-  }
 
   const purchases = legal.filter(
     (a): a is Extract<SplendorAction, { type: "PURCHASE_CARD" }> =>
       a.type === "PURCHASE_CARD"
   );
-  let bestBuy: { act: SplendorAction; card: SplendorCard; s: number } | null =
-    null;
-  for (const act of purchases) {
-    const c = findCardInPublicState(state, player, act.cardId);
-    if (!c) continue;
-    const s = evaluateCardUtility(state, player, c, "master");
-    if (!bestBuy || s > bestBuy.s) bestBuy = { act, card: c, s };
-  }
+  const scoredBuys = purchases.flatMap((act) => {
+    const card = findCardInPublicState(state, player, act.cardId);
+    return card
+      ? [{ act, card, s: evaluateCardUtility(state, player, card, "master") }]
+      : [];
+  });
+  const bestBuy = maxBy(scoredBuys, (x) => x.s);
   if (bestBuy && bestBuy.s >= 900) return bestBuy.act;
 
   const reserves = legal.filter(
@@ -68,15 +62,14 @@ function chooseFastTacticalOpponentAction(
       a.type === "RESERVE_CARD" && Boolean(a.cardId)
   );
   if (reserves.length > 0) {
-    for (let i = 0; i < state.players.length; i++) {
-      const other = state.players[i]!;
+    const marketCards = [
+      ...state.market[3],
+      ...state.market[2],
+      ...state.market[1],
+    ];
+    for (const other of state.players) {
       if (other.id === actorId || other.points < state.config.targetPoints - 7)
         continue;
-      const marketCards = [
-        ...state.market[3],
-        ...state.market[2],
-        ...state.market[1],
-      ];
       const winIds = marketCards
         .filter(
           (c) =>
@@ -122,8 +115,7 @@ function chooseFastTacticalOpponentAction(
         "master"
       )
     )!;
-    const cnt = GEM_COLORS.reduce((s, c) => s + (bestTake.gems[c] ?? 0), 0);
-    if (cnt <= 1 && state.bank.gold > 0 && reserves.length > 0) {
+    if (totalTokens(bestTake.gems) <= 1 && state.bank.gold > 0 && reserves.length > 0) {
       const bestRes = maxBy(reserves, (r) => {
         const c = findCardInPublicState(state, player, r.cardId);
         return c ? scoreStrategicReserveCandidate(state, player, c) : -999;
@@ -134,6 +126,25 @@ function chooseFastTacticalOpponentAction(
   }
 
   return bestBuy?.act ?? reserves[0] ?? legal[0]!;
+}
+
+function stepOpponentsUntilPlayer(
+  state: SplendorState,
+  playerId: string,
+  maxOppSteps: number
+): SplendorState {
+  let cur = state;
+  for (let step = 0; step < maxOppSteps; step++) {
+    if (cur.phase === "GAME_OVER") break;
+    const active = cur.players[cur.activePlayerIndex];
+    if (!active || active.id === playerId) break;
+    cur = stepPublicTurn(
+      cur,
+      active.id,
+      chooseFastTacticalOpponentAction(cur, active.id)
+    );
+  }
+  return cur;
 }
 
 function stepPublicTurn(
@@ -202,7 +213,7 @@ export function chooseMasterSplendorAction(
     (a): a is Extract<SplendorAction, { type: "TAKE_GEMS" }> =>
       a.type === "TAKE_GEMS"
   );
-  const topTakes = [...takeActions]
+  const topTakes = takeActions
     .map((act) => ({
       act,
       s: scoreTakeGemsHeuristic(
@@ -218,10 +229,7 @@ export function chooseMasterSplendorAction(
     .slice(0, sc.rootTopTakesPool)
     .map((x) => x.act);
 
-  const bestTakeCount =
-    topTakes.length > 0
-      ? GEM_COLORS.reduce((s, c) => s + (topTakes[0]!.gems[c] ?? 0), 0)
-      : 0;
+  const bestTakeCount = topTakes.length > 0 ? totalTokens(topTakes[0]!.gems) : 0;
 
   const scoredReserves =
     player.reservedCards.length < SPLENDOR_MAX_RESERVED_CARDS
@@ -314,14 +322,7 @@ export function chooseMasterSplendorAction(
       return evaluateMasterPublicState(afterMyT1, playerId) + tieBias;
     }
 
-    let beforeMyT2 = afterMyT1;
-    for (let step = 0; step < maxOppSteps; step++) {
-      if (beforeMyT2.phase === "GAME_OVER") break;
-      const active = beforeMyT2.players[beforeMyT2.activePlayerIndex];
-      if (!active || active.id === playerId) break;
-      const oppMove = chooseFastTacticalOpponentAction(beforeMyT2, active.id);
-      beforeMyT2 = stepPublicTurn(beforeMyT2, active.id, oppMove);
-    }
+    const beforeMyT2 = stepOpponentsUntilPlayer(afterMyT1, playerId, maxOppSteps);
 
     if (
       beforeMyT2.phase === "GAME_OVER" ||
@@ -381,30 +382,16 @@ export function chooseMasterSplendorAction(
       }
 
       if (state.players.length >= 3) {
-        let endT2 = afterT2;
-        if (endT2.finalRoundTriggered && endT2.phase !== "GAME_OVER") {
-          for (let k = 0; k < maxOppSteps; k++) {
-            if (endT2.phase === "GAME_OVER") break;
-            const actOpp = endT2.players[endT2.activePlayerIndex];
-            if (!actOpp || actOpp.id === playerId) break;
-            const om = chooseFastTacticalOpponentAction(endT2, actOpp.id);
-            endT2 = stepPublicTurn(endT2, actOpp.id, om);
-          }
-        }
+        const endT2 = afterT2.finalRoundTriggered
+          ? stepOpponentsUntilPlayer(afterT2, playerId, maxOppSteps)
+          : afterT2;
         const v2 = evaluateMasterPublicState(endT2, playerId);
         if (v2 > bestT23Val) bestT23Val = v2;
         continue;
       }
 
       // 2P: roll out opponent's Turn 2 response + our Turn 3 follow-up
-      let beforeMyT3 = afterT2;
-      for (let k = 0; k < maxOppSteps; k++) {
-        if (beforeMyT3.phase === "GAME_OVER") break;
-        const actOpp = beforeMyT3.players[beforeMyT3.activePlayerIndex];
-        if (!actOpp || actOpp.id === playerId) break;
-        const om = chooseFastTacticalOpponentAction(beforeMyT3, actOpp.id);
-        beforeMyT3 = stepPublicTurn(beforeMyT3, actOpp.id, om);
-      }
+      const beforeMyT3 = stepOpponentsUntilPlayer(afterT2, playerId, maxOppSteps);
 
       let t3Val: number;
       if (
@@ -416,13 +403,7 @@ export function chooseMasterSplendorAction(
         const myT3Move = chooseFastTacticalOpponentAction(beforeMyT3, playerId);
         let afterT3 = stepPublicTurn(beforeMyT3, playerId, myT3Move);
         if (afterT3.finalRoundTriggered && afterT3.phase !== "GAME_OVER") {
-          for (let k = 0; k < maxOppSteps; k++) {
-            if (afterT3.phase === "GAME_OVER") break;
-            const actOpp = afterT3.players[afterT3.activePlayerIndex];
-            if (!actOpp || actOpp.id === playerId) break;
-            const om = chooseFastTacticalOpponentAction(afterT3, actOpp.id);
-            afterT3 = stepPublicTurn(afterT3, actOpp.id, om);
-          }
+          afterT3 = stepOpponentsUntilPlayer(afterT3, playerId, maxOppSteps);
         }
         t3Val = evaluateMasterPublicState(afterT3, playerId);
       }

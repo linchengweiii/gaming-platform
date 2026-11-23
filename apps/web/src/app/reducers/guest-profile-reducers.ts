@@ -13,6 +13,20 @@ import type { AppModel, ClientRoom, GuestSession } from "../types.ts";
 import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import { resetSubModesPure } from "./trade-and-draft-reducers.ts";
 
+function mapRoomSessionSnapshots(
+  room: ClientRoom,
+  mapper: (snap: any) => any
+): ClientRoom["session"] {
+  if (!room.session) return null;
+  return room.session.cloneWithMappedSnapshots
+    ? room.session.cloneWithMappedSnapshots(mapper)
+    : createMatchSession(
+        getEngineForGamePure(room.gameId),
+        mapper(room.session.getState()),
+        true
+      );
+}
+
 export function signOutGuestFromModelPure(
   model: Readonly<AppModel>,
   targetGuestId: string,
@@ -125,32 +139,10 @@ export function signOutGuestFromModelPure(
             }
           : snap;
 
-      const nextSession = room.session
-        ? room.session.cloneWithMappedSnapshots
-          ? room.session.cloneWithMappedSnapshots(mapStateLeavingToBots)
-          : createMatchSession(
-              getEngineForGamePure(room.gameId),
-              mapStateLeavingToBots(room.session.getState()),
-              true
-            )
-        : null;
-
-      const nextRemoteState =
-        room.remoteState && Array.isArray(room.remoteState.players)
-          ? {
-              ...room.remoteState,
-              players: room.remoteState.players.map((sp: any) =>
-                leavingSeatIds.has(sp.id)
-                  ? {
-                      ...sp,
-                      name: toBotName(sp.name),
-                      isBot: true,
-                      botDifficulty: room.botDifficulty,
-                    }
-                  : sp
-              ),
-            }
-          : room.remoteState;
+      const nextSession = mapRoomSessionSnapshots(room, mapStateLeavingToBots);
+      const nextRemoteState = room.remoteState
+        ? mapStateLeavingToBots(room.remoteState)
+        : room.remoteState;
 
       const updatedRoom: ClientRoom = {
         ...room,
@@ -295,15 +287,7 @@ export function renameGuestInModelPure(
     const nextPlayers = room.players.map((p) =>
       !p.isBot && p.id === guestId ? { ...p, name: cleanName } : p
     );
-    const nextSession = room.session
-      ? room.session.cloneWithMappedSnapshots
-        ? room.session.cloneWithMappedSnapshots(mapStatePlayerName)
-        : createMatchSession(
-            getEngineForGamePure(room.gameId),
-            mapStatePlayerName(room.session.getState()),
-            true
-          )
-      : null;
+    const nextSession = mapRoomSessionSnapshots(room, mapStatePlayerName);
     const nextRemoteState = room.remoteState
       ? mapStatePlayerName(room.remoteState)
       : null;

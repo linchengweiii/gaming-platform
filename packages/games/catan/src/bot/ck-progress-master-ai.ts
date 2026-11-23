@@ -14,10 +14,7 @@ import {
   type TradeGoodType,
 } from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
-import {
-  getOpponentProgressCardCountFair,
-  getVertexResourcePipScore,
-} from "./utils.ts";
+import { getOpponentProgressCardCountFair } from "./utils.ts";
 
 export function scoreMasterMainProgressCard(
   state: CatanState,
@@ -182,7 +179,6 @@ export function scoreMasterMainProgressCard(
     }
     case "deserter": {
       const tId = act.params?.targetPlayerId;
-      const placeV = act.params?.placeVertexId;
       const opp = opponents.find((o) => o.id === tId);
       if (opp) {
         const oppKnights = Object.values(state.knights).filter(
@@ -192,15 +188,7 @@ export function scoreMasterMainProgressCard(
           const minOppLevel = Math.min(...oppKnights.map((k) => k.level));
           const anyActive = oppKnights.some((k) => k.active);
           const oppVp = computePlayerVictoryPoints(state, opp.id, true);
-          const placeBonus = placeV
-            ? getVertexResourcePipScore(state, placeV, false) * 0.4
-            : 0;
-          s =
-            30 +
-            minOppLevel * 12 +
-            (anyActive ? 6 : 0) +
-            oppVp * 1.2 +
-            placeBonus;
+          s = 30 + minOppLevel * 12 + (anyActive ? 6 : 0) + oppVp * 1.2;
         }
       }
       break;

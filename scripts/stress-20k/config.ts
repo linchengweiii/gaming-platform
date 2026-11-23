@@ -43,15 +43,12 @@ export const STRESS_DEFAULTS = {
   humanUndoCheckInterval: 50,
 } as const;
 
-export function makePlayers(
-  count: number,
-  allBots: boolean
-): PlayerDescriptor[] {
+export function makeRobotPlayers(count: number): PlayerDescriptor[] {
   return Array.from({ length: count }, (_, i) => ({
     id: `p${i + 1}`,
-    name: allBots ? `Robot ${i + 1}` : `HumanMimic ${i + 1}`,
+    name: `Robot ${i + 1}`,
     color: PLAYER_COLORS[i % PLAYER_COLORS.length]!,
-    isBot: allBots,
+    isBot: true,
     botDifficulty: "smart",
   }));
 }

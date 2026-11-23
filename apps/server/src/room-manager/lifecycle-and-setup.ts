@@ -35,6 +35,13 @@ import type {
   RoomSetupUpdates,
 } from "./types.ts";
 
+function parseFiniteInt(value: unknown, fieldName: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${fieldName} must be a finite number`);
+  }
+  return Math.trunc(value);
+}
+
 export function createRoomPure(
   managerState: RoomManagerState,
   options: CreateRoomOptions,
@@ -69,18 +76,14 @@ export function createRoomPure(
         },
       ];
 
-  const defaultBotCount = (() => {
-    if (options.botCount !== undefined) {
-      if (
-        typeof options.botCount !== "number" ||
-        !Number.isFinite(options.botCount)
-      ) {
-        throw new Error("botCount must be a finite number");
-      }
-      return Math.trunc(options.botCount);
-    }
-    return options.allBots ? 4 : options.autoStart ? 3 : 0;
-  })();
+  const defaultBotCount =
+    options.botCount !== undefined
+      ? parseFiniteInt(options.botCount, "botCount")
+      : options.allBots
+        ? 4
+        : options.autoStart
+          ? 3
+          : 0;
 
   const defaultConfig =
     gameId === "catan"
@@ -146,10 +149,7 @@ export function updateRoomSetupPure(
     throw new Error("Only the room owner can change the game setup");
   }
 
-  const nextName =
-    updates.name !== undefined && updates.name.trim()
-      ? updates.name.trim()
-      : room.name;
+  const nextName = updates.name?.trim() || room.name;
 
   const gameChanged = Boolean(updates.gameId && updates.gameId !== room.gameId);
   const nextGameId = gameChanged
@@ -233,26 +233,21 @@ export function updateRoomSetupPure(
         }
         return base;
       })()
-    : room.config;
+    : baseConfigSource;
 
-  const mergedConfigFinal = updates.config ? mergedConfig : baseConfigSource;
   const nextBotDifficulty = updates.botDifficulty ?? room.botDifficulty;
   const nextConfig = updates.botDifficulty
-    ? { ...mergedConfigFinal, botDifficulty: updates.botDifficulty }
-    : mergedConfigFinal;
+    ? { ...mergedConfig, botDifficulty: updates.botDifficulty }
+    : mergedConfig;
 
   const nextStartingPlayerMode =
-    updates.startingPlayerMode !== undefined
-      ? updates.startingPlayerMode
-      : room.startingPlayerMode;
-
-  const nextSeed = updates.seed ? updates.seed : room.seed;
+    updates.startingPlayerMode ?? room.startingPlayerMode;
+  const nextSeed = updates.seed || room.seed;
   const nextBotStepDelayMs =
     updates.botStepDelayMs !== undefined
       ? clampServerBotStepDelayMsPure(updates.botStepDelayMs)
       : room.botStepDelayMs;
-  const nextAllBots =
-    updates.allBots !== undefined ? updates.allBots : room.allBots;
+  const nextAllBots = updates.allBots ?? room.allBots;
   const nextIsPrivate =
     updates.isPrivate !== undefined ? Boolean(updates.isPrivate) : room.isPrivate;
 
@@ -279,24 +274,12 @@ export function updateRoomSetupPure(
 
   const nextBotCount = (() => {
     if (updates.botCount !== undefined) {
-      if (
-        typeof updates.botCount !== "number" ||
-        !Number.isFinite(updates.botCount)
-      ) {
-        throw new Error("botCount must be a finite number");
-      }
-      return Math.trunc(updates.botCount);
+      return parseFiniteInt(updates.botCount, "botCount");
     }
     if (updates.playerCount !== undefined) {
-      if (
-        typeof updates.playerCount !== "number" ||
-        !Number.isFinite(updates.playerCount)
-      ) {
-        throw new Error("playerCount must be a finite number");
-      }
       const clampedTarget = Math.max(
         bounds.minPlayers,
-        Math.min(bounds.maxPlayers, Math.trunc(updates.playerCount))
+        Math.min(bounds.maxPlayers, parseFiniteInt(updates.playerCount, "playerCount"))
       );
       return nextAllBots
         ? clampedTarget

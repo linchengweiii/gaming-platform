@@ -9,8 +9,8 @@ import {
   getSplendorGemTextLocalized,
   t,
 } from "../../i18n/index.ts";
+import { escapeHtml } from "../../app/helpers/html-and-dropdown.ts";
 import {
-  escapeSplendorHtml as escapeHtml,
   renderSplendorCardItem,
   renderSplendorGemToken,
 } from "./gems-and-cards.ts";

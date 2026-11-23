@@ -1,5 +1,4 @@
 import type { GameEvent, VertexId } from "@gaming-platform/core";
-import { applyMainPhaseProgressCardPure } from "../cities-and-knights/apply-actions.ts";
 import { resolveEventDieRollPure } from "../cities-and-knights/barbarians.ts";
 import {
   addCommoditiesPure,
@@ -8,6 +7,10 @@ import {
   subtractCommoditiesPure,
 } from "../cities-and-knights/helpers.ts";
 import { canPlayerUpgradeDiscipline } from "../cities-and-knights/improvements.ts";
+import { applyPoliticsProgressCardPure } from "../cities-and-knights/progress-politics.ts";
+import { applyScienceProgressCardPure } from "../cities-and-knights/progress-science.ts";
+import { applyTradeProgressCardPure } from "../cities-and-knights/progress-trade.ts";
+import { PROGRESS_CARD_CATALOG } from "../config/cities-knights-config.ts";
 import type { CatanAction } from "../types/actions.ts";
 import {
   type CommodityMap,
@@ -16,7 +19,6 @@ import {
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import {
   checkAndAssignWinnerPure,
-  computePlayerVictoryPoints,
   recalculateAwardsPure,
 } from "./awards-and-vp.ts";
 import { continuePostEventDieRollPure } from "./dice-and-events.ts";
@@ -25,12 +27,6 @@ import {
   assertCanBuildInCurrentPhase,
   updatePlayerById,
 } from "./helpers.ts";
-import {
-  getLegalRoadEdges,
-  getLegalShipEdges,
-  revealAdjacentFogHexesPure,
-} from "./network.ts";
-import { getLegalRobberHexes } from "./robber-pirate.ts";
 
 export function applyUpgradeCityImprovementPure(
   currentState: CatanState,
@@ -268,26 +264,47 @@ export function applyPlayProgressCardPure(
     playerId,
     action.cardId
   );
-  const applied = applyMainPhaseProgressCardPure(
-    consumed.state,
-    playerId,
-    consumed.card,
-    action.params,
-    computePlayerVictoryPoints,
-    (s, pid) => getLegalRoadEdges(s, pid, null),
-    (s, pid) => getLegalShipEdges(s, pid, null),
-    getLegalRobberHexes,
-    (s, pid, edgeId, emitted) =>
-      revealAdjacentFogHexesPure(s, edgeId, pid, emitted)
-  );
-
-  const awardedState = recalculateAwardsPure(applied.state);
   if (
-    awardedState.phase === "MAIN_PHASE" ||
-    awardedState.phase === "ROAD_BUILDING_DEV"
+    consumed.card.type === "alchemist" ||
+    consumed.card.type === "printer" ||
+    consumed.card.type === "constitution"
   ) {
-    const checked = checkAndAssignWinnerPure(awardedState, playerId);
+    throw new Error(
+      `Unsupported Progress Card in MAIN_PHASE: ${consumed.card.type}`
+    );
+  }
+  const discipline = PROGRESS_CARD_CATALOG[consumed.card.type].discipline;
+  const applied =
+    discipline === "science"
+      ? applyScienceProgressCardPure(
+          consumed.state,
+          playerId,
+          consumed.card,
+          action.params
+        )
+      : discipline === "politics"
+        ? applyPoliticsProgressCardPure(
+            consumed.state,
+            playerId,
+            consumed.card,
+            action.params
+          )
+        : applyTradeProgressCardPure(
+            consumed.state,
+            playerId,
+            consumed.card,
+            action.params
+          );
+
+  if (
+    applied.state.phase === "MAIN_PHASE" ||
+    applied.state.phase === "ROAD_BUILDING_DEV"
+  ) {
+    const checked = checkAndAssignWinnerPure(applied.state, playerId);
     return { state: checked.state, events: applied.emitted };
   }
-  return { state: awardedState, events: applied.emitted };
+  return {
+    state: recalculateAwardsPure(applied.state),
+    events: applied.emitted,
+  };
 }

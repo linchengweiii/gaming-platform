@@ -1,6 +1,5 @@
 import type { CatanState } from "@gaming-platform/catan";
 import type { SplendorState } from "@gaming-platform/splendor";
-import type { AzulState } from "@gaming-platform/azul";
 import {
   type SevenWondersState,
   canPlayerUnselectDraftPick,
@@ -188,7 +187,7 @@ export function bindInGameEvents(
   if (room.gameId === "splendor") {
     bindSplendorEvents(ctx, state as SplendorState, actingPlayerId);
   } else if (room.gameId === "azul") {
-    bindAzulEvents(ctx, state as AzulState, actingPlayerId);
+    bindAzulEvents(ctx, actingPlayerId);
   } else if (room.gameId === "seven_wonders") {
     bindSevenWondersEvents(ctx, state as SevenWondersState, actingPlayerId);
   } else {

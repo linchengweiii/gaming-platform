@@ -3,7 +3,7 @@ import {
   SPLENDOR_DOUBLE_GEM_MIN_BANK,
   SPLENDOR_MAX_RESERVED_CARDS,
 } from "../config.ts";
-import { emptyGemMap } from "../rules.ts";
+import { emptyGemMap } from "../rules/helpers.ts";
 import type {
   GemColor,
   GemMap,

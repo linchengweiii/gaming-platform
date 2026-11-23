@@ -1,4 +1,5 @@
 import type http from "node:http";
+import { DEFAULT_SERVER_HOST } from "../config.ts";
 import type { PlatformRoomManager, RoomInstance } from "../room-manager.ts";
 import {
   type GuestSessionStore,
@@ -9,14 +10,53 @@ import {
   buildRedactedStatePayload,
   handleRoomMatchSubRoute,
 } from "./http-match-routes.ts";
-import type { RealtimeHub } from "./realtime-hub.ts";
 import {
   isViewerSeatedOrOwnerPure,
   readJsonBody,
   sendJson,
 } from "./viewer-and-static.ts";
+import type { RealtimeHub } from "./ws-hub-types-and-presence.ts";
 
-export async function handleApiRequest(
+export async function handleHttpRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  roomManager: PlatformRoomManager,
+  hub: RealtimeHub,
+  guestSessions: GuestSessionStore,
+  serveStatic: (pathname: string) => boolean
+): Promise<void> {
+  try {
+    if (req.method === "OPTIONS") {
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    const url = new URL(
+      req.url ?? "/",
+      `http://${req.headers.host ?? DEFAULT_SERVER_HOST}`
+    );
+
+    const handled = await handleApiRequest(
+      req,
+      res,
+      url,
+      roomManager,
+      hub,
+      guestSessions
+    );
+    if (handled || serveStatic(url.pathname)) return;
+
+    sendJson(res, 404, { error: `Not found: ${url.pathname}` });
+  } catch (err: any) {
+    const status =
+      typeof err?.statusCode === "number" && err.statusCode >= 400
+        ? err.statusCode
+        : 400;
+    sendJson(res, status, { error: err?.message ?? String(err) });
+  }
+}
+
+async function handleApiRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   url: URL,
@@ -146,21 +186,20 @@ export async function handleApiRequest(
   const subRoute = roomMatch[2] ?? "";
 
   if (!subRoute && req.method === "GET") {
-    const room = roomManager.getRoom(roomId);
     const viewerId = guestSessions.verifyToken(
       guestSessions.extractTokenFromReq(req)
     );
-    if (viewerId && isViewerSeatedOrOwnerPure(room, viewerId)) {
+    if (viewerId && isViewerSeatedOrOwnerPure(targetRoom, viewerId)) {
       hub.touchRoomActivity(roomId);
     }
     const { actingId: actingPlayerId, view } = buildRedactedStatePayload(
       roomManager,
-      room,
-      room.session?.getState() ?? null,
+      targetRoom,
+      targetRoom.session?.getState() ?? null,
       viewerId
     );
     sendJson(res, 200, {
-      room: enrichRoom(room, viewerId),
+      room: enrichRoom(targetRoom, viewerId),
       state: view,
       actingPlayerId,
     });
@@ -196,7 +235,7 @@ export async function handleApiRequest(
     broadcastRoomAndLobby();
     sendJson(res, 200, {
       player,
-      room: enrichRoom(roomManager.getRoom(roomId), authPlayerId),
+      room: enrichRoom(targetRoom, authPlayerId),
     });
     return true;
   }
@@ -236,19 +275,18 @@ export async function handleApiRequest(
       isBot,
       isBot ? undefined : authPlayerId
     );
-    const room = roomManager.getRoom(roomId);
     const viewerId = isBot ? authPlayerId : player.id;
     const { actingId, view } = buildRedactedStatePayload(
       roomManager,
-      room,
-      room.session?.getState() ?? null,
+      targetRoom,
+      targetRoom.session?.getState() ?? null,
       viewerId
     );
     hub.refreshRoomDisconnectClock(roomId);
     broadcastRoomAndLobby();
     sendJson(res, 200, {
       player,
-      room: enrichRoom(room, viewerId),
+      room: enrichRoom(targetRoom, viewerId),
       state: view,
       actingPlayerId: actingId,
     });
@@ -277,7 +315,7 @@ export async function handleApiRequest(
   return handleRoomMatchSubRoute(
     req,
     res,
-    roomId,
+    targetRoom,
     subRoute,
     roomManager,
     hub,

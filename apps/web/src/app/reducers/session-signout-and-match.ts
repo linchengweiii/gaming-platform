@@ -20,11 +20,6 @@ import type { AppModel, ClientRoom, SupportedGameId } from "../types.ts";
 import { createLocalRoomPure } from "./room-sync-reducers.ts";
 import { resetSubModesPure } from "./trade-and-draft-reducers.ts";
 
-export {
-  renameGuestInModelPure,
-  signOutGuestFromModelPure,
-} from "./guest-profile-reducers.ts";
-
 export function startOfflineRoomMatchPure(
   model: Readonly<AppModel>,
   roomId: string

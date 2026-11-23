@@ -4,6 +4,7 @@ import {
   type CatanBotWeights,
 } from "../config/bot-config.ts";
 import { getCatanLegalActions } from "../rules/legal-actions.ts";
+import { getCatanPlayerViewPure } from "../rules/redaction.ts";
 import type { CatanAction } from "../types/actions.ts";
 import type { CatanState } from "../types/state.ts";
 import {
@@ -33,7 +34,6 @@ import {
 import {
   computeBoardScarcity,
   computePlayerProductionPips,
-  redactStateForBotPlayerPure,
 } from "./utils.ts";
 
 /**
@@ -44,7 +44,7 @@ export function chooseCatanBotAction(
   rawState: CatanState,
   playerId: string
 ): CatanAction | null {
-  const state = redactStateForBotPlayerPure(rawState, playerId);
+  const state = getCatanPlayerViewPure(rawState, playerId);
   const player = state.players.find((p) => p.id === playerId);
   if (!player) return null;
 
@@ -140,7 +140,9 @@ export function chooseCatanBotAction(
         player,
         needed,
         weights,
-        legalActions
+        legalActions,
+        scarcity,
+        myProd
       );
     }
     return legalActions[0]!;

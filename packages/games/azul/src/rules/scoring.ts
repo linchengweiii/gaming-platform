@@ -158,34 +158,15 @@ function computeEndgameBonusesPure(player: AzulPlayerState): {
   colors: number;
   bonus: number;
 } {
-  const rows = ROW_INDICES.filter((r) =>
-    player.wall[r]!.every((c) => c !== null)
-  ).length;
-  const cols = COL_INDICES.filter((c) =>
-    ROW_INDICES.every((r) => player.wall[r]![c] !== null)
-  ).length;
-  const colors = AZUL_COLORS.filter(
-    (color) =>
-      ROW_INDICES.reduce<number>(
-        (sum, r) =>
-          sum +
-          COL_INDICES.filter((c) => player.wall[r]![c] === color).length,
-        0
-      ) === AZUL_WALL_SIZE
-  ).length;
-
+  const rows = player.completedRows;
+  const cols = player.completedCols;
+  const colors = player.completedColorSets;
   const bonus =
     rows * AZUL_BONUS_POINTS.row +
     cols * AZUL_BONUS_POINTS.col +
     colors * AZUL_BONUS_POINTS.color;
   return {
-    player: {
-      ...player,
-      completedRows: rows,
-      completedCols: cols,
-      completedColorSets: colors,
-      score: player.score + bonus,
-    },
+    player: { ...player, score: player.score + bonus },
     rows,
     cols,
     colors,

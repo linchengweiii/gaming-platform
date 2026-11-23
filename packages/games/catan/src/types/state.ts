@@ -144,14 +144,6 @@ export interface CatanPlayerState {
   hasMovedShipThisTurn: boolean;
 }
 
-export interface BarbarianAttackSummary {
-  turn: number;
-  barbarianStrength: number;
-  defenderStrength: number;
-  outcome: "defenders_won" | "barbarians_won";
-  summary: string;
-}
-
 export interface CatanState {
   gameId: "catan";
   config: CatanConfig;
@@ -183,7 +175,6 @@ export interface CatanState {
   metropolises: Record<ImprovementDiscipline, MetropolisState>;
   barbarianPosition: number;
   barbarianAttacksCount: number;
-  lastBarbarianAttackResult: BarbarianAttackSummary | null;
   merchantHexId: HexId | null;
   merchantOwnerId: string | null;
   robberHexId: HexId;

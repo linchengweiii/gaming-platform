@@ -17,17 +17,15 @@ import {
   takeKnightFromSupplyPure,
 } from "./knights.ts";
 
-export function finalizeToMainAndCheckActiveWinner(
+function finalizeToMainAndCheckActiveWinner(
   state: CatanState,
   events: GameEvent[]
 ): { state: CatanState; events: GameEvent[] } {
   const activeId = state.players[state.activePlayerIndex]!.id;
-  const awarded = recalculateAwardsPure({
-    ...state,
-    pendingCkInteraction: null,
-    phase: "MAIN_PHASE",
-  });
-  const checked = checkAndAssignWinnerPure(awarded, activeId);
+  const checked = checkAndAssignWinnerPure(
+    { ...state, pendingCkInteraction: null, phase: "MAIN_PHASE" },
+    activeId
+  );
   return { state: checked.state, events };
 }
 

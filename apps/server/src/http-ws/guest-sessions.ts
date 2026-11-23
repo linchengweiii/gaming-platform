@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type http from "node:http";
 
-export interface HttpStatusError extends Error {
+interface HttpStatusError extends Error {
   readonly statusCode: number;
 }
 
@@ -9,8 +9,7 @@ export function createHttpError(
   statusCode: number,
   message: string
 ): HttpStatusError {
-  const err = Object.assign(new Error(message), { statusCode });
-  return err;
+  return Object.assign(new Error(message), { statusCode });
 }
 
 const RESERVED_SEAT_ID_PATTERN = /^(?:local-|bot-|p\d+$)/i;

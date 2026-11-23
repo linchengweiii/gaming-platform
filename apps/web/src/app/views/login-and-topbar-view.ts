@@ -16,7 +16,7 @@ import type { AppModel, DropdownOption } from "../types.ts";
 
 const LOCALE_GLOBE_SVG = `<svg class="ga-locale-picker__icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.25" stroke="currentColor" stroke-width="1.3"/><ellipse cx="8" cy="8" rx="2.9" ry="6.25" stroke="currentColor" stroke-width="1.2"/><path d="M2.2 6h11.6M2.2 10h11.6" stroke="currentColor" stroke-width="1.2"/></svg>`;
 
-export function renderLocaleSwitcherPure(locale: SupportedLocale): string {
+function renderLocaleSwitcherPure(locale: SupportedLocale): string {
   return `<div class="ga-locale-picker" aria-label="${escapeAttr(t(locale, "locale.ariaLabel"))}">${LOCALE_GLOBE_SVG}${renderDropdown({
     id: "sel-locale",
     value: locale,

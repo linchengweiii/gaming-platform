@@ -16,6 +16,15 @@ export const DISCIPLINE_TO_COMMODITY: Record<
   science: "paper",
 };
 
+export const COMMODITY_TO_DISCIPLINE: Record<
+  CommodityType,
+  ImprovementDiscipline
+> = {
+  cloth: "trade",
+  coin: "politics",
+  paper: "science",
+};
+
 export const TERRAIN_TO_COMMODITY: Record<TerrainType, CommodityType | null> = {
   hills: null,
   forest: "paper",
@@ -47,22 +56,13 @@ export const MEDICINE_CITY_COST: ResourceMap = {
   ore: 2,
 };
 
-export const CK_THRESHOLDS = {
-  metropolisLevel: 4,
-  maxImprovementLevel: 5,
-  tradingHouseLevel: 3,
-  fortressPoliticsLevel: 3,
-  aqueductScienceLevel: 3,
-  maxProgressHandSize: 4,
-  progressDeckSizePerDiscipline: 18,
-} as const;
+export const PROGRESS_DECK_SIZE_PER_DISCIPLINE = 18;
 
 export interface ProgressCardMetadata {
   readonly type: ProgressCardType;
   readonly discipline: ImprovementDiscipline;
   readonly title: string;
   readonly copies: number;
-  readonly phase: "PRE_ROLL" | "MAIN_PHASE" | "IMMEDIATE_VP";
   readonly description: string;
 }
 
@@ -75,7 +75,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Printer",
     copies: 1,
-    phase: "IMMEDIATE_VP",
     description: "+1 Victory Point! Revealed immediately upon draw.",
   },
   engineer: {
@@ -83,7 +82,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Engineer",
     copies: 1,
-    phase: "MAIN_PHASE",
     description: "Build 1 City Wall on one of your unwalled cities for free.",
   },
   alchemist: {
@@ -91,7 +89,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Alchemist",
     copies: 2,
-    phase: "PRE_ROLL",
     description:
       "Play before rolling: choose the exact white and red number dice values.",
   },
@@ -100,7 +97,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Crane",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Your next City Improvement this turn costs 1 fewer commodity.",
   },
@@ -109,7 +105,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Inventor",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Swap the number tokens of any two land hexes (except 2, 6, 8, and 12).",
   },
@@ -118,7 +113,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Irrigation",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Collect 2 Grain for each Fields hex adjacent to at least one of your buildings.",
   },
@@ -127,7 +121,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Medicine",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Your next City upgrade this turn costs 2 Ore and 1 Grain (1 Ore + 1 Grain discount).",
   },
@@ -136,7 +129,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Mining",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Collect 2 Ore for each Mountains hex adjacent to at least one of your buildings.",
   },
@@ -145,7 +137,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Road Building",
     copies: 2,
-    phase: "MAIN_PHASE",
     description: "Build up to 2 Roads or Ships immediately for free.",
   },
   smith: {
@@ -153,7 +144,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "science",
     title: "Smith",
     copies: 2,
-    phase: "MAIN_PHASE",
     description: "Promote up to 2 of your Knights by 1 level each for free.",
   },
 
@@ -163,7 +153,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "politics",
     title: "Constitution",
     copies: 1,
-    phase: "IMMEDIATE_VP",
     description: "+1 Victory Point! Revealed immediately upon draw.",
   },
   bishop: {
@@ -171,7 +160,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "politics",
     title: "Bishop",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Move the Robber and draw 1 random card from every opponent adjacent to that hex.",
   },
@@ -180,7 +168,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "politics",
     title: "Deserter",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "An opponent's Knight deserts; place one of your Knights of up to that level.",
   },
@@ -189,7 +176,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "politics",
     title: "Diplomat",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Remove any open-ended road; if it was yours, you may place it elsewhere for free.",
   },
@@ -198,7 +184,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "politics",
     title: "Intrigue",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Displace an opponent's Knight touching one of your roads or ships.",
   },
@@ -207,7 +192,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "politics",
     title: "Saboteur",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Every opponent with at least as many VP as you discards half their hand.",
   },
@@ -216,7 +200,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "politics",
     title: "Spy",
     copies: 3,
-    phase: "MAIN_PHASE",
     description:
       "Inspect an opponent's Progress Cards and take 1 of your choice.",
   },
@@ -225,7 +208,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "politics",
     title: "Warlord",
     copies: 2,
-    phase: "MAIN_PHASE",
     description: "Activate all of your Knights on the board for free.",
   },
   wedding: {
@@ -233,7 +215,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "politics",
     title: "Wedding",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Each opponent with more VP than you gives you up to 2 cards from their hand.",
   },
@@ -244,7 +225,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "trade",
     title: "Merchant",
     copies: 6,
-    phase: "MAIN_PHASE",
     description:
       "Place the Merchant adjacent to your building: +1 VP and 2:1 bank trade for that hex's resource.",
   },
@@ -253,7 +233,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "trade",
     title: "Resource Monopoly",
     copies: 4,
-    phase: "MAIN_PHASE",
     description:
       "Name 1 resource; each opponent gives you up to 2 of that resource.",
   },
@@ -262,7 +241,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "trade",
     title: "Trade Monopoly",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Name 1 commodity; each opponent gives you up to 1 of that commodity.",
   },
@@ -271,7 +249,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "trade",
     title: "Merchant Fleet",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Trade 1 chosen resource or commodity at 2:1 with the bank for the rest of this turn.",
   },
@@ -280,7 +257,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "trade",
     title: "Master Merchant",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Choose an opponent with more VP than you and draw 2 cards from their hand.",
   },
@@ -289,7 +265,6 @@ export const PROGRESS_CARD_CATALOG: Readonly<
     discipline: "trade",
     title: "Commercial Harbor",
     copies: 2,
-    phase: "MAIN_PHASE",
     description:
       "Exchange 1 resource from your hand for 1 commodity from each opponent holding commodities.",
   },

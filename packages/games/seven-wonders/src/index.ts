@@ -1,17 +1,14 @@
-import type { GameEngine, GameEvent, PlayerDescriptor } from "@gaming-platform/core";
-import { chooseSevenWondersBotAction } from "./bot.ts";
+import type { GameEngine, GameEvent } from "@gaming-platform/core";
+import { chooseSevenWondersBotAction } from "./bot/choose.ts";
 import {
   SEVEN_WONDERS_MAX_PLAYERS,
   SEVEN_WONDERS_MIN_PLAYERS,
 } from "./config/game-config.ts";
-import {
-  applySevenWondersAction,
-  checkSevenWondersInvariants,
-  getSevenWondersActingPlayerId,
-  getSevenWondersLegalActions,
-  getSevenWondersPlayerView,
-  initSevenWondersGame,
-} from "./rules.ts";
+import { applySevenWondersAction } from "./rules/apply-turn.ts";
+import { checkSevenWondersInvariants } from "./rules/invariants.ts";
+import { getSevenWondersLegalActions } from "./rules/legal-actions.ts";
+import { getSevenWondersPlayerView } from "./rules/redaction.ts";
+import { initSevenWondersGame } from "./rules/setup.ts";
 import type {
   SevenWondersAction,
   SevenWondersConfig,
@@ -19,15 +16,16 @@ import type {
 } from "./types.ts";
 
 export * from "./types.ts";
-export * from "./config/index.ts";
-export * from "./cards.ts";
-export * from "./rules.ts";
-export * from "./bot.ts";
 export {
   ALL_WONDER_IDS,
   WONDER_BOARDS,
   getWonderBoardDefinition,
 } from "./config/wonders-config.ts";
+export { SEVEN_WONDERS_AGE_I_CARDS } from "./cards/age1.ts";
+export { SEVEN_WONDERS_AGE_II_CARDS } from "./cards/age2.ts";
+export { SEVEN_WONDERS_AGE_III_BASE_CARDS } from "./cards/age3.ts";
+export { SEVEN_WONDERS_GUILD_CARDS } from "./cards/guilds.ts";
+export * from "./rules.ts";
 
 export const SevenWondersEngine: GameEngine<
   SevenWondersState,
@@ -45,57 +43,14 @@ export const SevenWondersEngine: GameEngine<
     maxPlayers: SEVEN_WONDERS_MAX_PLAYERS,
     supportsBots: true,
   },
-
-  initGame(
-    players: readonly PlayerDescriptor[],
-    config?: Partial<SevenWondersConfig>,
-    seed?: number | string
-  ): SevenWondersState {
-    return initSevenWondersGame(players, config, seed);
-  },
-
-  getLegalActions(
-    state: SevenWondersState,
-    playerId: string
-  ): SevenWondersAction[] {
-    return getSevenWondersLegalActions(state, playerId);
-  },
-
-  applyAction(
-    state: SevenWondersState,
-    playerId: string,
-    action: SevenWondersAction
-  ): { state: SevenWondersState; events: GameEvent[] } {
-    return applySevenWondersAction(state, playerId, action);
-  },
-
-  getPlayerView(
-    state: SevenWondersState,
-    viewerPlayerId: string | null
-  ): SevenWondersState {
-    return getSevenWondersPlayerView(state, viewerPlayerId);
-  },
-
-  getWinner(state: SevenWondersState): string | null {
-    return state.winnerId;
-  },
-
-  chooseBotAction(
-    state: SevenWondersState,
-    playerId: string
-  ): SevenWondersAction | null {
-    return chooseSevenWondersBotAction(state, playerId);
-  },
-
-  checkInvariants(state: SevenWondersState) {
-    return checkSevenWondersInvariants(state);
-  },
-
-  isActionUndoable(
-    prevState: SevenWondersState,
-    _action: SevenWondersAction,
-    nextState: SevenWondersState
-  ): boolean {
+  initGame: initSevenWondersGame,
+  getLegalActions: getSevenWondersLegalActions,
+  applyAction: applySevenWondersAction,
+  getPlayerView: getSevenWondersPlayerView,
+  getWinner: (state) => state.winnerId,
+  chooseBotAction: chooseSevenWondersBotAction,
+  checkInvariants: checkSevenWondersInvariants,
+  isActionUndoable(prevState, _action, nextState): boolean {
     if (nextState.phase === "GAME_OVER") return false;
     // Reversible only while locking in a draft pick before simultaneous reveal & hand rotation!
     return (
@@ -106,5 +61,3 @@ export const SevenWondersEngine: GameEngine<
     );
   },
 };
-
-export { getSevenWondersActingPlayerId };

@@ -8,7 +8,7 @@ import {
   getNextActingPlayerId,
   getPlayerSafeHandLimit,
   getPlayerTradeRatios,
-  recalculateAwards,
+  recalculateAwardsPure,
   totalResourceCount,
 } from "@gaming-platform/catan";
 import { FOUR_PLAYERS, completeSnakeDraftSetup } from "./helpers.ts";
@@ -220,7 +220,7 @@ describe("@gaming-platform/catan - Base Game Rules", () => {
   });
 
   test("Longest Road is broken when an opponent builds a settlement on an intermediate vertex", () => {
-    const { state } = completeSnakeDraftSetup(
+    let { state } = completeSnakeDraftSetup(
       CatanEngine.initGame(FOUR_PLAYERS, { scenarioId: "standard" }, "road-break-test")
     );
     state.buildings = {};
@@ -237,7 +237,7 @@ describe("@gaming-platform/catan - Base Game Rules", () => {
       state.players[0]!.roadsRemaining--;
     }
 
-    recalculateAwards(state);
+    state = recalculateAwardsPure(state);
     expect(state.players[0]!.longestRoadLength).toBe(6);
     expect(state.longestRoadOwnerId).toBe("p1");
 
@@ -252,7 +252,7 @@ describe("@gaming-platform/catan - Base Game Rules", () => {
     };
     state.players[1]!.settlementsRemaining -= 2;
 
-    recalculateAwards(state);
+    state = recalculateAwardsPure(state);
     expect(state.players[0]!.longestRoadLength).toBe(3);
     expect(state.longestRoadOwnerId).toBeNull();
   });
@@ -333,7 +333,7 @@ describe("@gaming-platform/catan - Extensions & Expansions", () => {
   });
 
   test("Harbormaster variant awards +2 VP upon reaching 3 Harbor Points", () => {
-    const { state } = completeSnakeDraftSetup(
+    let { state } = completeSnakeDraftSetup(
       CatanEngine.initGame(
         FOUR_PLAYERS,
         { scenarioId: "standard", enableHarbormaster: true },
@@ -350,7 +350,7 @@ describe("@gaming-platform/catan - Extensions & Expansions", () => {
     state.players[0]!.settlementsRemaining = 4;
     state.players[0]!.citiesRemaining = 3;
 
-    recalculateAwards(state);
+    state = recalculateAwardsPure(state);
     expect(state.players[0]!.harborPoints).toBe(3);
     expect(state.harbormasterOwnerId).toBe("p1");
     expect(computePlayerVictoryPoints(state, "p1", true)).toBe(2 + 1 + 2); // city(2) + settlement(1) + harbormaster(2) = 5

@@ -6,18 +6,70 @@ import {
 } from "../config.ts";
 import type {
   AzulAction,
+  AzulDraftSource,
   AzulPlayerState,
   AzulState,
+  AzulTargetLine,
+  AzulTileColor,
   FloorToken,
   PatternLineState,
 } from "../types.ts";
 import {
   appendAzulEvent,
-  appendFloorOverflow,
   canPlaceColorOnPatternLine,
   setPatternLineAt,
 } from "./helpers.ts";
 import { resolveWallTilingAndEndOfRoundPure } from "./scoring.ts";
+
+const TARGET_LINES: readonly AzulTargetLine[] = [0, 1, 2, 3, 4, "floor"];
+
+function appendFloorOverflow(
+  floorLine: readonly FloorToken[],
+  discardLid: readonly AzulTileColor[],
+  color: AzulTileColor,
+  count: number
+): { floorLine: FloorToken[]; discardLid: AzulTileColor[] } {
+  const freeFloorSlots = Math.max(0, AZUL_FLOOR_CAPACITY - floorLine.length);
+  const toFloor = Math.min(freeFloorSlots, count);
+  const toDiscard = Math.max(0, count - toFloor);
+  return {
+    floorLine: [...floorLine, ...Array.from({ length: toFloor }, () => color)],
+    discardLid: [...discardLid, ...Array.from({ length: toDiscard }, () => color)],
+  };
+}
+
+export function getAzulLegalActions(
+  state: AzulState,
+  playerId: string
+): AzulAction[] {
+  if (state.phase === "GAME_OVER") return [];
+  const activePlayer = state.players[state.activePlayerIndex]!;
+  if (activePlayer.id !== playerId) return [];
+
+  const actionsForSource = (
+    tiles: readonly AzulTileColor[],
+    source: AzulDraftSource
+  ): AzulAction[] =>
+    Array.from(new Set(tiles)).flatMap((color) =>
+      TARGET_LINES.filter(
+        (targetLine) =>
+          targetLine === "floor" ||
+          canPlaceColorOnPatternLine(activePlayer, targetLine, color)
+      ).map((targetLine): AzulAction => ({
+        type: "DRAFT_TILES",
+        source,
+        color,
+        targetLine,
+      }))
+    );
+
+  return [
+    ...state.factories.flatMap((factory, factoryIndex) =>
+      actionsForSource(factory, { kind: "factory", factoryIndex })
+    ),
+    ...actionsForSource(state.centerPool, { kind: "center" }),
+  ];
+}
 
 export function applyAzulAction(
   currentState: AzulState,

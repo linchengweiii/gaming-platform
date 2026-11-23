@@ -63,92 +63,65 @@ function buildSeafarersNewShoresBoardPure(
     preset.foreignTerrains
   );
 
-  const laidOut = coords.reduce<{
-    hexes: Record<HexId, HexTile>;
-    mainProductiveIds: HexId[];
-    foreignProductiveIds: HexId[];
-    mainIdx: number;
-    foreignIdx: number;
-    robberHexId: HexId;
-  }>(
-    (acc, { q, r }) => {
-      const id = hexId(q, r);
-      if (mainIslandSet.has(id)) {
-        const terrain = mainTerrains[acc.mainIdx]!;
-        const tile: HexTile = {
-          id,
-          q,
-          r,
-          terrain,
-          numberToken: null,
-          islandId: 1,
-          allowSetupSettlement: true,
-        };
-        return {
-          ...acc,
-          hexes: { ...acc.hexes, [id]: tile },
-          mainProductiveIds:
-            terrain === "desert"
-              ? acc.mainProductiveIds
-              : [...acc.mainProductiveIds, id],
-          mainIdx: acc.mainIdx + 1,
-          robberHexId: terrain === "desert" ? id : acc.robberHexId,
-        };
-      }
+  const rawHexes: Record<HexId, HexTile> = {};
+  const mainProductiveIds: HexId[] = [];
+  const foreignProductiveIds: HexId[] = [];
+  let mainIdx = 0;
+  let foreignIdx = 0;
+  let robberHexId = hexId(-1, 0);
+
+  for (const { q, r } of coords) {
+    const id = hexId(q, r);
+    if (mainIslandSet.has(id)) {
+      const terrain = mainTerrains[mainIdx++]!;
+      rawHexes[id] = {
+        id,
+        q,
+        r,
+        terrain,
+        numberToken: null,
+        islandId: 1,
+        allowSetupSettlement: true,
+      };
+      if (terrain === "desert") robberHexId = id;
+      else mainProductiveIds.push(id);
+    } else {
       const foreignIslandId = foreignIslandByHex.get(id);
       if (foreignIslandId !== undefined) {
-        const tile: HexTile = {
+        rawHexes[id] = {
           id,
           q,
           r,
-          terrain: foreignTerrains[acc.foreignIdx]!,
+          terrain: foreignTerrains[foreignIdx++]!,
           numberToken: null,
           islandId: foreignIslandId,
           allowSetupSettlement: false,
         };
-        return {
-          ...acc,
-          hexes: { ...acc.hexes, [id]: tile },
-          foreignProductiveIds: [...acc.foreignProductiveIds, id],
-          foreignIdx: acc.foreignIdx + 1,
+        foreignProductiveIds.push(id);
+      } else {
+        rawHexes[id] = {
+          id,
+          q,
+          r,
+          terrain: "sea",
+          numberToken: null,
+          islandId: 0,
+          allowSetupSettlement: false,
         };
       }
-      return {
-        ...acc,
-        hexes: {
-          ...acc.hexes,
-          [id]: {
-            id,
-            q,
-            r,
-            terrain: "sea",
-            numberToken: null,
-            islandId: 0,
-            allowSetupSettlement: false,
-          },
-        },
-      };
-    },
-    {
-      hexes: {},
-      mainProductiveIds: [],
-      foreignProductiveIds: [],
-      mainIdx: 0,
-      foreignIdx: 0,
-      robberHexId: hexId(-1, 0),
     }
-  );
+  }
 
   const [mainAssignedHexes, rng3] = assignBalancedNumbersPure(
-    laidOut.hexes,
-    laidOut.mainProductiveIds,
+    rawHexes,
+    mainProductiveIds,
     preset.mainNumbers,
     rng2,
     config.balancedNumbers
   );
   const [hexes, rng4] = assignBalancedNumbersPure(
     mainAssignedHexes,
-    laidOut.foreignProductiveIds,
+    foreignProductiveIds,
     preset.foreignNumbers,
     rng3,
     config.balancedNumbers
@@ -165,7 +138,7 @@ function buildSeafarersNewShoresBoardPure(
       topology,
       hexes,
       harbors,
-      robberHexId: laidOut.robberHexId,
+      robberHexId,
       pirateHexId: hexId(preset.pirateHex[0], preset.pirateHex[1]),
       fogPool: [],
     },

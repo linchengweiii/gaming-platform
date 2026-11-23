@@ -38,7 +38,7 @@ export const ZH_TW_MESSAGES: Readonly<Record<TranslationKey, string>> = {
   ...ZH_TW_OTHER_GAMES_MESSAGES,
 };
 
-export const MESSAGES_BY_LOCALE: Readonly<
+const MESSAGES_BY_LOCALE: Readonly<
   Record<SupportedLocale, Readonly<Record<TranslationKey, string>>>
 > = {
   en: EN_MESSAGES,

@@ -342,17 +342,6 @@ export function renderProgressCardSubModalPure(
       card.type === "master_merchant" ||
       card.type === "deserter"
     ) {
-      if (card.type === "deserter" && model.deserterTargetPlayerId) {
-        const targetOpp = state.players.find(
-          (o) => o.id === model.deserterTargetPlayerId
-        );
-        return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                <span class="t-small muted">${t(locale, "catan.ck.deserterTargetSelected", {
-                  name: `<strong>${escapeAttr(targetOpp?.name ?? t(locale, "common.playerFallback"))}</strong>`,
-                })}</span>
-                <button type="button" data-deserter-reset="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "catan.ck.changeTarget"))}</button>
-              </div>`;
-      }
       const opps = state.players.filter((opp) =>
         matchingActions.some((a) => a.params?.targetPlayerId === opp.id)
       );

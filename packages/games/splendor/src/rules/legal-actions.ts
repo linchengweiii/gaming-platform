@@ -1,6 +1,7 @@
 import {
   ALL_TOKEN_COLORS,
   GEM_COLORS,
+  SPLENDOR_CARD_TIERS,
   SPLENDOR_DOUBLE_GEM_MIN_BANK,
   SPLENDOR_HAND_TOKEN_LIMIT,
   SPLENDOR_MAX_RESERVED_CARDS,
@@ -12,11 +13,7 @@ import type {
   SplendorState,
   TokenMap,
 } from "../types.ts";
-import {
-  CARD_TIERS,
-  computeCardPurchasePayment,
-  totalTokens,
-} from "./helpers.ts";
+import { computeCardPurchasePayment, totalTokens } from "./helpers.ts";
 
 function threeColorCombinations(
   colors: readonly GemColor[]
@@ -62,22 +59,10 @@ function generateTokenReturnActions(
     );
   };
 
-  const uniqueByKey = enumerate(0, excess, {}).reduce<{
-    seen: ReadonlySet<string>;
-    items: Array<{ type: "RETURN_TOKENS"; tokens: Partial<TokenMap> }>;
-  }>(
-    (acc, combo) => {
-      const key = JSON.stringify(combo);
-      if (acc.seen.has(key)) return acc;
-      return {
-        seen: new Set([...acc.seen, key]),
-        items: [...acc.items, { type: "RETURN_TOKENS", tokens: combo }],
-      };
-    },
-    { seen: new Set<string>(), items: [] }
-  );
-
-  return uniqueByKey.items;
+  return enumerate(0, excess, {}).map((tokens) => ({
+    type: "RETURN_TOKENS" as const,
+    tokens,
+  }));
 }
 
 export function getSplendorLegalActions(
@@ -102,17 +87,10 @@ export function getSplendorLegalActions(
       : generateTokenReturnActions(activePlayer.tokens, excess);
   }
 
-  const marketPurchases: SplendorAction[] = CARD_TIERS.flatMap((tier) =>
-    state.market[tier]
-      .filter(
-        (card) =>
-          !card.redacted &&
-          computeCardPurchasePayment(activePlayer, card).affordable
-      )
-      .map((card): SplendorAction => ({ type: "PURCHASE_CARD", cardId: card.id }))
-  );
-
-  const reservedPurchases: SplendorAction[] = activePlayer.reservedCards
+  const purchaseActions: SplendorAction[] = [
+    ...SPLENDOR_CARD_TIERS.flatMap((tier) => state.market[tier]),
+    ...activePlayer.reservedCards,
+  ]
     .filter(
       (card) =>
         !card.redacted &&
@@ -130,28 +108,18 @@ export function getSplendorLegalActions(
       ? threeColorCombinations(availableColors).map(
           (gems): SplendorAction => ({ type: "TAKE_GEMS", gems })
         )
-      : availableColors.length === 2
+      : availableColors.length > 0
         ? [
             {
               type: "TAKE_GEMS",
-              gems: {
-                [availableColors[0]!]: 1,
-                [availableColors[1]!]: 1,
-              },
+              gems: Object.fromEntries(availableColors.map((c) => [c, 1])),
             },
           ]
-        : availableColors.length === 1
-          ? [
-              {
-                type: "TAKE_GEMS",
-                gems: { [availableColors[0]!]: 1 },
-              },
-            ]
-          : [];
+        : [];
 
   const reserveActions: SplendorAction[] =
     activePlayer.reservedCards.length < SPLENDOR_MAX_RESERVED_CARDS
-      ? CARD_TIERS.flatMap((tier) => [
+      ? SPLENDOR_CARD_TIERS.flatMap((tier) => [
           ...state.market[tier].map(
             (card): SplendorAction => ({ type: "RESERVE_CARD", cardId: card.id })
           ),
@@ -162,8 +130,7 @@ export function getSplendorLegalActions(
       : [];
 
   const actions: SplendorAction[] = [
-    ...marketPurchases,
-    ...reservedPurchases,
+    ...purchaseActions,
     ...doubleGemTakes,
     ...distinctGemTakes,
     ...reserveActions,

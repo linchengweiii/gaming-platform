@@ -7,9 +7,8 @@ import {
 import {
   emptyGemMap,
   getInitialGemBankCount,
-  getSplendorLegalActions,
   totalTokens,
-} from "../rules.ts";
+} from "../rules/helpers.ts";
 import type {
   GemMap,
   SplendorAction,
@@ -137,20 +136,10 @@ export function chooseBestReturnTokensAction(
  */
 export function chooseOnePlySplendorAction(
   state: SplendorState,
-  playerId: string,
+  player: SplendorPlayerState,
+  legal: readonly SplendorAction[],
   difficulty: BotDifficulty
 ): SplendorAction {
-  const legal = getSplendorLegalActions(state, playerId);
-  if (legal.length <= 1) return legal[0]!;
-
-  const player = state.players.find((p) => p.id === playerId)!;
-  if (state.phase === "SELECT_NOBLE") {
-    return chooseBestNobleAction(state, player, legal, difficulty);
-  }
-  if (state.phase === "RETURN_TOKENS") {
-    return chooseBestReturnTokensAction(state, player, legal, difficulty);
-  }
-
   const purchaseActions = legal.filter(
     (a): a is Extract<SplendorAction, { type: "PURCHASE_CARD" }> =>
       a.type === "PURCHASE_CARD"
@@ -208,6 +197,10 @@ export function chooseOnePlySplendorAction(
     difficulty
   );
 
+  const reserveActions = legal.filter(
+    (a): a is Extract<SplendorAction, { type: "RESERVE_CARD" }> =>
+      a.type === "RESERVE_CARD" && Boolean(a.cardId)
+  );
   const takeGemsActions = legal.filter(
     (a): a is Extract<SplendorAction, { type: "TAKE_GEMS" }> =>
       a.type === "TAKE_GEMS"
@@ -223,14 +216,7 @@ export function chooseOnePlySplendorAction(
         difficulty
       )
     )!;
-    const draftedCount = GEM_COLORS.reduce(
-      (s, c) => s + (bestTake.gems[c] ?? 0),
-      0
-    );
-    const reserveActions = legal.filter(
-      (a): a is Extract<SplendorAction, { type: "RESERVE_CARD" }> =>
-        a.type === "RESERVE_CARD" && Boolean(a.cardId)
-    );
+    const draftedCount = totalTokens(bestTake.gems);
     if (
       difficulty === "smart" &&
       draftedCount <= 1 &&
@@ -248,10 +234,6 @@ export function chooseOnePlySplendorAction(
   }
 
   if (bestPurchaseEntry) return bestPurchaseEntry.act;
-  const reserveActions = legal.filter(
-    (a): a is Extract<SplendorAction, { type: "RESERVE_CARD" }> =>
-      a.type === "RESERVE_CARD" && Boolean(a.cardId)
-  );
   return reserveActions[0] ?? legal[0]!;
 }
 

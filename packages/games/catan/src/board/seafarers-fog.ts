@@ -56,58 +56,43 @@ function buildSeafarersFogBoardPure(
     preset.startTerrains
   );
 
-  const laidOut = coords.reduce<{
-    hexes: Record<HexId, HexTile>;
-    productiveIds: HexId[];
-    idx: number;
-    robberHexId: HexId;
-  }>(
-    (acc, { q, r }) => {
-      const id = hexId(q, r);
-      if (westIsland.has(id) || eastIsland.has(id)) {
-        const terrain = startTerrains[acc.idx]!;
-        const tile: HexTile = {
-          id,
-          q,
-          r,
-          terrain,
-          numberToken: null,
-          islandId: westIsland.has(id) ? 1 : 2,
-          allowSetupSettlement: true,
-        };
-        return {
-          hexes: { ...acc.hexes, [id]: tile },
-          productiveIds:
-            terrain === "desert"
-              ? acc.productiveIds
-              : [...acc.productiveIds, id],
-          idx: acc.idx + 1,
-          robberHexId: terrain === "desert" ? id : acc.robberHexId,
-        };
-      }
-      const isFog = fogBelt.has(id);
-      return {
-        ...acc,
-        hexes: {
-          ...acc.hexes,
-          [id]: {
-            id,
-            q,
-            r,
-            terrain: isFog ? "fog" : "sea",
-            numberToken: null,
-            islandId: isFog ? 3 : 0,
-            allowSetupSettlement: false,
-          },
-        },
+  const rawHexes: Record<HexId, HexTile> = {};
+  const productiveIds: HexId[] = [];
+  let idx = 0;
+  let robberHexId = hexId(-2, 1);
+
+  for (const { q, r } of coords) {
+    const id = hexId(q, r);
+    if (westIsland.has(id) || eastIsland.has(id)) {
+      const terrain = startTerrains[idx++]!;
+      rawHexes[id] = {
+        id,
+        q,
+        r,
+        terrain,
+        numberToken: null,
+        islandId: westIsland.has(id) ? 1 : 2,
+        allowSetupSettlement: true,
       };
-    },
-    { hexes: {}, productiveIds: [], idx: 0, robberHexId: hexId(-2, 1) }
-  );
+      if (terrain === "desert") robberHexId = id;
+      else productiveIds.push(id);
+    } else {
+      const isFog = fogBelt.has(id);
+      rawHexes[id] = {
+        id,
+        q,
+        r,
+        terrain: isFog ? "fog" : "sea",
+        numberToken: null,
+        islandId: isFog ? 3 : 0,
+        allowSetupSettlement: false,
+      };
+    }
+  }
 
   const [hexes, rng2] = assignBalancedNumbersPure(
-    laidOut.hexes,
-    laidOut.productiveIds,
+    rawHexes,
+    productiveIds,
     preset.startNumbers,
     rng1,
     config.balancedNumbers
@@ -125,7 +110,7 @@ function buildSeafarersFogBoardPure(
       topology,
       hexes,
       harbors,
-      robberHexId: laidOut.robberHexId,
+      robberHexId,
       pirateHexId: hexId(preset.pirateHex[0], preset.pirateHex[1]),
       fogPool,
     },

@@ -24,10 +24,68 @@ import {
   getPlayerResourceCount,
   getPlayerSafeHandLimit,
   omitRecordKey,
-  totalResourceCount,
   updatePlayerById,
 } from "./helpers.ts";
 import { distributeRollResourcesPure } from "./production.ts";
+
+function resolveNumberRollPure(
+  state: CatanState,
+  rollTotal: number,
+  emitted: readonly GameEvent[]
+): StateWithEvents {
+  if (rollTotal === 7) {
+    const pendingDiscards = state.players.reduce<Record<string, number>>(
+      (acc, p) => {
+        const count = getPlayerResourceCount(p);
+        const safeLimit = getPlayerSafeHandLimit(state, p.id);
+        return count > safeLimit
+          ? { ...acc, [p.id]: Math.floor(count / 2) }
+          : acc;
+      },
+      {}
+    );
+
+    const canMoveRobber =
+      !state.config.enableCitiesAndKnights || state.barbarianAttacksCount >= 1;
+    const postSevenPhase = canMoveRobber
+      ? ("MOVE_ROBBER_OR_PIRATE" as const)
+      : ("MAIN_PHASE" as const);
+
+    const sevenState: CatanState = {
+      ...state,
+      pendingDiscards,
+      phaseAfterRobber: "MAIN_PHASE",
+      phaseAfterDiscard: postSevenPhase,
+      phase:
+        Object.keys(pendingDiscards).length > 0
+          ? "DISCARD_ON_SEVEN"
+          : postSevenPhase,
+    };
+
+    if (!canMoveRobber) {
+      return appendCatanEvent(
+        sevenState,
+        emitted,
+        "ROBBER_DORMANT",
+        "The Robber stays on the desert until the first Barbarian attack."
+      );
+    }
+
+    return { state: sevenState, emitted: emitted.slice() };
+  }
+
+  const distributed = distributeRollResourcesPure(state, rollTotal, emitted);
+  return {
+    state: {
+      ...distributed.state,
+      phase:
+        Object.keys(distributed.state.pendingGoldPicks).length > 0
+          ? "GOLD_RESOURCE_SELECTION"
+          : "MAIN_PHASE",
+    },
+    emitted: distributed.emitted,
+  };
+}
 
 /**
  * Shared continuation after resolving the Event Die (and any pillage / deck / progress-discard interrupts).
@@ -76,67 +134,11 @@ export function continuePostEventDieRollPure(
     };
   }
 
-  const clearedRollState: CatanState = {
-    ...winCheck.state,
-    pendingRollResolution: null,
-  };
-
-  if (roll.total === 7) {
-    const pendingDiscards = clearedRollState.players.reduce<
-      Record<string, number>
-    >((acc, p) => {
-      const count = getPlayerResourceCount(p);
-      const safeLimit = getPlayerSafeHandLimit(clearedRollState, p.id);
-      return count > safeLimit
-        ? { ...acc, [p.id]: Math.floor(count / 2) }
-        : acc;
-    }, {});
-
-    const canMoveRobber =
-      !clearedRollState.config.enableCitiesAndKnights ||
-      clearedRollState.barbarianAttacksCount >= 1;
-    const postSevenPhase = canMoveRobber
-      ? ("MOVE_ROBBER_OR_PIRATE" as const)
-      : ("MAIN_PHASE" as const);
-
-    const sevenState: CatanState = {
-      ...clearedRollState,
-      pendingDiscards,
-      phaseAfterRobber: "MAIN_PHASE",
-      phaseAfterDiscard: postSevenPhase,
-      phase:
-        Object.keys(pendingDiscards).length > 0
-          ? "DISCARD_ON_SEVEN"
-          : postSevenPhase,
-    };
-
-    if (!canMoveRobber) {
-      return appendCatanEvent(
-        sevenState,
-        emitted,
-        "ROBBER_DORMANT",
-        "The Robber stays on the desert until the first Barbarian attack."
-      );
-    }
-
-    return { state: sevenState, emitted: emitted.slice() };
-  }
-
-  const distributed = distributeRollResourcesPure(
-    clearedRollState,
+  return resolveNumberRollPure(
+    { ...winCheck.state, pendingRollResolution: null },
     roll.total,
     emitted
   );
-  return {
-    state: {
-      ...distributed.state,
-      phase:
-        Object.keys(distributed.state.pendingGoldPicks).length > 0
-          ? "GOLD_RESOURCE_SELECTION"
-          : "MAIN_PHASE",
-    },
-    emitted: distributed.emitted,
-  };
 }
 
 export function applyRollDicePure(
@@ -151,62 +153,20 @@ export function applyRollDicePure(
 
   if (!currentState.config.enableCitiesAndKnights) {
     const [roll, nextRngState] = roll2d6Pure(currentState.rngState);
-    const rolledState: CatanState = {
-      ...currentState,
-      rngState: nextRngState,
-      lastRoll: roll,
-    };
-
     const logged = appendCatanEvent(
-      rolledState,
+      { ...currentState, rngState: nextRngState, lastRoll: roll },
       [],
       "DICE_ROLLED",
       `${player.name} rolled ${roll.total} (${roll.die1} + ${roll.die2}).`,
       playerId,
       roll
     );
-
-    if (roll.total === 7) {
-      const pendingDiscards = logged.state.players.reduce<
-        Record<string, number>
-      >((acc, p) => {
-        const count = totalResourceCount(p.resources);
-        const safeLimit = getPlayerSafeHandLimit(logged.state, p.id);
-        return count > safeLimit
-          ? { ...acc, [p.id]: Math.floor(count / 2) }
-          : acc;
-      }, {});
-
-      return {
-        state: {
-          ...logged.state,
-          pendingDiscards,
-          phaseAfterRobber: "MAIN_PHASE",
-          phaseAfterDiscard: "MOVE_ROBBER_OR_PIRATE",
-          phase:
-            Object.keys(pendingDiscards).length > 0
-              ? "DISCARD_ON_SEVEN"
-              : "MOVE_ROBBER_OR_PIRATE",
-        },
-        events: logged.emitted,
-      };
-    }
-
-    const distributed = distributeRollResourcesPure(
+    const resolved = resolveNumberRollPure(
       logged.state,
       roll.total,
       logged.emitted
     );
-    return {
-      state: {
-        ...distributed.state,
-        phase:
-          Object.keys(distributed.state.pendingGoldPicks).length > 0
-            ? "GOLD_RESOURCE_SELECTION"
-            : "MAIN_PHASE",
-      },
-      events: distributed.emitted,
-    };
+    return { state: resolved.state, events: resolved.emitted };
   }
 
   // Cities & Knights: roll White + Red dice + Event Die

@@ -6,18 +6,18 @@ import { SEVEN_WONDERS_TURNS_PER_AGE } from "../config/game-config.ts";
 import { getWonderBoardDefinition } from "../config/wonders-config.ts";
 import {
   computeSevenWondersScoreBreakdown,
+  evaluateImmediateCardCoins,
   getLeftNeighborIndex,
   getPlayerShields,
   getRightNeighborIndex,
   hasDuplicateCardName,
   hasWonderStageEffect,
+  isRawResource,
 } from "../rules.ts";
-import {
-  MANUFACTURED_GOODS,
-  RAW_RESOURCES,
-  type SevenWondersCard,
-  type SevenWondersPlayerState,
-  type SevenWondersState,
+import type {
+  SevenWondersCard,
+  SevenWondersPlayerState,
+  SevenWondersState,
 } from "../types.ts";
 import {
   computeOpponentContenderWeight,
@@ -49,35 +49,16 @@ export function evaluateMasterCardUtility(
   const left = players[leftIdx]!;
   const right = players[rightIdx]!;
 
-  const immediateCoinsGained = card.effects.reduce<number>((sum, ef) => {
-    if (ef.kind === "coins") return sum + ef.coins;
-    if (ef.kind === "per_card_reward" && ef.coinsPerMatch > 0) {
-      const selfM = ef.includeSelf
-        ? me.tableau.filter((c) => ef.targetColors.includes(c.color)).length +
-          (ef.targetColors.includes(card.color) ? 1 : 0)
-        : 0;
-      const nbM = ef.includeNeighbors
-        ? left.tableau.filter((c) => ef.targetColors.includes(c.color)).length +
-          right.tableau.filter((c) => ef.targetColors.includes(c.color)).length
-        : 0;
-      return sum + (selfM + nbM) * ef.coinsPerMatch;
-    }
-    if (ef.kind === "per_wonder_stage_reward" && ef.coinsPerStage > 0) {
-      const st =
-        (ef.includeSelf ? me.builtWonderStages : 0) +
-        (ef.includeNeighbors
-          ? left.builtWonderStages + right.builtWonderStages
-          : 0);
-      return sum + st * ef.coinsPerStage;
-    }
-    return sum;
-  }, 0);
-
   const simMe: SevenWondersPlayerState = {
     ...me,
     tableau: [...me.tableau, card],
   };
   const simPlayers = players.map((p, i) => (i === pIdx ? simMe : p));
+  const immediateCoinsGained = evaluateImmediateCardCoins(
+    simPlayers,
+    pIdx,
+    card
+  );
   const beforeScore = computeSevenWondersScoreBreakdown(players, pIdx);
   const afterScore = computeSevenWondersScoreBreakdown(simPlayers, pIdx);
 
@@ -127,8 +108,7 @@ export function evaluateMasterCardUtility(
             scarcity += 0.35;
           }
 
-          const isMfg = opt === "glass" || opt === "loom" || opt === "papyrus";
-          if (isMfg) scarcity *= 1.18;
+          if (!isRawResource(opt)) scarcity *= 1.18;
 
           const wNeed = Math.max(0, resCtx.wonderNeed[opt] - unitIdx);
           const wBoost = wNeed > 0 ? Math.min(2.6, wNeed * 1.65) : 0;
@@ -160,14 +140,10 @@ export function evaluateMasterCardUtility(
       const ageFactor = fairView.age === 1 ? 1.12 : 0.4;
       const lBrowns =
         left.tableau.filter((c) => c.color === "brown").length +
-        ((RAW_RESOURCES as readonly string[]).includes(left.startingResource)
-          ? 1
-          : 0);
+        (isRawResource(left.startingResource) ? 1 : 0);
       const rBrowns =
         right.tableau.filter((c) => c.color === "brown").length +
-        ((RAW_RESOURCES as readonly string[]).includes(right.startingResource)
-          ? 1
-          : 0);
+        (isRawResource(right.startingResource) ? 1 : 0);
       const lVal = ef.rawLeft ? (1.45 + lBrowns * 0.72) * ageFactor : 0;
       const rVal = ef.rawRight ? (1.45 + rBrowns * 0.72) * ageFactor : 0;
       const mVal = ef.manufacturedBoth
@@ -175,16 +151,8 @@ export function evaluateMasterCardUtility(
             const nbGrays =
               left.tableau.filter((c) => c.color === "gray").length +
               right.tableau.filter((c) => c.color === "gray").length +
-              ((MANUFACTURED_GOODS as readonly string[]).includes(
-                left.startingResource
-              )
-                ? 1
-                : 0) +
-              ((MANUFACTURED_GOODS as readonly string[]).includes(
-                right.startingResource
-              )
-                ? 1
-                : 0);
+              (!isRawResource(left.startingResource) ? 1 : 0) +
+              (!isRawResource(right.startingResource) ? 1 : 0);
             const ownGrays =
               resCtx.ownEff.glass + resCtx.ownEff.loom + resCtx.ownEff.papyrus;
             return (

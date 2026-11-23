@@ -10,7 +10,6 @@ import {
   SPLENDOR_GOLD_COUNT,
   SPLENDOR_MARKET_SIZE_PER_TIER,
   SPLENDOR_TARGET_PRESTIGE_POINTS,
-  getSplendorNobleCount,
 } from "../config.ts";
 import type {
   CardTier,
@@ -80,7 +79,7 @@ export function initSplendorGame(
     3: tier3All.slice(mSize),
   };
 
-  const nobles = shuffledNobles.slice(0, getSplendorNobleCount(players.length));
+  const nobles = shuffledNobles.slice(0, players.length + 1);
 
   const playerStates: SplendorPlayerState[] = players.map((p) => ({
     id: p.id,

@@ -1,20 +1,13 @@
-import fs from "node:fs";
 import type http from "node:http";
-import path from "node:path";
 import {
-  DEFAULT_SERVER_HOST,
   MAX_WS_PAYLOAD_BYTES,
   MAX_WS_WRITE_BACKPRESSURE_BYTES,
   PUBLIC_DIR,
 } from "../config.ts";
 import type { PlatformRoomManager } from "../room-manager.ts";
 import type { GuestSessionStore } from "./guest-sessions.ts";
-import { handleApiRequest } from "./http-routes.ts";
-import {
-  MIME_TYPES,
-  resolveSafeStaticPathPure,
-  sendJson,
-} from "./viewer-and-static.ts";
+import { handleHttpRequest } from "./http-routes.ts";
+import { resolveStaticFileMeta } from "./viewer-and-static.ts";
 import type { RealtimeHub, WsTransport } from "./ws-hub-types-and-presence.ts";
 
 interface BunWsData {
@@ -61,8 +54,6 @@ interface BunRuntimeLike {
   file(filePath: string): unknown;
 }
 
-const REVALIDATE_EXTENSIONS = new Set([".html", ".css", ".js", ".mjs"]);
-
 function getBunRuntime(): BunRuntimeLike | null {
   const candidate = (globalThis as Record<string, unknown>).Bun as
     | BunRuntimeLike
@@ -72,6 +63,15 @@ function getBunRuntime(): BunRuntimeLike | null {
 
 function createBunWsTransport(ws: BunServerWebSocketLike): WsTransport {
   let closed = false;
+  const closeSocket = (): void => {
+    if (closed) return;
+    closed = true;
+    try {
+      ws.close();
+    } catch {
+      // Ignore close errors
+    }
+  };
   return {
     isClosed: () => closed || ws.readyState > 1,
     sendJson: (payload) => {
@@ -81,24 +81,14 @@ function createBunWsTransport(ws: BunServerWebSocketLike): WsTransport {
         typeof buffered === "number" &&
         buffered > MAX_WS_WRITE_BACKPRESSURE_BYTES
       ) {
-        closed = true;
-        try {
-          ws.close();
-        } catch {
-          // Ignore close errors
-        }
+        closeSocket();
         return false;
       }
       try {
         ws.send(JSON.stringify(payload));
         return true;
       } catch {
-        closed = true;
-        try {
-          ws.close();
-        } catch {
-          // Ignore close errors
-        }
+        closeSocket();
         return false;
       }
     },
@@ -108,24 +98,11 @@ function createBunWsTransport(ws: BunServerWebSocketLike): WsTransport {
         ws.ping?.();
         return true;
       } catch {
-        closed = true;
-        try {
-          ws.close();
-        } catch {
-          // Ignore close errors
-        }
+        closeSocket();
         return false;
       }
     },
-    close: () => {
-      if (closed) return;
-      closed = true;
-      try {
-        ws.close();
-      } catch {
-        // Ignore close errors
-      }
-    },
+    close: closeSocket,
   };
 }
 
@@ -134,21 +111,11 @@ function tryServeStaticBunResponse(
   publicDir: string,
   pathname: string
 ): Response | null {
-  const filePath = resolveSafeStaticPathPure(publicDir, pathname);
-  if (!filePath) return null;
-  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-    return null;
-  }
-  const ext = path.extname(filePath);
-  const headers: Record<string, string> = {
-    "Content-Type": MIME_TYPES[ext] ?? "application/octet-stream",
-  };
-  if (REVALIDATE_EXTENSIONS.has(ext)) {
-    headers["Cache-Control"] = "no-cache";
-  }
-  return new Response(bunRuntime.file(filePath) as BodyInit, {
+  const meta = resolveStaticFileMeta(publicDir, pathname);
+  if (!meta) return null;
+  return new Response(bunRuntime.file(meta.filePath) as BodyInit, {
     status: 200,
-    headers,
+    headers: meta.headers,
   });
 }
 
@@ -239,18 +206,28 @@ export function attachBunNativeTransport(
     }
 
     let statusCode = 200;
+    let headersSent = false;
     let responseHeaders: Record<string, string> = {};
     let resolvedResponse: Response | null = null;
     const chunks: Buffer[] = [];
+    const pushChunk = (chunk: string | Uint8Array): void => {
+      chunks.push(
+        typeof chunk === "string"
+          ? Buffer.from(chunk, "utf8")
+          : Buffer.from(chunk)
+      );
+    };
 
     const syntheticRes = {
-      headersSent: false,
+      get headersSent() {
+        return headersSent;
+      },
       writeHead(
         status: number,
         headers?: Record<string, string | number | readonly string[]>
       ) {
         statusCode = status;
-        syntheticRes.headersSent = true;
+        headersSent = true;
         if (headers) {
           responseHeaders = Object.fromEntries(
             Object.entries(headers).map(([k, v]) => [
@@ -262,21 +239,11 @@ export function attachBunNativeTransport(
         return syntheticRes;
       },
       write(chunk: string | Uint8Array) {
-        chunks.push(
-          typeof chunk === "string"
-            ? Buffer.from(chunk, "utf8")
-            : Buffer.from(chunk)
-        );
+        pushChunk(chunk);
         return true;
       },
       end(chunk?: string | Uint8Array) {
-        if (chunk !== undefined) {
-          chunks.push(
-            typeof chunk === "string"
-              ? Buffer.from(chunk, "utf8")
-              : Buffer.from(chunk)
-          );
-        }
+        if (chunk !== undefined) pushChunk(chunk);
         const body =
           chunks.length === 0
             ? null
@@ -291,49 +258,24 @@ export function attachBunNativeTransport(
       },
     } as unknown as http.ServerResponse;
 
-    try {
-      const syntheticReq = createSyntheticNodeReq(request);
-      if (syntheticReq.method === "OPTIONS") {
-        sendJson(syntheticRes, 200, { ok: true });
-        return resolvedResponse!;
+    await handleHttpRequest(
+      createSyntheticNodeReq(request),
+      syntheticRes,
+      roomManager,
+      hub,
+      guestSessions,
+      (pathname) => {
+        const staticRes = tryServeStaticBunResponse(
+          bunRuntime,
+          PUBLIC_DIR,
+          pathname
+        );
+        if (!staticRes) return false;
+        resolvedResponse = staticRes;
+        return true;
       }
-
-      const url = new URL(
-        syntheticReq.url ?? "/",
-        `http://${syntheticReq.headers.host ?? DEFAULT_SERVER_HOST}`
-      );
-
-      const handled = await handleApiRequest(
-        syntheticReq,
-        syntheticRes,
-        url,
-        roomManager,
-        hub,
-        guestSessions
-      );
-      if (handled && resolvedResponse) {
-        return resolvedResponse;
-      }
-
-      const staticRes = tryServeStaticBunResponse(
-        bunRuntime,
-        PUBLIC_DIR,
-        url.pathname
-      );
-      if (staticRes) {
-        return staticRes;
-      }
-
-      sendJson(syntheticRes, 404, { error: `Not found: ${url.pathname}` });
-      return resolvedResponse!;
-    } catch (err: any) {
-      const status =
-        typeof err?.statusCode === "number" && err.statusCode >= 400
-          ? err.statusCode
-          : 400;
-      sendJson(syntheticRes, status, { error: err?.message ?? String(err) });
-      return resolvedResponse!;
-    }
+    );
+    return resolvedResponse!;
   };
 
   const serverAny = server as any;

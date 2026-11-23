@@ -31,7 +31,7 @@ export function renderResourceGlyphSvg(
 /**
  * Inline `<g>` version of resource icon for embedding directly inside board SVG (e.g. 2:1 harbor medallions).
  */
-export function renderBoardHarborGlyph(resource: ResourceType): string {
+function renderBoardHarborGlyph(resource: ResourceType): string {
   switch (resource) {
     case "brick":
       return `

@@ -1,7 +1,6 @@
 import type { GameEvent } from "@gaming-platform/core";
 import {
   addCommoditiesPure,
-  emptyCommodities,
   emptyTradeGoodMap,
   getBankGoodCount,
   getPlayerGoodCount,
@@ -10,19 +9,11 @@ import {
 } from "../cities-and-knights/helpers.ts";
 import { getPlayerGoodTradeRatios } from "../cities-and-knights/improvements.ts";
 import type { CatanAction } from "../types/actions.ts";
-import {
-  COMMODITIES,
-  type CommodityMap,
-  RESOURCES,
-  type ResourceMap,
-  TRADE_GOODS,
-  type TradeGoodMap,
-} from "../types/domain.ts";
+import { TRADE_GOODS, type TradeGoodMap } from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import {
   addResourcesPure,
   appendCatanEvent,
-  emptyResources,
   subtractResourcesPure,
   updatePlayerById,
 } from "./helpers.ts";
@@ -169,42 +160,25 @@ export function applyMaritimeTradePure(
     );
   }
 
-  const giveResDelta = RESOURCES.reduce<ResourceMap>(
-    (acc, r) => ({ ...acc, [r]: giveBundle[r] }),
-    emptyResources()
-  );
-  const recvResDelta = RESOURCES.reduce<ResourceMap>(
-    (acc, r) => ({ ...acc, [r]: receiveBundle[r] }),
-    emptyResources()
-  );
-  const giveCommDelta = COMMODITIES.reduce<CommodityMap>(
-    (acc, c) => ({ ...acc, [c]: giveBundle[c] }),
-    emptyCommodities()
-  );
-  const recvCommDelta = COMMODITIES.reduce<CommodityMap>(
-    (acc, c) => ({ ...acc, [c]: receiveBundle[c] }),
-    emptyCommodities()
-  );
-
   const tradedState: CatanState = {
     ...currentState,
     bank: subtractResourcesPure(
-      addResourcesPure(currentState.bank, giveResDelta),
-      recvResDelta
+      addResourcesPure(currentState.bank, giveBundle),
+      receiveBundle
     ),
     commodityBank: subtractCommoditiesPure(
-      addCommoditiesPure(currentState.commodityBank, giveCommDelta),
-      recvCommDelta
+      addCommoditiesPure(currentState.commodityBank, giveBundle),
+      receiveBundle
     ),
     players: updatePlayerById(currentState.players, playerId, (p) => ({
       ...p,
       resources: addResourcesPure(
-        subtractResourcesPure(p.resources, giveResDelta),
-        recvResDelta
+        subtractResourcesPure(p.resources, giveBundle),
+        receiveBundle
       ),
       commodities: addCommoditiesPure(
-        subtractCommoditiesPure(p.commodities, giveCommDelta),
-        recvCommDelta
+        subtractCommoditiesPure(p.commodities, giveBundle),
+        receiveBundle
       ),
     })),
   };

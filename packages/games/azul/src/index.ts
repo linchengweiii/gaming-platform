@@ -1,18 +1,18 @@
-import type { GameEngine, GameEvent, PlayerDescriptor } from "@gaming-platform/core";
-import { chooseAzulBotAction } from "./bot.ts";
-import {
-  applyAzulAction,
-  checkAzulInvariants,
-  getAzulLegalActions,
-  getAzulPlayerView,
-  initAzulGame,
-} from "./rules.ts";
+import type { GameEngine, GameEvent } from "@gaming-platform/core";
+import { chooseAzulBotAction } from "./bot/search.ts";
+import { applyAzulAction, getAzulLegalActions } from "./rules/apply.ts";
+import { checkAzulInvariants, getAzulPlayerView } from "./rules/redaction.ts";
+import { initAzulGame } from "./rules/setup.ts";
 import type { AzulAction, AzulConfig, AzulState } from "./types.ts";
 
 export * from "./config.ts";
 export * from "./types.ts";
-export * from "./rules.ts";
-export * from "./bot.ts";
+export {
+  canPlaceColorOnPatternLine,
+  getWallColumnForColor,
+} from "./rules/helpers.ts";
+export { getAzulActingPlayerId } from "./rules/redaction.ts";
+export { scoreWallPlacement } from "./rules/scoring.ts";
 
 export const AzulEngine: GameEngine<
   AzulState,
@@ -30,48 +30,14 @@ export const AzulEngine: GameEngine<
     maxPlayers: 4,
     supportsBots: true,
   },
-
-  initGame(
-    players: readonly PlayerDescriptor[],
-    config?: Partial<AzulConfig>,
-    seed?: number | string
-  ): AzulState {
-    return initAzulGame(players, config, seed);
-  },
-
-  getLegalActions(state: AzulState, playerId: string): AzulAction[] {
-    return getAzulLegalActions(state, playerId);
-  },
-
-  applyAction(
-    state: AzulState,
-    playerId: string,
-    action: AzulAction
-  ): { state: AzulState; events: GameEvent[] } {
-    return applyAzulAction(state, playerId, action);
-  },
-
-  getPlayerView(state: AzulState): AzulState {
-    return getAzulPlayerView(state);
-  },
-
-  getWinner(state: AzulState): string | null {
-    return state.winnerId;
-  },
-
-  chooseBotAction(state: AzulState, playerId: string): AzulAction | null {
-    return chooseAzulBotAction(state, playerId);
-  },
-
-  checkInvariants(state: AzulState) {
-    return checkAzulInvariants(state);
-  },
-
-  isActionUndoable(
-    prevState: AzulState,
-    _action: AzulAction,
-    nextState: AzulState
-  ): boolean {
+  initGame: initAzulGame,
+  getLegalActions: getAzulLegalActions,
+  applyAction: applyAzulAction,
+  getPlayerView: getAzulPlayerView,
+  getWinner: (state) => state.winnerId,
+  chooseBotAction: chooseAzulBotAction,
+  checkInvariants: checkAzulInvariants,
+  isActionUndoable(prevState, _action, nextState): boolean {
     if (nextState.phase === "GAME_OVER") return false;
     if (prevState.turn !== nextState.turn) return false;
     return (

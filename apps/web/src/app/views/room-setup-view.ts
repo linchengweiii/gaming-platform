@@ -23,7 +23,6 @@ export function renderRoomSetupViewPure(
   readonly html: string;
   readonly canEditSetup: boolean;
   readonly maxBots: number;
-  readonly bounds: { minPlayers: number; maxPlayers: number };
 } {
   const locale = model.locale;
   const isOwner = Boolean(room.ownerId && room.ownerId === model.currentUserId);
@@ -91,23 +90,25 @@ export function renderRoomSetupViewPure(
     (p) => p.id === model.currentUserId
   );
 
-  const editableFormCard = renderRoomSetupControlsCardPure(
-    room,
-    bounds,
-    humanCount,
-    botCountOptions,
-    effectiveStartingValue,
-    startingPlayerOptions,
-    locale
-  );
-
   const neededPlayers = bounds.minPlayers - room.players.length;
 
   const html = `
       ${renderRoomHeaderPure(model, room, "setup")}
 
       <div class="ga-room-shell">
-        ${canEditSetup ? editableFormCard : renderSetupSummaryCardPure(model, room, isOwner)}
+        ${
+          canEditSetup
+            ? renderRoomSetupControlsCardPure(
+                room,
+                bounds,
+                humanCount,
+                botCountOptions,
+                effectiveStartingValue,
+                startingPlayerOptions,
+                locale
+              )
+            : renderSetupSummaryCardPure(model, room, isOwner)
+        }
 
         <aside class="ga-surface-card">
           <div class="ga-section-bar">
@@ -333,5 +334,5 @@ export function renderRoomSetupViewPure(
       }
     `;
 
-  return { html, canEditSetup, maxBots, bounds };
+  return { html, canEditSetup, maxBots };
 }

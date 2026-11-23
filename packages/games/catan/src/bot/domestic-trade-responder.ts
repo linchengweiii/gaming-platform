@@ -39,7 +39,7 @@ import {
  * - Ironclad embargo against players near victory, with burst-VP threat, or leading the table.
  * - Strict off-turn build-deficit & scarcity discipline for Master so humans cannot extract cheap Ore/Grain/Brick.
  */
-export function shouldBotAcceptDomesticTrade(
+function shouldBotAcceptDomesticTrade(
   state: CatanState,
   responder: CatanPlayerState,
   weights: CatanBotWeights

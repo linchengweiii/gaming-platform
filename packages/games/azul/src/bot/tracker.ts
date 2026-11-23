@@ -4,7 +4,7 @@ import {
   AZUL_TILES_PER_FACTORY,
   AZUL_WALL_PATTERN,
 } from "../config.ts";
-import { getFactoryCount } from "../rules.ts";
+import { getFactoryCount } from "../rules/helpers.ts";
 import type {
   AzulAction,
   AzulPlayerState,
@@ -13,13 +13,9 @@ import type {
 } from "../types.ts";
 
 export interface PublicTileTracker {
-  unseenBag: Record<AzulTileColor, number>;
-  totalUnseenBag: number;
   inOffer: Record<AzulTileColor, number>;
-  inLid: Record<AzulTileColor, number>;
   onWalls: Record<AzulTileColor, number>;
   expectedNextOffer: Record<AzulTileColor, number>;
-  guaranteedNextOfferMin: Record<AzulTileColor, number>;
   guaranteedNextOfferMax: Record<AzulTileColor, number>;
 }
 
@@ -88,15 +84,11 @@ export function computePublicTileTracker(state: AzulState): PublicTileTracker {
   const nextDrawTotal =
     getFactoryCount(state.players.length) * AZUL_TILES_PER_FACTORY;
   const expectedNextOffer = emptyColorCounts();
-  const guaranteedNextOfferMin = emptyColorCounts();
   const guaranteedNextOfferMax = emptyColorCounts();
 
   if (totalUnseenBag >= nextDrawTotal) {
-    const nonDraws = totalUnseenBag - nextDrawTotal;
     for (const c of AZUL_COLORS) {
-      expectedNextOffer[c] =
-        totalUnseenBag > 0 ? (nextDrawTotal * unseenBag[c]) / totalUnseenBag : 0;
-      guaranteedNextOfferMin[c] = Math.max(0, unseenBag[c] - nonDraws);
+      expectedNextOffer[c] = (nextDrawTotal * unseenBag[c]) / totalUnseenBag;
       guaranteedNextOfferMax[c] = Math.min(nextDrawTotal, unseenBag[c]);
     }
   } else {
@@ -108,28 +100,21 @@ export function computePublicTileTracker(state: AzulState): PublicTileTracker {
         inLid[c] + roundEndDiscardsEst[c] + Math.floor(inOffer[c] * 0.5);
       totalLidPool += lidPool[c];
     }
-    const nonLidDraws = Math.max(0, totalLidPool - neededFromLid);
     for (const c of AZUL_COLORS) {
       const fromLidExp =
         totalLidPool > 0
           ? Math.min(lidPool[c], (neededFromLid * lidPool[c]) / totalLidPool)
           : 0;
       expectedNextOffer[c] = unseenBag[c] + fromLidExp;
-      guaranteedNextOfferMin[c] =
-        unseenBag[c] + Math.max(0, lidPool[c] - nonLidDraws);
       guaranteedNextOfferMax[c] =
         unseenBag[c] + Math.min(neededFromLid, lidPool[c]);
     }
   }
 
   return {
-    unseenBag,
-    totalUnseenBag,
     inOffer,
-    inLid,
     onWalls,
     expectedNextOffer,
-    guaranteedNextOfferMin,
     guaranteedNextOfferMax,
   };
 }

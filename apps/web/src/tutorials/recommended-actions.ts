@@ -29,7 +29,6 @@ export function computeSuggestedTutorialStepIndexPure(
 
   if (gameId === "catan") {
     const cState = state as CatanState;
-    if (cState.phase === "SETUP_SETTLEMENT_1" && currentIndex < 0) return 0;
     if (cState.phase === "SETUP_ROAD_1" && currentIndex === 0) return 1;
     if (
       (cState.phase === "SETUP_SETTLEMENT_2" ||

@@ -15,11 +15,11 @@ import {
   getBotDifficultyMetaLocalized,
   t,
 } from "../../i18n/index.ts";
+import { escapeHtml } from "../../app/helpers/html-and-dropdown.ts";
 import {
   AZUL_TILE_STYLES,
   computeMarginalFloorPenaltyUi,
   computeProjectedLineWallGainUi,
-  escapeAzulHtml as escapeHtml,
   renderAzulTile,
 } from "./tiles-and-factories.ts";
 

@@ -1,6 +1,5 @@
 /* Game Arena Modular Stylesheet Manifest (exact cascade order) */
 @import url("./styles/tokens-and-base.css");
-@import url("./styles/base-shell.css");
 @import url("./styles/dropdowns-modals.css");
 @import url("./styles/lobby-setup.css");
 @import url("./styles/catan-board-overlays.css");
@@ -8,7 +7,6 @@
 @import url("./styles/catan-hud-trade.css");
 @import url("./styles/game-canvas-sidebar.css");
 @import url("./styles/splendor.css");
-@import url("./styles/azul.css");
 @import url("./styles/login-and-trade-tabs.css");
 @import url("./styles/canvas-desktop.css");
 @import url("./styles/responsive.css");
@@ -18,5 +16,4 @@
 @import url("./styles/mobile-shell.css");
 @import url("./styles/mobile-catan.css");
 @import url("./styles/mobile-other-games.css");
-@import url("./styles/i18n.css");
 @import url("./styles/fullscreen-mode.css");

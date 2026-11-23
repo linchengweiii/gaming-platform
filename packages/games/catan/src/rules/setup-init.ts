@@ -203,7 +203,6 @@ export function initCatanGame(
     metropolises: emptyMetropolises(),
     barbarianPosition: 0,
     barbarianAttacksCount: 0,
-    lastBarbarianAttackResult: null,
     merchantHexId: null,
     merchantOwnerId: null,
     robberHexId: board.robberHexId,

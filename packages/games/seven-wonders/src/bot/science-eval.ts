@@ -1,13 +1,11 @@
 import { SEVEN_WONDERS_MASTER_BOT_WEIGHTS } from "../config/bot-config.ts";
 import { SEVEN_WONDERS_TURNS_PER_AGE } from "../config/game-config.ts";
 import { getWonderBoardDefinition } from "../config/wonders-config.ts";
-import {
-  computeOptimalScienceScorePure,
-  type computeSevenWondersScoreBreakdown,
-} from "../rules.ts";
+import { computeOptimalScienceScorePure } from "../rules.ts";
 import type {
   ScienceMap,
   SevenWondersCard,
+  SevenWondersScoreBreakdown,
   SevenWondersState,
 } from "../types.ts";
 
@@ -65,9 +63,9 @@ export function getWheelIntelForPlayer(
 export function evaluateMasterScienceBonus(
   fairView: SevenWondersState,
   pIdx: number,
-  beforeScore: ReturnType<typeof computeSevenWondersScoreBreakdown>,
-  afterScore: ReturnType<typeof computeSevenWondersScoreBreakdown>,
-  candidateCard?: SevenWondersCard
+  beforeScore: SevenWondersScoreBreakdown,
+  afterScore: SevenWondersScoreBreakdown,
+  candidateCard: SevenWondersCard
 ): number {
   const sciCfg = SEVEN_WONDERS_MASTER_BOT_WEIGHTS.science;
   const me = fairView.players[pIdx]!;
@@ -126,15 +124,9 @@ export function evaluateMasterScienceBonus(
     }
     const afterCounts: ScienceMap = { ...baseCounts };
     let afterWilds = wilds;
-    if (candidateCard) {
-      for (const ef of candidateCard.effects) {
-        if (ef.kind === "science") afterCounts[ef.symbol] += 1;
-        if (ef.kind === "wildcard_science") afterWilds += 1;
-      }
-    } else {
-      afterCounts.compass += Math.max(0, a.compass - b.compass);
-      afterCounts.gear += Math.max(0, a.gear - b.gear);
-      afterCounts.tablet += Math.max(0, a.tablet - b.tablet);
+    for (const ef of candidateCard.effects) {
+      if (ef.kind === "science") afterCounts[ef.symbol] += 1;
+      if (ef.kind === "wildcard_science") afterWilds += 1;
     }
     const futureDelta =
       computeOptimalScienceScorePure(afterCounts, afterWilds).points -

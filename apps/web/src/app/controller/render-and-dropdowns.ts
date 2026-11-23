@@ -5,6 +5,7 @@ import {
   getRoomStatePure,
   roomUsesServerPure,
 } from "../helpers/room-queries.ts";
+import type { ClientRoom } from "../types.ts";
 import { renderInGameViewPure } from "../views/in-game/index.ts";
 import { renderLobbyViewPure } from "../views/lobby-view.ts";
 import { renderLoginViewPure } from "../views/login-and-topbar-view.ts";
@@ -14,7 +15,7 @@ import { bindRoomSetupEvents } from "./bind-events-room-setup.ts";
 import { bindLobbyEvents, bindLoginEvents } from "./bind-events-shell.ts";
 import type { AppRuntimeContext } from "./context.ts";
 
-export function closeDropdownElement(dd: HTMLElement): void {
+function closeDropdownElement(dd: HTMLElement): void {
   dd.classList.remove("is-open");
   const trigger = dd.querySelector(
     ".ga-dropdown__trigger"
@@ -212,9 +213,7 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
         : null;
     if (
       activeEl &&
-      (activeEl.id === "inp-create-room-name" ||
-        activeEl.id === "setup-room-name" ||
-        activeEl.id === "inp-guest-name" ||
+      (activeEl.id === "inp-guest-name" ||
         activeEl.id === "inp-rename-guest" ||
         activeEl.id === "inp-local-friend-name")
     ) {
@@ -269,6 +268,25 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
     }
     lastRenderedViewKey = nextViewKey;
 
+    const renderFallbackLobby = (): void => {
+      ctx.model = { ...ctx.model, activeRoomId: "", viewMode: "lobby" };
+      ctx.scheduleOnlineBotWatchdogIfNeeded();
+      root.innerHTML = renderLobbyViewPure(ctx.model);
+      bindLobbyEvents(ctx);
+    };
+
+    const renderRoomSetup = (targetRoom: ClientRoom): void => {
+      ctx.scheduleOnlineBotWatchdogIfNeeded();
+      const setupRendered = renderRoomSetupViewPure(ctx.model, targetRoom);
+      root.innerHTML = setupRendered.html;
+      bindRoomSetupEvents(
+        ctx,
+        targetRoom,
+        setupRendered.canEditSetup,
+        setupRendered.maxBots
+      );
+    };
+
     if (!ctx.model.isAuthenticated || ctx.model.viewMode === "login") {
       ctx.scheduleOnlineBotWatchdogIfNeeded();
       root.innerHTML = renderLoginViewPure(ctx.model);
@@ -280,36 +298,21 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
       ctx.scheduleOnlineBotWatchdogIfNeeded();
       root.innerHTML = renderLobbyViewPure(ctx.model);
       bindLobbyEvents(ctx);
-      ctx.model = { ...ctx.model, lobbyHeroEnteredOnce: true };
       return;
     }
     if (ctx.model.viewMode === "room_setup") {
-      ctx.scheduleOnlineBotWatchdogIfNeeded();
       const room = findActiveRoomPure(ctx.model);
       if (!room) {
-        ctx.model = { ...ctx.model, activeRoomId: "", viewMode: "lobby" };
-        root.innerHTML = renderLobbyViewPure(ctx.model);
-        bindLobbyEvents(ctx);
+        renderFallbackLobby();
         return;
       }
-      const setupRendered = renderRoomSetupViewPure(ctx.model, room);
-      root.innerHTML = setupRendered.html;
-      bindRoomSetupEvents(
-        ctx,
-        room,
-        setupRendered.canEditSetup,
-        setupRendered.maxBots,
-        setupRendered.bounds
-      );
+      renderRoomSetup(room);
       return;
     }
 
     const room = findActiveRoomPure(ctx.model);
     if (!room) {
-      ctx.model = { ...ctx.model, activeRoomId: "", viewMode: "lobby" };
-      ctx.scheduleOnlineBotWatchdogIfNeeded();
-      root.innerHTML = renderLobbyViewPure(ctx.model);
-      bindLobbyEvents(ctx);
+      renderFallbackLobby();
       return;
     }
     const rawState = getRoomStatePure(ctx.model, room);
@@ -317,16 +320,7 @@ export function attachRenderHandlers(ctx: AppRuntimeContext): void {
     if (!rawState) {
       if (usesServer) {
         ctx.model = { ...ctx.model, viewMode: "room_setup" };
-        ctx.scheduleOnlineBotWatchdogIfNeeded();
-        const setupRendered = renderRoomSetupViewPure(ctx.model, room);
-        root.innerHTML = setupRendered.html;
-        bindRoomSetupEvents(
-          ctx,
-          room,
-          setupRendered.canEditSetup,
-          setupRendered.maxBots,
-          setupRendered.bounds
-        );
+        renderRoomSetup(room);
       } else {
         ctx.startRoomMatch(room.roomId);
       }

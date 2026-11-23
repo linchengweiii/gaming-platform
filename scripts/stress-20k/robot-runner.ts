@@ -1,4 +1,4 @@
-import { createMatchSession } from "@gaming-platform/core";
+import { type GameEngine, createMatchSession } from "@gaming-platform/core";
 import { CatanEngine, getNextActingPlayerId } from "@gaming-platform/catan";
 import {
   SplendorEngine,
@@ -11,7 +11,7 @@ import {
   STRESS_DEFAULTS,
   STRESS_GAME_CYCLE,
   type StressReport,
-  makePlayers,
+  makeRobotPlayers,
 } from "./config.ts";
 
 /**
@@ -27,9 +27,51 @@ export function runRobotIterations(
   let catanRoadsVerified = 0;
   let verticalERoadsVerified = 0;
   let svgRendersVerified = 0;
-  let invariantViolations = 0;
 
   let matchIdx = 0;
+
+  const runSimpleRobotMatch = <TState extends { phase: string }>(
+    label: string,
+    seedPrefix: string,
+    engine: GameEngine<TState, any, any, any>,
+    getActingId: (state: TState) => string | null
+  ): void => {
+    const playerCount = 2 + (matchIdx % 3);
+    const initialState = engine.initGame(
+      makeRobotPlayers(playerCount),
+      {},
+      `${seedPrefix}-${matchIdx}`
+    );
+    const session = createMatchSession(engine, initialState, true);
+    let stepsInMatch = 0;
+
+    while (
+      completedIterations < targetIterations &&
+      session.getState().phase !== "GAME_OVER" &&
+      stepsInMatch < STRESS_DEFAULTS.robotOtherMaxSteps
+    ) {
+      const state = session.getState();
+      const actorId = getActingId(state);
+      if (!actorId) break;
+      const action = engine.chooseBotAction(state, actorId);
+      if (!action) break;
+
+      session.dispatch(actorId, action);
+      completedIterations++;
+      stepsInMatch++;
+
+      const inv = engine.checkInvariants(session.getState());
+      if (!inv.valid) {
+        throw new Error(
+          `Robot ${label} invariant violation: ${inv.violations.join("; ")}`
+        );
+      }
+    }
+
+    if (session.getState().phase === "GAME_OVER") {
+      matchesCompleted++;
+    }
+  };
 
   while (completedIterations < targetIterations) {
     const gameId = STRESS_GAME_CYCLE[matchIdx % STRESS_GAME_CYCLE.length]!;
@@ -39,9 +81,8 @@ export function runRobotIterations(
     if (gameId === "catan") {
       const scenarioId = CATAN_SCENARIOS[matchIdx % CATAN_SCENARIOS.length]!;
       const playerCount = scenarioId === "big_island_5_6" ? 5 : 4;
-      const players = makePlayers(playerCount, true);
       const initialState = CatanEngine.initGame(
-        players,
+        makeRobotPlayers(playerCount),
         {
           scenarioId,
           enableHarbormaster: matchIdx % 2 === 0,
@@ -74,7 +115,6 @@ export function runRobotIterations(
         const nextState = session.getState();
         const inv = CatanEngine.checkInvariants(nextState);
         if (!inv.valid) {
-          invariantViolations += inv.violations.length;
           throw new Error(
             `Robot Catan invariant violation: ${inv.violations.join("; ")}`
           );
@@ -87,7 +127,6 @@ export function runRobotIterations(
           knownRoadEdgeIds.add(action.edgeId);
         }
 
-        // Verify all known roads still exist on the map and never disappeared
         for (const rEdgeId of knownRoadEdgeIds) {
           const rPiece = nextState.edges[rEdgeId];
           if (!rPiece || rPiece.type !== "road") {
@@ -99,7 +138,6 @@ export function runRobotIterations(
           }
         }
 
-        // Periodically verify SVG rendering of all roads
         if (completedIterations % STRESS_DEFAULTS.robotSvgCheckInterval === 0) {
           const svg = renderCatanBoardSvg(nextState, actorId, {
             buildMode: null,
@@ -122,81 +160,19 @@ export function runRobotIterations(
         matchesCompleted++;
       }
     } else if (gameId === "splendor") {
-      const playerCount = 2 + (matchIdx % 3);
-      const players = makePlayers(playerCount, true);
-      const initialState = SplendorEngine.initGame(
-        players,
-        {},
-        `robot-splendor-${matchIdx}`
+      runSimpleRobotMatch(
+        "Splendor",
+        "robot-splendor",
+        SplendorEngine,
+        getSplendorActingPlayerId
       );
-      const session = createMatchSession(SplendorEngine, initialState, true);
-      let stepsInMatch = 0;
-
-      while (
-        completedIterations < targetIterations &&
-        session.getState().phase !== "GAME_OVER" &&
-        stepsInMatch < STRESS_DEFAULTS.robotOtherMaxSteps
-      ) {
-        const state = session.getState();
-        const actorId = getSplendorActingPlayerId(state);
-        if (!actorId) break;
-        const action = SplendorEngine.chooseBotAction(state, actorId);
-        if (!action) break;
-
-        session.dispatch(actorId, action);
-        completedIterations++;
-        stepsInMatch++;
-
-        const inv = SplendorEngine.checkInvariants(session.getState());
-        if (!inv.valid) {
-          invariantViolations += inv.violations.length;
-          throw new Error(
-            `Robot Splendor invariant violation: ${inv.violations.join("; ")}`
-          );
-        }
-      }
-
-      if (session.getState().phase === "GAME_OVER") {
-        matchesCompleted++;
-      }
     } else {
-      const playerCount = 2 + (matchIdx % 3);
-      const players = makePlayers(playerCount, true);
-      const initialState = AzulEngine.initGame(
-        players,
-        {},
-        `robot-azul-${matchIdx}`
+      runSimpleRobotMatch(
+        "Azul",
+        "robot-azul",
+        AzulEngine,
+        getAzulActingPlayerId
       );
-      const session = createMatchSession(AzulEngine, initialState, true);
-      let stepsInMatch = 0;
-
-      while (
-        completedIterations < targetIterations &&
-        session.getState().phase !== "GAME_OVER" &&
-        stepsInMatch < STRESS_DEFAULTS.robotOtherMaxSteps
-      ) {
-        const state = session.getState();
-        const actorId = getAzulActingPlayerId(state);
-        if (!actorId) break;
-        const action = AzulEngine.chooseBotAction(state, actorId);
-        if (!action) break;
-
-        session.dispatch(actorId, action);
-        completedIterations++;
-        stepsInMatch++;
-
-        const inv = AzulEngine.checkInvariants(session.getState());
-        if (!inv.valid) {
-          invariantViolations += inv.violations.length;
-          throw new Error(
-            `Robot Azul invariant violation: ${inv.violations.join("; ")}`
-          );
-        }
-      }
-
-      if (session.getState().phase === "GAME_OVER") {
-        matchesCompleted++;
-      }
     }
   }
 
@@ -212,7 +188,7 @@ export function runRobotIterations(
     domesticTradesTested: 0,
     undoRedoCyclesVerified: 0,
     readonlyRoomChecksVerified: 0,
-    invariantViolations,
+    invariantViolations: 0,
     elapsedMs: Math.round(performance.now() - startTime),
   };
 }

@@ -8,6 +8,7 @@ import {
   IMPROVEMENT_DISCIPLINES,
   type ImprovementDiscipline,
   type ProgressCardInstance,
+  type ProgressCardType,
 } from "../types/domain.ts";
 import type { CatanState } from "../types/state.ts";
 import { type StateEventsPair, pushCkEvent } from "./helpers.ts";
@@ -84,10 +85,7 @@ export function drawProgressCardForPlayerPure(
     return { state, emitted: emitted.slice() };
   }
 
-  const [drawnType, ...restDeck] = deck;
-  if (!drawnType) {
-    return { state, emitted: emitted.slice() };
-  }
+  const [drawnType, ...restDeck] = deck as [ProgressCardType, ...ProgressCardType[]];
 
   const player = state.players.find((p) => p.id === playerId);
   if (!player) {
@@ -251,13 +249,6 @@ export function resolveEventDieRollPure(
       const summary = `Catan defeated the Barbarians (${defenderStrength} vs ${barbarianStrength})! ${hero.name} earned Defender of Catan (+1 VP).`;
       const heroState: CatanState = {
         ...basePostBattle,
-        lastBarbarianAttackResult: {
-          turn: state.turn,
-          barbarianStrength,
-          defenderStrength,
-          outcome: "defenders_won",
-          summary,
-        },
         players: basePostBattle.players.map((p) =>
           p.id === hero.id ? { ...p, defenderPoints: p.defenderPoints + 1 } : p
         ),
@@ -284,13 +275,6 @@ export function resolveEventDieRollPure(
       const tiedState: CatanState = {
         ...basePostBattle,
         pendingDefenderDeckPicks: tiedIds,
-        lastBarbarianAttackResult: {
-          turn: state.turn,
-          barbarianStrength,
-          defenderStrength,
-          outcome: "defenders_won",
-          summary,
-        },
       };
       return pushCkEvent(
         tiedState,
@@ -307,17 +291,7 @@ export function resolveEventDieRollPure(
     }
 
     const summary = `The Barbarian fleet landed (${defenderStrength} vs ${barbarianStrength}), finding no cities to plunder.`;
-    const peacefulState: CatanState = {
-      ...basePostBattle,
-      lastBarbarianAttackResult: {
-        turn: state.turn,
-        barbarianStrength,
-        defenderStrength,
-        outcome: "defenders_won",
-        summary,
-      },
-    };
-    return pushCkEvent(peacefulState, emitted, "BARBARIAN_DEFEATED", summary);
+    return pushCkEvent(basePostBattle, emitted, "BARBARIAN_DEFEATED", summary);
   }
 
   // Barbarians Win! Players with >= 1 vulnerable city who contributed the LEAST lose 1 city.
@@ -327,17 +301,7 @@ export function resolveEventDieRollPure(
 
   if (vulnerableEntries.length === 0) {
     const summary = `Barbarians overpowered Catan (${barbarianStrength} vs ${defenderStrength}), but all cities are protected by Metropolises!`;
-    const immuneState: CatanState = {
-      ...basePostBattle,
-      lastBarbarianAttackResult: {
-        turn: state.turn,
-        barbarianStrength,
-        defenderStrength,
-        outcome: "barbarians_won",
-        summary,
-      },
-    };
-    return pushCkEvent(immuneState, emitted, "BARBARIAN_VICTORY", summary);
+    return pushCkEvent(basePostBattle, emitted, "BARBARIAN_VICTORY", summary);
   }
 
   const minStrength = Math.min(...vulnerableEntries.map((c) => c.strength));
@@ -369,13 +333,6 @@ export function resolveEventDieRollPure(
   const finalBarbState: CatanState = {
     ...pillageResolved.state,
     pendingPillageSelections: pillageResolved.pendingSelections,
-    lastBarbarianAttackResult: {
-      turn: state.turn,
-      barbarianStrength,
-      defenderStrength,
-      outcome: "barbarians_won",
-      summary,
-    },
   };
 
   return pushCkEvent(

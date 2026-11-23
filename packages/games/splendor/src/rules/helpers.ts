@@ -7,7 +7,6 @@ import {
 } from "../config.ts";
 import type {
   CardTier,
-  GemColor,
   GemMap,
   SplendorCard,
   SplendorNoble,
@@ -16,8 +15,6 @@ import type {
   TokenColor,
   TokenMap,
 } from "../types.ts";
-
-export const CARD_TIERS: readonly CardTier[] = SPLENDOR_CARD_TIERS;
 
 export function emptyGemMap(): GemMap {
   return { emerald: 0, diamond: 0, sapphire: 0, onyx: 0, ruby: 0 };
@@ -35,36 +32,33 @@ export function getInitialGemBankCount(playerCount: number): number {
   return SPLENDOR_GEM_COUNTS_BY_PLAYER[playerCount] ?? 7;
 }
 
+function shiftTokenMaps(
+  base: TokenMap,
+  deltas: Partial<Record<TokenColor, number>>,
+  sign: 1 | -1
+): TokenMap {
+  return {
+    emerald: base.emerald + sign * (deltas.emerald ?? 0),
+    diamond: base.diamond + sign * (deltas.diamond ?? 0),
+    sapphire: base.sapphire + sign * (deltas.sapphire ?? 0),
+    onyx: base.onyx + sign * (deltas.onyx ?? 0),
+    ruby: base.ruby + sign * (deltas.ruby ?? 0),
+    gold: base.gold + sign * (deltas.gold ?? 0),
+  };
+}
+
 export function addTokenMaps(
   base: TokenMap,
   deltas: Partial<Record<TokenColor, number>>
 ): TokenMap {
-  return {
-    emerald: base.emerald + (deltas.emerald ?? 0),
-    diamond: base.diamond + (deltas.diamond ?? 0),
-    sapphire: base.sapphire + (deltas.sapphire ?? 0),
-    onyx: base.onyx + (deltas.onyx ?? 0),
-    ruby: base.ruby + (deltas.ruby ?? 0),
-    gold: base.gold + (deltas.gold ?? 0),
-  };
+  return shiftTokenMaps(base, deltas, 1);
 }
 
 export function subtractTokenMaps(
   base: TokenMap,
   deltas: Partial<Record<TokenColor, number>>
 ): TokenMap {
-  return {
-    emerald: base.emerald - (deltas.emerald ?? 0),
-    diamond: base.diamond - (deltas.diamond ?? 0),
-    sapphire: base.sapphire - (deltas.sapphire ?? 0),
-    onyx: base.onyx - (deltas.onyx ?? 0),
-    ruby: base.ruby - (deltas.ruby ?? 0),
-    gold: base.gold - (deltas.gold ?? 0),
-  };
-}
-
-export function incrementGemBonus(bonuses: GemMap, color: GemColor): GemMap {
-  return { ...bonuses, [color]: bonuses[color] + 1 };
+  return shiftTokenMaps(base, deltas, -1);
 }
 
 export function replacePlayerAt(
@@ -103,26 +97,19 @@ export function appendSplendorEvent(
 export function computeCardPurchasePayment(
   player: SplendorPlayerState,
   card: SplendorCard
-): { affordable: boolean; payment: TokenMap; goldShortfall: number } {
-  const { coloredPayment, goldNeeded } = GEM_COLORS.reduce<{
-    coloredPayment: GemMap;
-    goldNeeded: number;
-  }>(
-    (acc, color) => {
-      const discounted = Math.max(0, card.cost[color] - player.bonuses[color]);
-      const payColor = Math.min(player.tokens[color], discounted);
-      return {
-        coloredPayment: { ...acc.coloredPayment, [color]: payColor },
-        goldNeeded: acc.goldNeeded + (discounted - payColor),
-      };
-    },
-    { coloredPayment: emptyGemMap(), goldNeeded: 0 }
-  );
+): { affordable: boolean; payment: TokenMap } {
+  const coloredPayment = emptyGemMap();
+  let goldNeeded = 0;
+  for (const color of GEM_COLORS) {
+    const discounted = Math.max(0, card.cost[color] - player.bonuses[color]);
+    const payColor = Math.min(player.tokens[color], discounted);
+    coloredPayment[color] = payColor;
+    goldNeeded += discounted - payColor;
+  }
 
   return {
     affordable: goldNeeded <= player.tokens.gold,
     payment: { ...coloredPayment, gold: goldNeeded },
-    goldShortfall: Math.max(0, goldNeeded - player.tokens.gold),
   };
 }
 
@@ -164,7 +151,7 @@ export function findMarketCardLocation(
   market: Record<CardTier, SplendorCard[]>,
   cardId: string
 ): { tier: CardTier; index: number } | null {
-  for (const tier of CARD_TIERS) {
+  for (const tier of SPLENDOR_CARD_TIERS) {
     const index = market[tier].findIndex((c) => c.id === cardId);
     if (index !== -1) {
       return { tier, index };

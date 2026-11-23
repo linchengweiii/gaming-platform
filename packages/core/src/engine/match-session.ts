@@ -56,7 +56,7 @@ export interface MatchSession<
   ): MatchSession<TState, TConfig, TAction, TEvent, TView>;
 }
 
-export interface MatchSessionConstructor {
+interface MatchSessionConstructor {
   new <
     TState,
     TConfig,

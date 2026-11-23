@@ -1,5 +1,8 @@
-import type { EdgeId, HexId } from "@gaming-platform/core";
 import { TERRAIN_TO_RESOURCE } from "../config/costs-and-limits.ts";
+import { computePlayerVictoryPoints } from "../rules/awards-and-vp.ts";
+import { getPlayerResourceCount, omitRecordKey } from "../rules/helpers.ts";
+import { getLegalRoadEdges, getLegalShipEdges } from "../rules/network.ts";
+import { getLegalRobberHexes } from "../rules/robber-pirate.ts";
 import type { CatanAction } from "../types/actions.ts";
 import {
   COMMODITIES,
@@ -20,11 +23,7 @@ import {
  */
 export function getLegalProgressCardActions(
   state: CatanState,
-  player: CatanPlayerState,
-  computeVpFn: (s: CatanState, pid: string, visibleOnly?: boolean) => number,
-  getLegalRoadEdgesFn: (s: CatanState, pid: string) => EdgeId[],
-  getLegalShipEdgesFn: (s: CatanState, pid: string) => EdgeId[],
-  getLegalRobberHexesFn: (s: CatanState, pid: string) => HexId[]
+  player: CatanPlayerState
 ): CatanAction[] {
   if (!state.config.enableCitiesAndKnights || player.progressCards.length === 0) {
     return [];
@@ -51,7 +50,7 @@ export function getLegalProgressCardActions(
     return [];
   }
 
-  const myVp = computeVpFn(state, player.id, true);
+  const myVp = computePlayerVictoryPoints(state, player.id, true);
   const seenTypes = new Set<ProgressCardType>();
 
   return player.progressCards.flatMap((card): CatanAction[] => {
@@ -77,8 +76,8 @@ export function getLegalProgressCardActions(
 
       case "road_building": {
         const hasSpots =
-          getLegalRoadEdgesFn(state, player.id).length > 0 ||
-          getLegalShipEdgesFn(state, player.id).length > 0;
+          getLegalRoadEdges(state, player.id, null).length > 0 ||
+          getLegalShipEdges(state, player.id, null).length > 0;
         return hasSpots
           ? [{ type: "PLAY_PROGRESS_CARD", cardId: card.id }]
           : [];
@@ -180,7 +179,7 @@ export function getLegalProgressCardActions(
 
       case "bishop": {
         if (state.barbarianAttacksCount < 1) return [];
-        return getLegalRobberHexesFn(state, player.id).map((hexId) => ({
+        return getLegalRobberHexes(state, player.id).map((hexId) => ({
           type: "PLAY_PROGRESS_CARD" as const,
           cardId: card.id,
           params: { hexId },
@@ -225,21 +224,19 @@ export function getLegalProgressCardActions(
         return openEdges.flatMap((edgeId) => {
           const isOwn = state.edges[edgeId]?.ownerId === player.id;
           if (isOwn) {
-            const withoutEdge = Object.fromEntries(
-              Object.entries(state.edges).filter(([k]) => k !== edgeId)
-            );
             const afterRemove: CatanState = {
               ...state,
-              edges: withoutEdge,
+              edges: omitRecordKey(state.edges, edgeId),
               players: state.players.map((p) =>
                 p.id === player.id
                   ? { ...p, roadsRemaining: p.roadsRemaining + 1 }
                   : p
               ),
             };
-            const validRebuilds = getLegalRoadEdgesFn(
+            const validRebuilds = getLegalRoadEdges(
               afterRemove,
-              player.id
+              player.id,
+              null
             ).filter((rId) => rId !== edgeId);
             return [
               {
@@ -323,12 +320,9 @@ export function getLegalProgressCardActions(
       case "master_merchant": {
         const leadersWithCards = state.players.filter((opp) => {
           if (opp.id === player.id) return false;
-          if (computeVpFn(state, opp.id, true) <= myVp) return false;
-          const handCount = opp.handRedacted
-            ? opp.hiddenResourceCount ?? 0
-            : RESOURCES.reduce<number>((s, r) => s + opp.resources[r], 0) +
-              totalCommodityCount(opp.commodities);
-          return handCount > 0;
+          if (computePlayerVictoryPoints(state, opp.id, true) <= myVp)
+            return false;
+          return getPlayerResourceCount(opp) > 0;
         });
         return leadersWithCards.map((opp) => ({
           type: "PLAY_PROGRESS_CARD" as const,

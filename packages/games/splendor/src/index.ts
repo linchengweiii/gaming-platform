@@ -1,19 +1,23 @@
-import type { GameEngine, GameEvent, PlayerDescriptor } from "@gaming-platform/core";
+import type { GameEngine, GameEvent } from "@gaming-platform/core";
 import { chooseSplendorBotAction } from "./bot.ts";
+import { applySplendorAction } from "./rules/apply.ts";
+import { getSplendorLegalActions } from "./rules/legal-actions.ts";
 import {
-  applySplendorAction,
   checkSplendorInvariants,
-  getSplendorLegalActions,
   getSplendorPlayerView,
-  initSplendorGame,
-} from "./rules.ts";
+} from "./rules/view-and-invariants.ts";
+import { initSplendorGame } from "./rules/setup.ts";
 import type { SplendorAction, SplendorConfig, SplendorState } from "./types.ts";
 
 export * from "./config.ts";
 export * from "./types.ts";
 export * from "./cards.ts";
-export * from "./rules.ts";
-export * from "./bot.ts";
+export {
+  computeCardPurchasePayment,
+  totalTokens,
+} from "./rules/helpers.ts";
+export { getSplendorLegalActions } from "./rules/legal-actions.ts";
+export { getSplendorActingPlayerId } from "./rules/view-and-invariants.ts";
 
 export const SplendorEngine: GameEngine<
   SplendorState,
@@ -31,51 +35,14 @@ export const SplendorEngine: GameEngine<
     maxPlayers: 4,
     supportsBots: true,
   },
-
-  initGame(
-    players: readonly PlayerDescriptor[],
-    config?: Partial<SplendorConfig>,
-    seed?: number | string
-  ): SplendorState {
-    return initSplendorGame(players, config, seed);
-  },
-
-  getLegalActions(state: SplendorState, playerId: string): SplendorAction[] {
-    return getSplendorLegalActions(state, playerId);
-  },
-
-  applyAction(
-    state: SplendorState,
-    playerId: string,
-    action: SplendorAction
-  ): { state: SplendorState; events: GameEvent[] } {
-    return applySplendorAction(state, playerId, action);
-  },
-
-  getPlayerView(
-    state: SplendorState,
-    viewerPlayerId: string | null = null
-  ): SplendorState {
-    return getSplendorPlayerView(state, viewerPlayerId);
-  },
-
-  getWinner(state: SplendorState): string | null {
-    return state.winnerId;
-  },
-
-  chooseBotAction(state: SplendorState, playerId: string): SplendorAction | null {
-    return chooseSplendorBotAction(state, playerId);
-  },
-
-  checkInvariants(state: SplendorState) {
-    return checkSplendorInvariants(state);
-  },
-
-  isActionUndoable(
-    prevState: SplendorState,
-    action: SplendorAction,
-    nextState: SplendorState
-  ): boolean {
+  initGame: initSplendorGame,
+  getLegalActions: getSplendorLegalActions,
+  applyAction: applySplendorAction,
+  getPlayerView: getSplendorPlayerView,
+  getWinner: (state) => state.winnerId,
+  chooseBotAction: chooseSplendorBotAction,
+  checkInvariants: checkSplendorInvariants,
+  isActionUndoable(prevState, action, nextState): boolean {
     if (nextState.phase === "GAME_OVER") return false;
     if (prevState.turn !== nextState.turn) return false;
     if (action.type === "RESERVE_CARD" || action.type === "PURCHASE_CARD") {

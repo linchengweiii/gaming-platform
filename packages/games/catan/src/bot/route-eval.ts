@@ -4,6 +4,7 @@ import { getLegalSettlementVertices } from "../rules/network.ts";
 import type { ResourceType } from "../types/domain.ts";
 import type { CatanState } from "../types/state.ts";
 import { evaluateVertexScore } from "./board-eval.ts";
+import { isOpenLandSettlementVertex } from "./utils.ts";
 
 /**
  * Shortest sea-edge hop distance from `startEdgeId` to any open vertex on an unsettled
@@ -84,6 +85,25 @@ export function seaHopsToForeignIsland(
   return 99;
 }
 
+function collectBlockedVerticesForRoute(
+  state: CatanState,
+  ownerId: string,
+  extraBlockedVertexId?: string
+): Set<string> {
+  const blocked = new Set<string>(
+    extraBlockedVertexId ? [extraBlockedVertexId] : undefined
+  );
+  for (const [vId, b] of Object.entries(state.buildings)) {
+    if (b.ownerId !== ownerId) blocked.add(vId);
+  }
+  if (state.config.enableCitiesAndKnights) {
+    for (const [vId, k] of Object.entries(state.knights)) {
+      if (k.ownerId !== ownerId) blocked.add(vId);
+    }
+  }
+  return blocked;
+}
+
 /**
  * Computes `playerId`'s Longest Road / Trade Route if `addedEdge` is placed (and optional `removedEdgeId` removed).
  */
@@ -104,19 +124,7 @@ export function simulateRouteLengthWithEdge(
     playerEdges.push(addedEdgeId);
   }
 
-  const blockedVertices = new Set<string>();
-  for (const [vId, b] of Object.entries(state.buildings)) {
-    if (b.ownerId !== playerId) {
-      blockedVertices.add(vId);
-    }
-  }
-  if (state.config.enableCitiesAndKnights) {
-    for (const [vId, k] of Object.entries(state.knights)) {
-      if (k.ownerId !== playerId) {
-        blockedVertices.add(vId);
-      }
-    }
-  }
+  const blockedVertices = collectBlockedVerticesForRoute(state, playerId);
 
   const getType = (eId: string): "road" | "ship" | null => {
     if (eId === addedEdgeId) return addedKind;
@@ -155,19 +163,11 @@ export function simulateOpponentRouteLengthAfterBlock(
   }
   if (oppEdges.length === 0) return 0;
 
-  const blockedVertices = new Set<string>([blockedVertexId]);
-  for (const [vId, b] of Object.entries(state.buildings)) {
-    if (b.ownerId !== oppId) {
-      blockedVertices.add(vId);
-    }
-  }
-  if (state.config.enableCitiesAndKnights) {
-    for (const [vId, k] of Object.entries(state.knights)) {
-      if (k.ownerId !== oppId) {
-        blockedVertices.add(vId);
-      }
-    }
-  }
+  const blockedVertices = collectBlockedVerticesForRoute(
+    state,
+    oppId,
+    blockedVertexId
+  );
 
   return computeLongestSimpleEdgePath(
     state.topology,
@@ -199,12 +199,10 @@ export function analyzeExpansionNetwork(
 ): {
   immediateVertices: string[];
   bestOneHopVertexScore: number;
-  bestTwoHopVertexScore: number;
   hasReachableSpot: boolean;
 } {
   const immediateVertices = getLegalSettlementVertices(state, playerId, false);
   let bestOneHopVertexScore = 0;
-  let bestTwoHopVertexScore = 0;
   let hasReachableSpot = immediateVertices.length > 0;
 
   const myVertices = new Set<string>();
@@ -225,13 +223,7 @@ export function analyzeExpansionNetwork(
     if (!vNode) continue;
     for (const nextV of vNode.adjacentVertexIds) {
       if (state.buildings[nextV]) continue;
-      const distOk = (
-        state.topology.vertices[nextV]?.adjacentVertexIds ?? []
-      ).every((nb) => !state.buildings[nb]);
-      const touchesLand = (
-        state.topology.vertices[nextV]?.adjacentHexIds ?? []
-      ).some((hId) => state.hexes[hId]?.terrain !== "sea");
-      if (distOk && touchesLand) {
+      if (isOpenLandSettlementVertex(state, nextV)) {
         hasReachableSpot = true;
         const sc = evaluateVertexScore(
           state,
@@ -241,23 +233,14 @@ export function analyzeExpansionNetwork(
           scarcity
         );
         if (sc > bestOneHopVertexScore) bestOneHopVertexScore = sc;
-        if (sc > bestTwoHopVertexScore) bestTwoHopVertexScore = sc;
       }
-      for (const hop2 of state.topology.vertices[nextV]?.adjacentVertexIds ??
-        []) {
-        if (hop2 === vId || state.buildings[hop2]) continue;
-        const dist2Ok = (
-          state.topology.vertices[hop2]?.adjacentVertexIds ?? []
-        ).every((nb) => !state.buildings[nb]);
-        const touchesLand2 = (
-          state.topology.vertices[hop2]?.adjacentHexIds ?? []
-        ).some((hId) => state.hexes[hId]?.terrain !== "sea");
-        if (dist2Ok && touchesLand2) {
-          hasReachableSpot = true;
-          const sc2 =
-            evaluateVertexScore(state, hop2, playerId, weights, scarcity) *
-            0.72;
-          if (sc2 > bestTwoHopVertexScore) bestTwoHopVertexScore = sc2;
+      if (!hasReachableSpot) {
+        for (const hop2 of state.topology.vertices[nextV]?.adjacentVertexIds ??
+          []) {
+          if (hop2 !== vId && isOpenLandSettlementVertex(state, hop2)) {
+            hasReachableSpot = true;
+            break;
+          }
         }
       }
     }
@@ -266,7 +249,6 @@ export function analyzeExpansionNetwork(
   return {
     immediateVertices,
     bestOneHopVertexScore,
-    bestTwoHopVertexScore,
     hasReachableSpot,
   };
 }

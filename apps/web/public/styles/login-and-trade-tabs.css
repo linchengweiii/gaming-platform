@@ -32,35 +32,6 @@
   padding: 8px 12px;
 }
 
-.ga-user-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 10px 0 12px;
-  border-radius: var(--r-btn);
-  border: 1px solid var(--line-strong);
-  background: var(--bg);
-  font-size: var(--t-small);
-  color: var(--ink);
-}
-
-.ga-user-pill__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #34d399;
-  flex: none;
-}
-
-.ga-user-pill__name {
-  font-weight: 500;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .ga-seat-bot-controls {
   display: flex;
   align-items: center;
@@ -189,36 +160,9 @@
   background: rgba(24, 25, 27, 0.95);
 }
 
-.ga-trade-bundle {
-  min-height: 28px;
-}
-
 .ga-trade-submit-btn {
   min-width: 158px;
   justify-content: center;
-}
-
-.ga-res-cell--stack {
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  padding: 5px 4px;
-}
-
-.ga-res-cell__stepper {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 3px;
-}
-
-.ga-res-cell__meta {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 11px;
-  line-height: 1.1;
-  color: var(--muted);
 }
 
 .res-pill--hidden {

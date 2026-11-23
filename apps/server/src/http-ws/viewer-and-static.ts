@@ -3,9 +3,10 @@ import type http from "node:http";
 import path from "node:path";
 import { MAX_HTTP_BODY_BYTES } from "../config.ts";
 import type { RoomInstance } from "../room-manager.ts";
+import { canViewerControlActorPure } from "../room-manager/helpers.ts";
 import { createHttpError } from "./guest-sessions.ts";
 
-export const MIME_TYPES: Readonly<Record<string, string>> = {
+const MIME_TYPES: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
@@ -40,30 +41,16 @@ export function resolveEffectiveViewerIdPure(
   gameState?: any
 ): string | null {
   if (!viewerId) return null;
-  if (actingId) {
-    const actingPlayer = room.players.find((p) => p.id === actingId);
-    if (
-      actingPlayer &&
-      !actingPlayer.isBot &&
-      (actingPlayer.controllerId
-        ? actingPlayer.controllerId === viewerId
-        : actingPlayer.id === viewerId)
-    ) {
-      return actingId;
-    }
+  if (actingId && canViewerControlActorPure(room, viewerId, actingId)) {
+    return actingId;
   }
   const offerProposerId = gameState?.activeTradeOffer?.fromPlayerId;
-  if (typeof offerProposerId === "string" && offerProposerId) {
-    const proposer = room.players.find((p) => p.id === offerProposerId);
-    if (
-      proposer &&
-      !proposer.isBot &&
-      (proposer.controllerId
-        ? proposer.controllerId === viewerId
-        : proposer.id === viewerId)
-    ) {
-      return offerProposerId;
-    }
+  if (
+    typeof offerProposerId === "string" &&
+    offerProposerId &&
+    canViewerControlActorPure(room, viewerId, offerProposerId)
+  ) {
+    return offerProposerId;
   }
   if (
     room.gameId === "seven_wonders" &&
@@ -113,33 +100,41 @@ export function resolveSafeStaticPathPure(
   return resolved;
 }
 
+export function resolveStaticFileMeta(
+  publicDir: string,
+  pathname: string
+): { readonly filePath: string; readonly headers: Record<string, string> } | null {
+  const filePath = resolveSafeStaticPathPure(publicDir, pathname);
+  if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return null;
+  }
+  const ext = path.extname(filePath);
+  const headers: Record<string, string> = {
+    "Content-Type": MIME_TYPES[ext] ?? "application/octet-stream",
+  };
+  if (REVALIDATE_EXTENSIONS.has(ext)) {
+    headers["Cache-Control"] = "no-cache";
+  }
+  return { filePath, headers };
+}
+
 export function tryServeStaticFile(
   res: http.ServerResponse,
   publicDir: string,
   pathname: string
 ): boolean {
-  const filePath = resolveSafeStaticPathPure(publicDir, pathname);
-  if (!filePath) return false;
-  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-    const ext = path.extname(filePath);
-    const headers: Record<string, string> = {
-      "Content-Type": MIME_TYPES[ext] ?? "application/octet-stream",
-    };
-    if (REVALIDATE_EXTENSIONS.has(ext)) {
-      headers["Cache-Control"] = "no-cache";
+  const meta = resolveStaticFileMeta(publicDir, pathname);
+  if (!meta) return false;
+  res.writeHead(200, meta.headers);
+  const stream = fs.createReadStream(meta.filePath);
+  stream.on("error", () => {
+    if (!res.headersSent) {
+      res.writeHead(500);
     }
-    res.writeHead(200, headers);
-    const stream = fs.createReadStream(filePath);
-    stream.on("error", () => {
-      if (!res.headersSent) {
-        res.writeHead(500);
-      }
-      res.end();
-    });
-    stream.pipe(res);
-    return true;
-  }
-  return false;
+    res.end();
+  });
+  stream.pipe(res);
+  return true;
 }
 
 export async function readJsonBody(

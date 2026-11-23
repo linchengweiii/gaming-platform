@@ -1,47 +1,7 @@
-import type { BotDifficulty } from "@gaming-platform/core";
-import type { SevenWondersAge, WonderResource } from "../types.ts";
+import type { SevenWondersAge } from "../types.ts";
 
-export const SEVEN_WONDERS_BOT_RESOURCES: readonly WonderResource[] = [
-  "wood",
-  "stone",
-  "clay",
-  "ore",
-  "glass",
-  "loom",
-  "papyrus",
-];
-
-export interface SevenWondersBotTierProfile {
-  readonly difficulty: BotDifficulty;
-  readonly usesWheelIntel: boolean;
-  readonly usesNeighborDenial: boolean;
-  readonly usesBabylonSeventhCardLookahead: boolean;
-  readonly spendCoinPenaltyWeight: number;
-  readonly neighborCoinFeedPenaltyWeight: number;
-  readonly wonderStageUtilityScale: number;
-  readonly discardZeroCoinAge12Score: number;
-  readonly discardDefaultScore: number;
-}
-
-export const SEVEN_WONDERS_BOT_TIER_PROFILES: Readonly<
-  Record<BotDifficulty, SevenWondersBotTierProfile>
-> = {
-  easy: {
-    difficulty: "easy",
-    usesWheelIntel: false,
-    usesNeighborDenial: false,
-    usesBabylonSeventhCardLookahead: false,
-    spendCoinPenaltyWeight: 0,
-    neighborCoinFeedPenaltyWeight: 0,
-    wonderStageUtilityScale: 1.0,
-    discardZeroCoinAge12Score: 0,
-    discardDefaultScore: 0,
-  },
+export const SEVEN_WONDERS_INTERMEDIATE_PROFILES = {
   normal: {
-    difficulty: "normal",
-    usesWheelIntel: false,
-    usesNeighborDenial: false,
-    usesBabylonSeventhCardLookahead: false,
     spendCoinPenaltyWeight: 0.52,
     neighborCoinFeedPenaltyWeight: 0.18,
     wonderStageUtilityScale: 1.0,
@@ -49,28 +9,13 @@ export const SEVEN_WONDERS_BOT_TIER_PROFILES: Readonly<
     discardDefaultScore: 1.25,
   },
   smart: {
-    difficulty: "smart",
-    usesWheelIntel: false,
-    usesNeighborDenial: false,
-    usesBabylonSeventhCardLookahead: false,
     spendCoinPenaltyWeight: 0.38,
     neighborCoinFeedPenaltyWeight: 0.18,
     wonderStageUtilityScale: 0.88,
     discardZeroCoinAge12Score: 2.2,
     discardDefaultScore: 1.25,
   },
-  master: {
-    difficulty: "master",
-    usesWheelIntel: true,
-    usesNeighborDenial: true,
-    usesBabylonSeventhCardLookahead: true,
-    spendCoinPenaltyWeight: 0.36,
-    neighborCoinFeedPenaltyWeight: 0.42,
-    wonderStageUtilityScale: 1.0,
-    discardZeroCoinAge12Score: 1.35,
-    discardDefaultScore: 1.08,
-  },
-};
+} as const;
 
 export const SEVEN_WONDERS_NORMAL_BOT_WEIGHTS = {
   coinImmediateWeight: 0.34,

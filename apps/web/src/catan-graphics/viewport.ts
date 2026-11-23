@@ -13,7 +13,7 @@ export interface CatanBoardViewBox {
   readonly vbH: number;
 }
 
-export interface ViewportRectLike {
+interface ViewportRectLike {
   readonly left: number;
   readonly top: number;
   readonly width: number;

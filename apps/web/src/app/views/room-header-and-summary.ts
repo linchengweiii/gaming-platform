@@ -91,7 +91,7 @@ export function renderRoomHeaderPure(
     `;
 }
 
-export function getStartingPlayerSummaryLabelPure(
+function getStartingPlayerSummaryLabelPure(
   room: ClientRoom,
   state: any,
   locale: SupportedLocale = "en"

@@ -125,10 +125,6 @@ export interface StepBotOptions {
 export interface PlatformRoomManager {
   readonly registry: GameRegistry;
   getStateSnapshot(): RoomManagerState;
-  getRoomPlayerBounds(
-    gameId: string,
-    config: Record<string, unknown>
-  ): { minPlayers: number; maxPlayers: number };
   canViewerControlActor(
     room: Pick<RoomInstance, "players">,
     viewerId: string | null | undefined,

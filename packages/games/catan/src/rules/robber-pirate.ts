@@ -1,19 +1,9 @@
+import type { GameEvent, HexId } from "@gaming-platform/core";
 import {
-  type GameEvent,
-  type HexId,
-  pickPure,
-} from "@gaming-platform/core";
-import {
-  addCommoditiesPure,
-  isCommodityType,
-  subtractCommoditiesPure,
+  drawOneRandomHandGoodPure,
+  transferGoodBetweenPlayersPure,
 } from "../cities-and-knights/helpers.ts";
 import type { CatanAction } from "../types/actions.ts";
-import {
-  COMMODITIES,
-  RESOURCES,
-  type TradeGoodType,
-} from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 import {
   checkAndAssignWinnerPure,
@@ -21,10 +11,8 @@ import {
 } from "./awards-and-vp.ts";
 import {
   type StateWithEvents,
-  addResourcesPure,
   appendCatanEvent,
   getPlayerResourceCount,
-  subtractResourcesPure,
 } from "./helpers.ts";
 
 /**
@@ -90,7 +78,7 @@ export function getLegalPirateHexes(
   return friendlyFiltered.length > 0 ? friendlyFiltered : allSeaHexes;
 }
 
-export function stealOneRandomCardPure(
+function stealOneRandomCardPure(
   state: CatanState,
   thiefId: string,
   victimId: string,
@@ -98,57 +86,26 @@ export function stealOneRandomCardPure(
 ): StateWithEvents {
   const thief = state.players.find((p) => p.id === thiefId)!;
   const victim = state.players.find((p) => p.id === victimId)!;
-  const pool: TradeGoodType[] = [
-    ...RESOURCES.flatMap((r) =>
-      Array.from({ length: victim.resources[r] }, (): TradeGoodType => r)
-    ),
-    ...(state.config.enableCitiesAndKnights
-      ? COMMODITIES.flatMap((c) =>
-          Array.from({ length: victim.commodities[c] }, (): TradeGoodType => c)
-        )
-      : []),
-  ];
-  if (pool.length === 0) {
+  const [stolen, nextRngState] = drawOneRandomHandGoodPure(
+    state.rngState,
+    victim
+  );
+  if (!stolen) {
     return { state, emitted: emitted.slice() };
   }
 
-  const [stolen, nextRngState] = pickPure(state.rngState, pool);
-  const nextPlayers = state.players.map((p) => {
-    if (p.id === victimId) {
-      return isCommodityType(stolen)
-        ? {
-            ...p,
-            commodities: subtractCommoditiesPure(p.commodities, {
-              [stolen]: 1,
-            }),
-          }
-        : {
-            ...p,
-            resources: subtractResourcesPure(p.resources, { [stolen]: 1 }),
-          };
-    }
-    if (p.id === thiefId) {
-      return isCommodityType(stolen)
-        ? {
-            ...p,
-            commodities: addCommoditiesPure(p.commodities, { [stolen]: 1 }),
-          }
-        : {
-            ...p,
-            resources: addResourcesPure(p.resources, { [stolen]: 1 }),
-          };
-    }
-    return p;
-  });
-
-  const updatedState: CatanState = {
-    ...state,
-    rngState: nextRngState,
-    players: nextPlayers,
-  };
-
   return appendCatanEvent(
-    updatedState,
+    {
+      ...state,
+      rngState: nextRngState,
+      players: transferGoodBetweenPlayersPure(
+        state.players,
+        victimId,
+        thiefId,
+        stolen,
+        1
+      ),
+    },
     emitted,
     "RESOURCE_STOLEN",
     `${thief.name} stole 1 resource card from ${victim.name}.`,
@@ -230,43 +187,48 @@ export function getStealCandidatesForHexPure(
   );
 }
 
-export function applyMoveRobberPure(
+function applyMoveRaiderPure(
   currentState: CatanState,
   player: CatanPlayerState,
   activePlayer: CatanPlayerState,
   playerId: string,
-  action: Extract<CatanAction, { type: "MOVE_ROBBER" }>
+  hexId: HexId,
+  kind: "robber" | "pirate"
 ): { state: CatanState; events: GameEvent[] } {
   if (
     currentState.phase !== "MOVE_ROBBER_OR_PIRATE" ||
     activePlayer.id !== playerId
   ) {
-    throw new Error("Cannot move robber right now");
+    throw new Error(`Cannot move ${kind} right now`);
   }
-  const legalHexes = getLegalRobberHexes(currentState, playerId);
-  if (!legalHexes.includes(action.hexId)) {
-    throw new Error(`Illegal robber destination ${action.hexId}`);
+  const legalHexes =
+    kind === "robber"
+      ? getLegalRobberHexes(currentState, playerId)
+      : getLegalPirateHexes(currentState, playerId);
+  if (!legalHexes.includes(hexId)) {
+    throw new Error(`Illegal ${kind} destination ${hexId}`);
   }
 
-  const hNode = currentState.topology.hexes[action.hexId]!;
+  const hNode = currentState.topology.hexes[hexId]!;
   const candidates = getStealCandidatesForHexPure(
     currentState,
-    action.hexId,
+    hexId,
     playerId,
-    "robber"
+    kind
   );
-
-  const movedState: CatanState = {
-    ...currentState,
-    robberHexId: action.hexId,
-  };
+  const movedState: CatanState =
+    kind === "robber"
+      ? { ...currentState, robberHexId: hexId }
+      : { ...currentState, pirateHexId: hexId };
   const logged = appendCatanEvent(
     movedState,
     [],
-    "ROBBER_MOVED",
-    `${player.name} moved the Robber to (${hNode.q},${hNode.r}).`,
+    kind === "robber" ? "ROBBER_MOVED" : "PIRATE_MOVED",
+    kind === "robber"
+      ? `${player.name} moved the Robber to (${hNode.q},${hNode.r}).`
+      : `${player.name} sailed the Pirate Fleet to sea hex (${hNode.q},${hNode.r}).`,
     playerId,
-    { hexId: action.hexId }
+    { hexId }
   );
   const resolved = resolvePostRobberOrPirateStealPure(
     logged.state,
@@ -277,6 +239,23 @@ export function applyMoveRobberPure(
   return { state: resolved.state, events: resolved.emitted };
 }
 
+export function applyMoveRobberPure(
+  currentState: CatanState,
+  player: CatanPlayerState,
+  activePlayer: CatanPlayerState,
+  playerId: string,
+  action: Extract<CatanAction, { type: "MOVE_ROBBER" }>
+): { state: CatanState; events: GameEvent[] } {
+  return applyMoveRaiderPure(
+    currentState,
+    player,
+    activePlayer,
+    playerId,
+    action.hexId,
+    "robber"
+  );
+}
+
 export function applyMovePiratePure(
   currentState: CatanState,
   player: CatanPlayerState,
@@ -284,44 +263,14 @@ export function applyMovePiratePure(
   playerId: string,
   action: Extract<CatanAction, { type: "MOVE_PIRATE" }>
 ): { state: CatanState; events: GameEvent[] } {
-  if (
-    currentState.phase !== "MOVE_ROBBER_OR_PIRATE" ||
-    activePlayer.id !== playerId
-  ) {
-    throw new Error("Cannot move pirate right now");
-  }
-  const legalPirate = getLegalPirateHexes(currentState, playerId);
-  if (!legalPirate.includes(action.hexId)) {
-    throw new Error(`Illegal pirate destination ${action.hexId}`);
-  }
-
-  const hNode = currentState.topology.hexes[action.hexId]!;
-  const candidates = getStealCandidatesForHexPure(
+  return applyMoveRaiderPure(
     currentState,
-    action.hexId,
+    player,
+    activePlayer,
     playerId,
+    action.hexId,
     "pirate"
   );
-
-  const movedState: CatanState = {
-    ...currentState,
-    pirateHexId: action.hexId,
-  };
-  const logged = appendCatanEvent(
-    movedState,
-    [],
-    "PIRATE_MOVED",
-    `${player.name} sailed the Pirate Fleet to sea hex (${hNode.q},${hNode.r}).`,
-    playerId,
-    { hexId: action.hexId }
-  );
-  const resolved = resolvePostRobberOrPirateStealPure(
-    logged.state,
-    playerId,
-    candidates,
-    logged.emitted
-  );
-  return { state: resolved.state, events: resolved.emitted };
 }
 
 export function applyStealFromPlayerPure(

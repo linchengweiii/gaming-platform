@@ -1,5 +1,5 @@
-import type { EdgeId } from "@gaming-platform/core";
 import { PROGRESS_CARD_CATALOG } from "../config/cities-knights-config.ts";
+import { getLegalRoadEdges, getLegalShipEdges } from "../rules/network.ts";
 import type { ProgressCardPlayParams } from "../types/actions.ts";
 import type {
   KnightLevel,
@@ -18,9 +18,7 @@ export function applyScienceProgressCardPure(
   stateAfterConsume: CatanState,
   playerId: string,
   card: ProgressCardInstance,
-  params: ProgressCardPlayParams | undefined,
-  getLegalRoadEdgesFn: (s: CatanState, pid: string) => EdgeId[],
-  getLegalShipEdgesFn: (s: CatanState, pid: string) => EdgeId[]
+  params: ProgressCardPlayParams | undefined
 ): StateEventsPair {
   const actor = stateAfterConsume.players.find((p) => p.id === playerId)!;
   const cardTitle = PROGRESS_CARD_CATALOG[card.type].title;
@@ -72,54 +70,32 @@ export function applyScienceProgressCardPure(
       );
     }
 
-    case "crane": {
-      if (actor.activeTurnDiscounts.crane) {
-        throw new Error("Crane discount is already active this turn");
-      }
-      const nextState: CatanState = {
-        ...stateAfterConsume,
-        players: stateAfterConsume.players.map((p) =>
-          p.id === playerId
-            ? {
-                ...p,
-                activeTurnDiscounts: { ...p.activeTurnDiscounts, crane: true },
-              }
-            : p
-        ),
-      };
-      return pushCkEvent(
-        nextState,
-        [],
-        "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Crane (-1 commodity on next City Improvement this turn).`,
-        playerId,
-        { cardType: card.type }
-      );
-    }
-
+    case "crane":
     case "medicine": {
-      if (actor.activeTurnDiscounts.medicine) {
-        throw new Error("Medicine discount is already active this turn");
+      const discountKey = card.type;
+      if (actor.activeTurnDiscounts[discountKey]) {
+        throw new Error(`${cardTitle} discount is already active this turn`);
       }
-      const nextState: CatanState = {
-        ...stateAfterConsume,
-        players: stateAfterConsume.players.map((p) =>
-          p.id === playerId
-            ? {
-                ...p,
-                activeTurnDiscounts: {
-                  ...p.activeTurnDiscounts,
-                  medicine: true,
-                },
-              }
-            : p
-        ),
-      };
       return pushCkEvent(
-        nextState,
+        {
+          ...stateAfterConsume,
+          players: stateAfterConsume.players.map((p) =>
+            p.id === playerId
+              ? {
+                  ...p,
+                  activeTurnDiscounts: {
+                    ...p.activeTurnDiscounts,
+                    [discountKey]: true,
+                  },
+                }
+              : p
+          ),
+        },
         [],
         "PROGRESS_CARD_PLAYED",
-        `${actor.name} played Medicine (next City costs 2 Ore + 1 Grain this turn).`,
+        discountKey === "crane"
+          ? `${actor.name} played Crane (-1 commodity on next City Improvement this turn).`
+          : `${actor.name} played Medicine (next City costs 2 Ore + 1 Grain this turn).`,
         playerId,
         { cardType: card.type }
       );
@@ -163,8 +139,8 @@ export function applyScienceProgressCardPure(
     case "road_building": {
       const availablePieces = actor.roadsRemaining + actor.shipsRemaining;
       const availableSpots =
-        getLegalRoadEdgesFn(stateAfterConsume, playerId).length +
-        getLegalShipEdgesFn(stateAfterConsume, playerId).length;
+        getLegalRoadEdges(stateAfterConsume, playerId, null).length +
+        getLegalShipEdges(stateAfterConsume, playerId, null).length;
       const freeRoadsRemaining =
         availableSpots > 0 ? Math.min(2, availablePieces) : 0;
       const nextState: CatanState = {

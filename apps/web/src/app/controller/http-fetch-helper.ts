@@ -7,7 +7,7 @@ import {
   saveGuestSessionToStorage,
 } from "./context.ts";
 
-export async function fetchWithTimeout(
+async function fetchWithTimeout(
   input: string,
   init?: RequestInit,
   timeoutMs: number = HTTP_FETCH_TIMEOUT_MS

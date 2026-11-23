@@ -7,12 +7,10 @@ import {
   TERRAIN_TO_RESOURCE,
   computePlayerVictoryPoints,
   getLegalMoveShipActions,
-  getLegalRoadEdges,
   getLegalRobberHexes,
   getLegalSettlementVertices,
-  getLegalShipEdges,
   getNextActingPlayerId,
-  recalculateAwards,
+  recalculateAwardsPure,
 } from "@gaming-platform/catan";
 
 const PLAYERS_4: PlayerDescriptor[] = [
@@ -336,13 +334,13 @@ describe("Catan Executable Specification Suite", () => {
     state.players[0]!.shipsRemaining--;
 
     // Without a settlement at coastalVertexId, road and ship do NOT combine into a length-2 route!
-    recalculateAwards(state);
+    state = recalculateAwardsPure(state);
     expect(state.players[0]!.longestRoadLength).toBe(1);
 
     // Place p1 settlement at coastalVertexId -> now road + ship combine into a length-2 trade route!
     state.buildings[coastalVertexId!] = { ownerId: "p1", type: "settlement" };
     state.players[0]!.settlementsRemaining--;
-    recalculateAwards(state);
+    state = recalculateAwardsPure(state);
     expect(state.players[0]!.longestRoadLength).toBe(2);
 
     // Test moving the open ship on turn 2

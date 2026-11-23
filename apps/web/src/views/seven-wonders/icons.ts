@@ -139,15 +139,7 @@ export const SW_CARD_COLOR_META: Readonly<
   },
 };
 
-export function escapeSwHtml(raw: string): string {
-  return raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-export function renderSwResourceIconSvg(
+function renderSwResourceIconSvg(
   res: WonderResource,
   size = 14
 ): string {
@@ -280,7 +272,7 @@ export function summarizeBuiltPillSuffix(
   return tags.length > 0 ? ` · ${tags.join(" ")}` : "";
 }
 
-export function renderEffectTokenHtml(
+function renderEffectTokenHtml(
   ef: CardEffect,
   locale: SupportedLocale = "en"
 ): string {
