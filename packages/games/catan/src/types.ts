@@ -8,7 +8,6 @@ export {
 } from "./config/costs-and-limits.ts";
 export {
   BARBARIAN_TRACK_STEPS,
-  COMMODITY_TO_DISCIPLINE,
   DISCIPLINE_TO_COMMODITY,
   TERRAIN_TO_COMMODITY,
 } from "./config/cities-knights-config.ts";

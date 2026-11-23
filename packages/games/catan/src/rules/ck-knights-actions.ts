@@ -21,7 +21,6 @@ import {
   addResourcesPure,
   appendCatanEvent,
   assertCanBuildInCurrentPhase,
-  getPlayerResourceCount,
   hasResources,
   omitRecordKey,
   subtractResourcesPure,
@@ -30,6 +29,7 @@ import {
 import {
   getLegalPirateHexes,
   getLegalRobberHexes,
+  getStealCandidatesForHexPure,
   resolvePostRobberOrPirateStealPure,
 } from "./robber-pirate.ts";
 
@@ -334,20 +334,11 @@ export function applyChaseRobberWithKnightPure(
   const hNode = currentState.topology.hexes[action.hexId]!;
 
   if (targetKind === "pirate") {
-    const candidates = Array.from(
-      new Set(
-        hNode.sideEdgeIds
-          .map((eId) => currentState.edges[eId])
-          .filter(
-            (route): route is NonNullable<typeof route> =>
-              Boolean(
-                route && route.type === "ship" && route.ownerId !== playerId
-              )
-          )
-          .map((route) => currentState.players.find((p) => p.id === route.ownerId)!)
-          .filter((victim) => getPlayerResourceCount(victim) > 0)
-          .map((victim) => victim.id)
-      )
+    const candidates = getStealCandidatesForHexPure(
+      currentState,
+      action.hexId,
+      playerId,
+      "pirate"
     );
     const chasedState: CatanState = {
       ...currentState,
@@ -379,18 +370,11 @@ export function applyChaseRobberWithKnightPure(
     return { state: resolved.state, events: resolved.emitted };
   }
 
-  const candidates = Array.from(
-    new Set(
-      hNode.cornerVertexIds
-        .map((vId) => currentState.buildings[vId])
-        .filter(
-          (b): b is NonNullable<typeof b> =>
-            Boolean(b && b.ownerId !== playerId)
-        )
-        .map((b) => currentState.players.find((p) => p.id === b.ownerId)!)
-        .filter((victim) => getPlayerResourceCount(victim) > 0)
-        .map((victim) => victim.id)
-    )
+  const candidates = getStealCandidatesForHexPure(
+    currentState,
+    action.hexId,
+    playerId,
+    "robber"
   );
   const chasedState: CatanState = {
     ...currentState,

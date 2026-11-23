@@ -10,6 +10,7 @@ import {
 } from "./guest-sessions.ts";
 import type { RealtimeHub } from "./realtime-hub.ts";
 import {
+  isViewerSeatedOrOwnerPure,
   readJsonBody,
   resolveEffectiveViewerIdPure,
   sendJson,
@@ -37,24 +38,20 @@ export function buildRedactedStatePayload(
   return { actingId, view };
 }
 
-function isViewerSeatedOrOwnerPure(
-  room: RoomInstance,
-  viewerId: string
-): boolean {
-  return (
-    room.ownerId === viewerId ||
-    room.humanPlayers.some(
-      (p) => p.id === viewerId || p.controllerId === viewerId
-    )
-  );
-}
-
-function assertRequesterMatchesAuth(
+export function assertMatchesAuthPlayer(
   claimed: unknown,
-  authPlayerId: string
+  authPlayerId: string,
+  fieldName = "requesterId"
 ): void {
-  if (typeof claimed === "string" && claimed.trim() && claimed.trim() !== authPlayerId) {
-    throw createHttpError(403, "Authenticated guest does not match requesterId");
+  if (
+    typeof claimed === "string" &&
+    claimed.trim() &&
+    claimed.trim() !== authPlayerId
+  ) {
+    throw createHttpError(
+      403,
+      `Authenticated guest does not match ${fieldName}`
+    );
   }
 }
 
@@ -69,46 +66,30 @@ export async function handleRoomMatchSubRoute(
 ): Promise<boolean> {
   if (req.method !== "POST") return false;
 
-  if (subRoute === "start") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertRequesterMatchesAuth(body.requesterId, authPlayerId);
-    const rawState = roomManager.startGame(roomId, authPlayerId);
-    const room = roomManager.getRoom(roomId);
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      rawState,
-      authPlayerId
-    );
-    hub.touchRoomActivity(roomId);
-    hub.broadcastRoomState(roomId);
-    hub.broadcastLobbyRooms();
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
-      state: view,
-      actingPlayerId: actingId,
-    });
-    return true;
-  }
+  const MATCH_ROUTES = new Set([
+    "start",
+    "action",
+    "bot-step",
+    "auto-bots",
+    "bot-speed",
+    "finish-setup",
+    "undo",
+    "redo",
+  ]);
+  if (!MATCH_ROUTES.has(subRoute)) return false;
 
-  if (subRoute === "action") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertRequesterMatchesAuth(body.requesterId, authPlayerId);
-    const room = roomManager.getRoom(roomId);
-    if (!roomManager.canViewerControlActor(room, authPlayerId, body.playerId)) {
-      throw createHttpError(403, "You cannot act on behalf of another player");
-    }
-    const prevStatus = room.status;
-    const nextState = roomManager.dispatchAction(
-      roomId,
-      body.playerId,
-      body.action
-    );
+  const authPlayerId = guestSessions.requireAuthPlayerId(req);
+  const body = await readJsonBody(req);
+  assertMatchesAuthPlayer(body.requesterId, authPlayerId, "requesterId");
+
+  const enrichRoom = (room: RoomInstance) =>
+    hub.enrichSummaryWithPresence(roomManager.toRoomSummary(room, authPlayerId));
+
+  const replyMatchState = (
+    room: RoomInstance,
+    nextState: any,
+    opts: { broadcastLobby: boolean; extra?: Record<string, unknown> }
+  ): true => {
     const { actingId, view } = buildRedactedStatePayload(
       roomManager,
       room,
@@ -117,36 +98,59 @@ export async function handleRoomMatchSubRoute(
     );
     hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
-    if (room.status !== prevStatus) {
-      hub.broadcastLobbyRooms();
-    }
+    if (opts.broadcastLobby) hub.broadcastLobbyRooms();
     hub.scheduleRoomBotTurn(roomId);
     sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
+      ...opts.extra,
+      room: enrichRoom(room),
       state: view,
       actingPlayerId: actingId,
     });
     return true;
+  };
+
+  if (subRoute === "start") {
+    const rawState = roomManager.startGame(roomId, authPlayerId);
+    return replyMatchState(roomManager.getRoom(roomId), rawState, {
+      broadcastLobby: true,
+    });
+  }
+
+  const currentRoom = roomManager.getRoom(roomId);
+  const prevStatus = currentRoom.status;
+
+  if (subRoute === "action") {
+    if (
+      !roomManager.canViewerControlActor(
+        currentRoom,
+        authPlayerId,
+        body.playerId
+      )
+    ) {
+      throw createHttpError(403, "You cannot act on behalf of another player");
+    }
+    const nextState = roomManager.dispatchAction(
+      roomId,
+      body.playerId,
+      body.action
+    );
+    return replyMatchState(currentRoom, nextState, {
+      broadcastLobby: currentRoom.status !== prevStatus,
+    });
   }
 
   if (subRoute === "bot-step") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertRequesterMatchesAuth(body.requesterId, authPlayerId);
-    const room = roomManager.getRoom(roomId);
-    const rawState = room.session?.getState() ?? null;
+    const rawState = currentRoom.session?.getState() ?? null;
     const currentActingId = rawState
-      ? getRoomActingPlayerId(room.gameId, rawState)
+      ? getRoomActingPlayerId(currentRoom.gameId, rawState)
       : null;
     if (body.onlyBots === false) {
       const canControlHuman =
-        room.ownerId === authPlayerId ||
+        currentRoom.ownerId === authPlayerId ||
         Boolean(
           currentActingId &&
             roomManager.canViewerControlActor(
-              room,
+              currentRoom,
               authPlayerId,
               currentActingId
             )
@@ -157,69 +161,38 @@ export async function handleRoomMatchSubRoute(
           "Only the room host or active seat controller can step a human turn"
         );
       }
-    } else if (!isViewerSeatedOrOwnerPure(room, authPlayerId)) {
+    } else if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
       throw createHttpError(
         403,
         "Only seated players or room host can step bots"
       );
     }
-    const prevStatus = room.status;
     const result = roomManager.stepBot(roomId, {
       onlyBots: body.onlyBots !== false,
     });
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      result.state,
-      authPlayerId
-    );
-    hub.touchRoomActivity(roomId);
-    hub.broadcastRoomState(roomId);
-    if (room.status !== prevStatus) {
-      hub.broadcastLobbyRooms();
-    }
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      actedPlayerId: result.actedPlayerId,
-      action: result.action ? { type: result.action.type } : null,
-      state: view,
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
-      actingPlayerId: actingId,
+    return replyMatchState(currentRoom, result.state, {
+      broadcastLobby: currentRoom.status !== prevStatus,
+      extra: {
+        actedPlayerId: result.actedPlayerId,
+        action: result.action ? { type: result.action.type } : null,
+      },
     });
-    return true;
   }
 
   if (subRoute === "auto-bots") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertRequesterMatchesAuth(body.requesterId, authPlayerId);
-    const currentRoom = roomManager.getRoom(roomId);
     if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
       throw createHttpError(403, "Only seated players can toggle auto-bots");
     }
     const room = roomManager.setRoomAutoStepBots(roomId, Boolean(body.enabled));
     hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
-    if (room.autoStepBots) {
-      hub.scheduleRoomBotTurn(roomId);
-    } else {
-      hub.clearRoomBotTimer(roomId);
-    }
-    sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
-    });
+    if (room.autoStepBots) hub.scheduleRoomBotTurn(roomId);
+    else hub.clearRoomBotTimer(roomId);
+    sendJson(res, 200, { room: enrichRoom(room) });
     return true;
   }
 
   if (subRoute === "bot-speed") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertRequesterMatchesAuth(body.requesterId, authPlayerId);
-    const currentRoom = roomManager.getRoom(roomId);
     if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
       throw createHttpError(403, "Only seated players can change bot move pace");
     }
@@ -233,19 +206,11 @@ export async function handleRoomMatchSubRoute(
     if (room.autoStepBots && room.status === "in_progress") {
       hub.scheduleRoomBotTurn(roomId);
     }
-    sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
-    });
+    sendJson(res, 200, { room: enrichRoom(room) });
     return true;
   }
 
   if (subRoute === "finish-setup") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertRequesterMatchesAuth(body.requesterId, authPlayerId);
-    const currentRoom = roomManager.getRoom(roomId);
     if (
       currentRoom.ownerId !== authPlayerId &&
       !isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)
@@ -255,90 +220,21 @@ export async function handleRoomMatchSubRoute(
     if (currentRoom.ownerId && currentRoom.ownerId !== authPlayerId) {
       throw createHttpError(403, "Only the room host can auto-place setup");
     }
-    const prevStatus = currentRoom.status;
     const nextState = roomManager.finishCatanSetupWithBots(roomId);
     const room = roomManager.getRoom(roomId);
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      nextState,
-      authPlayerId
-    );
-    hub.touchRoomActivity(roomId);
-    hub.broadcastRoomState(roomId);
-    if (room.status !== prevStatus) {
-      hub.broadcastLobbyRooms();
-    }
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
-      state: view,
-      actingPlayerId: actingId,
+    return replyMatchState(room, nextState, {
+      broadcastLobby: room.status !== prevStatus,
     });
-    return true;
   }
 
-  if (subRoute === "undo") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertRequesterMatchesAuth(body.requesterId, authPlayerId);
-    const currentRoom = roomManager.getRoom(roomId);
-    if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
-      throw createHttpError(403, "Only seated players can undo");
-    }
-    const nextState = roomManager.undoAction(roomId, authPlayerId);
-    const room = roomManager.getRoom(roomId);
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      nextState,
-      authPlayerId
-    );
-    hub.touchRoomActivity(roomId);
-    hub.broadcastRoomState(roomId);
-    hub.broadcastLobbyRooms();
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
-      state: view,
-      actingPlayerId: actingId,
-    });
-    return true;
+  if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
+    throw createHttpError(403, `Only seated players can ${subRoute}`);
   }
-
-  if (subRoute === "redo") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertRequesterMatchesAuth(body.requesterId, authPlayerId);
-    const currentRoom = roomManager.getRoom(roomId);
-    if (!isViewerSeatedOrOwnerPure(currentRoom, authPlayerId)) {
-      throw createHttpError(403, "Only seated players can redo");
-    }
-    const nextState = roomManager.redoAction(roomId, authPlayerId);
-    const room = roomManager.getRoom(roomId);
-    const { actingId, view } = buildRedactedStatePayload(
-      roomManager,
-      room,
-      nextState,
-      authPlayerId
-    );
-    hub.touchRoomActivity(roomId);
-    hub.broadcastRoomState(roomId);
-    hub.broadcastLobbyRooms();
-    hub.scheduleRoomBotTurn(roomId);
-    sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
-      state: view,
-      actingPlayerId: actingId,
-    });
-    return true;
-  }
-
-  return false;
+  const nextState =
+    subRoute === "undo"
+      ? roomManager.undoAction(roomId, authPlayerId)
+      : roomManager.redoAction(roomId, authPlayerId);
+  return replyMatchState(roomManager.getRoom(roomId), nextState, {
+    broadcastLobby: true,
+  });
 }

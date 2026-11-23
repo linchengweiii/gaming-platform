@@ -1,5 +1,4 @@
 import type { EdgeId, HexId, VertexId } from "@gaming-platform/core";
-import { NUMBER_TOKEN_PIPS } from "../config/costs-and-limits.ts";
 import type { KnightLevel, KnightPiece } from "../types/domain.ts";
 import type { CatanPlayerState, CatanState } from "../types/state.ts";
 
@@ -314,75 +313,6 @@ export function prepareDisplaceKnightPure(
       : p
   );
   return { candidateVertexIds, playersIfRemoved };
-}
-
-/**
- * Relocates a displaced opponent knight at `displacedVertexId` to the highest-pip connected
- * empty vertex on its owner's road network, or returns it to supply if none exists.
- */
-export function displaceKnightAtVertexPure(
-  state: CatanState,
-  displacedVertexId: VertexId
-): {
-  knights: Record<VertexId, KnightPiece>;
-  players: CatanPlayerState[];
-  relocatedTo: VertexId | null;
-} {
-  const displaced = state.knights[displacedVertexId];
-  if (!displaced) {
-    return {
-      knights: state.knights,
-      players: state.players,
-      relocatedTo: null,
-    };
-  }
-
-  const reachableEmpty = getReachableKnightVertices(
-    state,
-    displaced.ownerId,
-    displacedVertexId,
-    displaced.level,
-    false
-  );
-
-  const withoutOld = Object.fromEntries(
-    Object.entries(state.knights).filter(([vId]) => vId !== displacedVertexId)
-  );
-
-  if (reachableEmpty.length === 0) {
-    return {
-      knights: withoutOld,
-      players: state.players.map((p) =>
-        p.id === displaced.ownerId
-          ? returnKnightToSupplyPure(p, displaced.level)
-          : p
-      ),
-      relocatedTo: null,
-    };
-  }
-
-  const scoreVertex = (vId: VertexId): number => {
-    const vNode = state.topology.vertices[vId];
-    if (!vNode) return 0;
-    return vNode.adjacentHexIds.reduce<number>((sum, hId) => {
-      const tile = state.hexes[hId];
-      const pips = tile?.numberToken ? NUMBER_TOKEN_PIPS[tile.numberToken] ?? 0 : 0;
-      return sum + pips;
-    }, 0);
-  };
-
-  const bestTarget = [...reachableEmpty].sort(
-    (a, b) => scoreVertex(b) - scoreVertex(a)
-  )[0]!;
-
-  return {
-    knights: {
-      ...withoutOld,
-      [bestTarget]: displaced,
-    },
-    players: state.players,
-    relocatedTo: bestTarget,
-  };
 }
 
 /**

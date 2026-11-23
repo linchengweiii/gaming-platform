@@ -4,8 +4,6 @@ import {
   NUMBER_TOKEN_PIPS,
   type ResourceType,
   TERRAIN_TO_RESOURCE,
-  type TradeGoodType,
-  isCommodityType,
 } from "@gaming-platform/catan";
 import { RESOURCE_META } from "../config/catan-palette-config.ts";
 import { getCatanResourceTextLocalized, t } from "../i18n/index.ts";
@@ -89,15 +87,6 @@ export function renderCommodityGlyphSvg(
     case "coin":
       return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2.6" fill="currentColor"/></svg>`;
   }
-}
-
-export function renderTradeGoodGlyphSvg(
-  good: TradeGoodType,
-  size = 14
-): string {
-  return isCommodityType(good)
-    ? renderCommodityGlyphSvg(good, size)
-    : renderResourceGlyphSvg(good, size);
 }
 
 export function buildHexAndHarborParts(

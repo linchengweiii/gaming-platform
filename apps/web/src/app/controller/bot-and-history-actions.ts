@@ -21,6 +21,53 @@ import {
 } from "./context.ts";
 import { evictDeletedActiveRoom } from "./realtime-ws.ts";
 
+function postRoomEndpointAndSync(
+  ctx: AppRuntimeContext,
+  roomId: string,
+  endpoint: string,
+  payload: Record<string, unknown>,
+  opts: {
+    readonly includeState: boolean;
+    readonly preserveFocus?: boolean;
+  }
+): void {
+  void (async () => {
+    try {
+      const res = await ctx.fetchApi(
+        `/api/rooms/${encodeURIComponent(roomId)}/${endpoint}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      if (res.status === 404) {
+        evictDeletedActiveRoom(ctx, roomId);
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json();
+      if (opts.includeState) {
+        ctx.model = resetSubModesPure(
+          upsertRoomFromSummaryPure(
+            ctx.model,
+            data.room,
+            data.state,
+            data.actingPlayerId
+          ).model
+        );
+        ctx.render();
+      } else if (data.room) {
+        ctx.model = upsertRoomFromSummaryPure(ctx.model, data.room).model;
+        if (opts.preserveFocus) ctx.renderPreservingFocus();
+        else ctx.render();
+      }
+    } catch {
+      // Ignore transient network errors
+    }
+  })();
+}
+
 export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
   const stopAutoPlay = (): void => {
     ctx.model = { ...ctx.model, autoPlayBots: false };
@@ -52,46 +99,18 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
       const curActor =
         curState.players?.find((p: any) => p.id === curActorId) ??
         room.players.find((p) => p.id === curActorId);
-      if (!curActor || (!curActor.isBot && !room.allBots)) {
-        return false;
-      }
+      if (!curActor || (!curActor.isBot && !room.allBots)) return false;
     }
 
     if (usesServer) {
       ctx.connectServerRealtime();
-      void (async () => {
-        try {
-          const res = await ctx.fetchApi(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/bot-step`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                requesterId: ctx.model.currentUserId,
-                onlyBots,
-              }),
-            }
-          );
-          if (res.status === 404) {
-            evictDeletedActiveRoom(ctx, room.roomId);
-            return;
-          }
-          if (res.ok) {
-            const data = await res.json();
-            ctx.model = resetSubModesPure(
-              upsertRoomFromSummaryPure(
-                ctx.model,
-                data.room,
-                data.state,
-                data.actingPlayerId
-              ).model
-            );
-            ctx.render();
-          }
-        } catch {
-          // Ignore transient network errors
-        }
-      })();
+      postRoomEndpointAndSync(
+        ctx,
+        room.roomId,
+        "bot-step",
+        { requesterId: ctx.model.currentUserId, onlyBots },
+        { includeState: true }
+      );
       return true;
     }
 
@@ -109,12 +128,12 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     if (!actorId) return false;
     if (onlyBots) {
       const actor = state.players?.find((p: any) => p.id === actorId);
-      if (!actor || (!actor.isBot && !room.allBots)) {
-        return false;
-      }
+      if (!actor || (!actor.isBot && !room.allBots)) return false;
     }
-    const engine = getEngineForGamePure(room.gameId);
-    const action = engine.chooseBotAction(state, actorId);
+    const action = getEngineForGamePure(room.gameId).chooseBotAction(
+      state,
+      actorId
+    );
     if (!action) return false;
     const res = room.session.dispatch(actorId, action);
     if (res.state.phase === "GAME_OVER") {
@@ -133,39 +152,15 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     const room = findActiveRoomPure(ctx.model);
     if (!room) return;
     if (roomUsesServerPure(ctx.model, room)) {
-      void (async () => {
-        try {
-          const res = await ctx.fetchApi(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/finish-setup`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
-            }
-          );
-          if (res.status === 404) {
-            evictDeletedActiveRoom(ctx, room.roomId);
-            return;
-          }
-          if (res.ok) {
-            const data = await res.json();
-            ctx.model = resetSubModesPure(
-              upsertRoomFromSummaryPure(
-                ctx.model,
-                data.room,
-                data.state,
-                data.actingPlayerId
-              ).model
-            );
-            ctx.render();
-          }
-        } catch {
-          // Ignore transient network errors
-        }
-      })();
+      postRoomEndpointAndSync(
+        ctx,
+        room.roomId,
+        "finish-setup",
+        { requesterId: ctx.model.currentUserId },
+        { includeState: true }
+      );
       return;
     }
-
     if (!room.session || room.gameId !== "catan") return;
     stepSetupBotsRecursive(room.session, 40);
     ctx.model = resetSubModesPure(ctx.model);
@@ -178,65 +173,37 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     if (!room) return;
     stopAutoPlay();
     if (roomUsesServerPure(ctx.model, room)) {
-      void (async () => {
-        try {
-          const res = await ctx.fetchApi(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/undo`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
-            }
-          );
-          if (res.status === 404) {
-            evictDeletedActiveRoom(ctx, room.roomId);
-            return;
-          }
-          if (res.ok) {
-            const data = await res.json();
-            ctx.model = resetSubModesPure(
-              upsertRoomFromSummaryPure(
-                ctx.model,
-                data.room,
-                data.state,
-                data.actingPlayerId
-              ).model
-            );
-            ctx.render();
-          }
-        } catch {
-          // Ignore transient network errors
-        }
-      })();
+      postRoomEndpointAndSync(
+        ctx,
+        room.roomId,
+        "undo",
+        { requesterId: ctx.model.currentUserId },
+        { includeState: true }
+      );
       return;
     }
     if (!room.session) return;
     const rawState = room.session.getState();
     const baseActingId = getActingPlayerIdPure(room.gameId, rawState);
-    const undoTargetId = ((): string | null => {
-      if (
-        baseActingId &&
-        canControlPlayerOnDevicePure(ctx.model, room, baseActingId) &&
-        room.session.canPlayerUndo(baseActingId)
-      ) {
-        return baseActingId;
-      }
-      if (room.gameId === "seven_wonders" && rawState.phase === "AGE_DRAFT") {
-        const log = room.session.getActionLog();
-        const last = log[log.length - 1];
-        if (
-          last &&
-          canControlPlayerOnDevicePure(ctx.model, room, last.playerId) &&
-          room.session.canPlayerUndo(last.playerId)
-        ) {
-          return last.playerId;
-        }
-      }
-      return null;
-    })();
-    if (!undoTargetId) {
-      return;
+    const canUndoActor = (id: string | null | undefined): id is string =>
+      Boolean(
+        id &&
+          canControlPlayerOnDevicePure(ctx.model, room, id) &&
+          room.session!.canPlayerUndo(id)
+      );
+
+    let undoTargetId: string | null = null;
+    if (canUndoActor(baseActingId)) {
+      undoTargetId = baseActingId;
+    } else if (
+      room.gameId === "seven_wonders" &&
+      rawState.phase === "AGE_DRAFT"
+    ) {
+      const log = room.session.getActionLog();
+      const lastPlayerId = log[log.length - 1]?.playerId;
+      if (canUndoActor(lastPlayerId)) undoTargetId = lastPlayerId;
     }
+    if (!undoTargetId) return;
     room.session.undoForPlayer(undoTargetId);
     ctx.model = resetSubModesPure(ctx.model);
     ctx.render();
@@ -247,41 +214,17 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     if (!room) return;
     stopAutoPlay();
     if (roomUsesServerPure(ctx.model, room)) {
-      void (async () => {
-        try {
-          const res = await ctx.fetchApi(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/redo`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ requesterId: ctx.model.currentUserId }),
-            }
-          );
-          if (res.status === 404) {
-            evictDeletedActiveRoom(ctx, room.roomId);
-            return;
-          }
-          if (res.ok) {
-            const data = await res.json();
-            ctx.model = resetSubModesPure(
-              upsertRoomFromSummaryPure(
-                ctx.model,
-                data.room,
-                data.state,
-                data.actingPlayerId
-              ).model
-            );
-            ctx.render();
-          }
-        } catch {
-          // Ignore transient network errors
-        }
-      })();
+      postRoomEndpointAndSync(
+        ctx,
+        room.roomId,
+        "redo",
+        { requesterId: ctx.model.currentUserId },
+        { includeState: true }
+      );
       return;
     }
     if (!room.session) return;
-    const rawState = room.session.getState();
-    const actingId = getActingPlayerIdPure(room.gameId, rawState);
+    const actingId = getActingPlayerIdPure(room.gameId, room.session.getState());
     if (
       !actingId ||
       !canControlPlayerOnDevicePure(ctx.model, room, actingId) ||
@@ -298,10 +241,9 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     const room = findActiveRoomPure(ctx.model);
     if (!room) return;
     const usesServer = roomUsesServerPure(ctx.model, room);
-    const currentEnabled = usesServer
+    const next = !(usesServer
       ? room.autoStepBots
-      : ctx.model.autoRespondBotsToHuman;
-    const next = !currentEnabled;
+      : ctx.model.autoRespondBotsToHuman);
     ctx.model = updateRoomInModelPure(
       { ...ctx.model, autoRespondBotsToHuman: next },
       room.roomId,
@@ -309,34 +251,13 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     );
     if (usesServer) {
       ctx.connectServerRealtime();
-      void (async () => {
-        try {
-          const res = await ctx.fetchApi(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/auto-bots`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                enabled: next,
-                requesterId: ctx.model.currentUserId,
-              }),
-            }
-          );
-          if (res.status === 404) {
-            evictDeletedActiveRoom(ctx, room.roomId);
-            return;
-          }
-          if (res.ok) {
-            const data = await res.json();
-            if (data.room) {
-              ctx.model = upsertRoomFromSummaryPure(ctx.model, data.room).model;
-              ctx.renderPreservingFocus();
-            }
-          }
-        } catch {
-          // Ignore transient network errors
-        }
-      })();
+      postRoomEndpointAndSync(
+        ctx,
+        room.roomId,
+        "auto-bots",
+        { enabled: next, requesterId: ctx.model.currentUserId },
+        { includeState: false, preserveFocus: true }
+      );
     }
     ctx.render();
     ctx.scheduleBotAutoResponseIfNeeded();
@@ -349,12 +270,8 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
       ctx.model = { ...ctx.model, autoPlayBots: true };
       ctx.autoPlayTimer = setInterval(() => {
         const room = findActiveRoomPure(ctx.model);
-        if (!room) {
-          stopAutoPlay();
-          return;
-        }
-        const state = getRoomStatePure(ctx.model, room);
-        if (!state) {
+        const state = room ? getRoomStatePure(ctx.model, room) : null;
+        if (!room || !state) {
           stopAutoPlay();
           return;
         }
@@ -409,34 +326,13 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
     );
     if (usesServer) {
       ctx.connectServerRealtime();
-      void (async () => {
-        try {
-          const res = await ctx.fetchApi(
-            `/api/rooms/${encodeURIComponent(room.roomId)}/bot-speed`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                botStepDelayMs: clamped,
-                requesterId: ctx.model.currentUserId,
-              }),
-            }
-          );
-          if (res.status === 404) {
-            evictDeletedActiveRoom(ctx, room.roomId);
-            return;
-          }
-          if (res.ok) {
-            const data = await res.json();
-            if (data.room) {
-              ctx.model = upsertRoomFromSummaryPure(ctx.model, data.room).model;
-              ctx.renderPreservingFocus();
-            }
-          }
-        } catch {
-          // Ignore transient network errors
-        }
-      })();
+      postRoomEndpointAndSync(
+        ctx,
+        room.roomId,
+        "bot-speed",
+        { botStepDelayMs: clamped, requesterId: ctx.model.currentUserId },
+        { includeState: false, preserveFocus: true }
+      );
       ctx.render();
       return;
     }
@@ -450,19 +346,20 @@ export function attachBotAndHistoryActions(ctx: AppRuntimeContext): void {
       room && roomUsesServerPure(ctx.model, room)
         ? room.botStepDelayMs
         : room?.botStepDelayMs ?? ctx.model.botMoveThrottleMs;
-    const nextPreset = getNextBotMoveThrottlePresetPure(currentDelay);
-    setBotMoveThrottleMs(nextPreset.delayMs);
+    setBotMoveThrottleMs(getNextBotMoveThrottlePresetPure(currentDelay).delayMs);
   };
 
-  ctx.stopAutoPlay = stopAutoPlay;
-  ctx.stepOneBotMove = stepOneBotMove;
-  ctx.finishSetupWithBots = finishSetupWithBots;
-  ctx.undoMatch = undoMatch;
-  ctx.redoMatch = redoMatch;
-  ctx.toggleAutoRespondBots = toggleAutoRespondBots;
-  ctx.toggleAutoPlay = toggleAutoPlay;
-  ctx.toggleShowBotMoves = toggleShowBotMoves;
-  ctx.toggleBotFeedHistory = toggleBotFeedHistory;
-  ctx.setBotMoveThrottleMs = setBotMoveThrottleMs;
-  ctx.cycleBotMoveThrottle = cycleBotMoveThrottle;
+  Object.assign(ctx, {
+    stopAutoPlay,
+    stepOneBotMove,
+    finishSetupWithBots,
+    undoMatch,
+    redoMatch,
+    toggleAutoRespondBots,
+    toggleAutoPlay,
+    toggleShowBotMoves,
+    toggleBotFeedHistory,
+    setBotMoveThrottleMs,
+    cycleBotMoveThrottle,
+  });
 }

@@ -5,12 +5,46 @@ import {
   getLegalPirateHexes,
   getLegalRobberHexes,
 } from "@gaming-platform/catan";
+import type { BoardSpotSelection } from "../types.ts";
 import type { AppRuntimeContext } from "./context.ts";
+import { patchModelAndRender } from "./dom-events.ts";
 
 export {
   handleCatanEdgeSpotClick,
   handleCatanVertexSpotClick,
 } from "./catan-spot-vertex-edge-actions.ts";
+
+export function toggleSelectedBoardSpot(
+  ctx: AppRuntimeContext,
+  kind: BoardSpotSelection["kind"],
+  id: string
+): void {
+  const cur = ctx.model.selectedBoardSpot;
+  patchModelAndRender(ctx, {
+    selectedBoardSpot:
+      cur?.kind === kind && cur.id === id ? null : { kind, id },
+  });
+}
+
+const DIRECT_POPOVER_ACTIONS: Readonly<
+  Record<string, (spotId: string) => Record<string, unknown>>
+> = {
+  build_road: (edgeId) => ({ type: "BUILD_ROAD", edgeId }),
+  build_ship: (edgeId) => ({ type: "BUILD_SHIP", edgeId }),
+  setup_road: (edgeId) => ({ type: "PLACE_SETUP_EDGE", edgeId, edgeKind: "road" }),
+  setup_ship: (edgeId) => ({ type: "PLACE_SETUP_EDGE", edgeId, edgeKind: "ship" }),
+  setup_settlement: (vertexId) => ({ type: "PLACE_SETUP_SETTLEMENT", vertexId }),
+  build_settlement: (vertexId) => ({ type: "BUILD_SETTLEMENT", vertexId }),
+  build_city: (vertexId) => ({ type: "BUILD_CITY", vertexId }),
+  build_wall: (vertexId) => ({ type: "BUILD_CITY_WALL", vertexId }),
+  pillage_city: (vertexId) => ({ type: "SELECT_PILLAGED_CITY", vertexId }),
+  build_knight: (vertexId) => ({ type: "BUILD_KNIGHT", vertexId }),
+  activate_knight: (vertexId) => ({ type: "ACTIVATE_KNIGHT", vertexId }),
+  promote_knight: (vertexId) => ({ type: "PROMOTE_KNIGHT", vertexId }),
+  move_robber: (hexId) => ({ type: "MOVE_ROBBER", hexId }),
+  move_pirate: (hexId) => ({ type: "MOVE_PIRATE", hexId }),
+  play_knight: () => ({ type: "PLAY_KNIGHT" }),
+};
 
 export function handleCatanPopoverSpotAction(
   ctx: AppRuntimeContext,
@@ -20,84 +54,30 @@ export function handleCatanPopoverSpotAction(
   chaseVertexAttr: string | null,
   chaseTargetAttr: string | null
 ): void {
-  if (act === "build_road") {
-    ctx.dispatch(actingPlayerId, { type: "BUILD_ROAD", edgeId: spotId });
-  } else if (act === "build_ship") {
-    ctx.dispatch(actingPlayerId, { type: "BUILD_SHIP", edgeId: spotId });
-  } else if (act === "setup_road") {
-    ctx.dispatch(actingPlayerId, {
-      type: "PLACE_SETUP_EDGE",
-      edgeId: spotId,
-      edgeKind: "road",
-    });
-  } else if (act === "setup_ship") {
-    ctx.dispatch(actingPlayerId, {
-      type: "PLACE_SETUP_EDGE",
-      edgeId: spotId,
-      edgeKind: "ship",
-    });
-  } else if (act === "start_move_ship") {
-    ctx.model = {
-      ...ctx.model,
+  const direct = DIRECT_POPOVER_ACTIONS[act];
+  if (direct) {
+    ctx.dispatch(actingPlayerId, direct(spotId));
+    return;
+  }
+
+  if (act === "start_move_ship") {
+    patchModelAndRender(ctx, {
       buildMode: "move_ship",
       selectedMoveFromEdgeId: spotId,
       selectedBoardSpot: null,
-    };
-    ctx.render();
+    });
   } else if (act === "complete_move_ship" && ctx.model.selectedMoveFromEdgeId) {
     ctx.dispatch(actingPlayerId, {
       type: "MOVE_SHIP",
       fromEdgeId: ctx.model.selectedMoveFromEdgeId,
       toEdgeId: spotId,
     });
-  } else if (act === "setup_settlement") {
-    ctx.dispatch(actingPlayerId, {
-      type: "PLACE_SETUP_SETTLEMENT",
-      vertexId: spotId,
-    });
-  } else if (act === "build_settlement") {
-    ctx.dispatch(actingPlayerId, {
-      type: "BUILD_SETTLEMENT",
-      vertexId: spotId,
-    });
-  } else if (act === "build_city") {
-    ctx.dispatch(actingPlayerId, {
-      type: "BUILD_CITY",
-      vertexId: spotId,
-    });
-  } else if (act === "build_wall") {
-    ctx.dispatch(actingPlayerId, {
-      type: "BUILD_CITY_WALL",
-      vertexId: spotId,
-    });
-  } else if (act === "pillage_city") {
-    ctx.dispatch(actingPlayerId, {
-      type: "SELECT_PILLAGED_CITY",
-      vertexId: spotId,
-    });
-  } else if (act === "build_knight") {
-    ctx.dispatch(actingPlayerId, {
-      type: "BUILD_KNIGHT",
-      vertexId: spotId,
-    });
-  } else if (act === "activate_knight") {
-    ctx.dispatch(actingPlayerId, {
-      type: "ACTIVATE_KNIGHT",
-      vertexId: spotId,
-    });
-  } else if (act === "promote_knight") {
-    ctx.dispatch(actingPlayerId, {
-      type: "PROMOTE_KNIGHT",
-      vertexId: spotId,
-    });
   } else if (act === "start_move_knight") {
-    ctx.model = {
-      ...ctx.model,
+    patchModelAndRender(ctx, {
       buildMode: "move_knight",
       selectedMoveKnightFromVertexId: spotId,
       selectedBoardSpot: null,
-    };
-    ctx.render();
+    });
   } else if (
     act === "complete_move_knight" &&
     ctx.model.selectedMoveKnightFromVertexId
@@ -108,38 +88,27 @@ export function handleCatanPopoverSpotAction(
       toVertexId: spotId,
     });
   } else if (act === "start_chase_robber") {
-    ctx.model = {
-      ...ctx.model,
+    patchModelAndRender(ctx, {
       buildMode: "chase_robber",
       selectedChaseKnightVertexId: spotId,
       selectedBoardSpot: null,
-    };
-    ctx.render();
+    });
   } else if (act === "complete_chase_robber") {
     const chaseVId =
       chaseVertexAttr ?? ctx.model.selectedChaseKnightVertexId ?? "";
-    const targetKind = (chaseTargetAttr as "robber" | "pirate") ?? "robber";
     if (chaseVId) {
       ctx.dispatch(actingPlayerId, {
         type: "CHASE_ROBBER_WITH_KNIGHT",
         vertexId: chaseVId,
         hexId: spotId,
-        targetKind,
+        targetKind: (chaseTargetAttr as "robber" | "pirate") ?? "robber",
       });
     }
-  } else if (act === "move_robber") {
-    ctx.dispatch(actingPlayerId, { type: "MOVE_ROBBER", hexId: spotId });
-  } else if (act === "move_pirate") {
-    ctx.dispatch(actingPlayerId, { type: "MOVE_PIRATE", hexId: spotId });
-  } else if (act === "play_knight") {
-    ctx.dispatch(actingPlayerId, { type: "PLAY_KNIGHT" });
   } else if (act === "open_trade") {
-    ctx.model = {
-      ...ctx.model,
+    patchModelAndRender(ctx, {
       selectedBoardSpot: null,
       buildMode: "domestic_trade",
-    };
-    ctx.render();
+    });
   }
 }
 
@@ -150,19 +119,17 @@ export function handleCatanHexSpotClick(
   hexId: string
 ): void {
   if (state.phase === "MOVE_ROBBER_OR_PIRATE") {
-    if (
-      ctx.model.robberOrPirateMode === "pirate" &&
-      state.config.enableSeafarers
-    ) {
-      if (getLegalPirateHexes(state, actingPlayerId).includes(hexId)) {
-        ctx.dispatch(actingPlayerId, { type: "MOVE_PIRATE", hexId });
-        return;
-      }
-    } else {
-      if (getLegalRobberHexes(state, actingPlayerId).includes(hexId)) {
-        ctx.dispatch(actingPlayerId, { type: "MOVE_ROBBER", hexId });
-        return;
-      }
+    const movePirate =
+      ctx.model.robberOrPirateMode === "pirate" && state.config.enableSeafarers;
+    const legalHexes = movePirate
+      ? getLegalPirateHexes(state, actingPlayerId)
+      : getLegalRobberHexes(state, actingPlayerId);
+    if (legalHexes.includes(hexId)) {
+      ctx.dispatch(actingPlayerId, {
+        type: movePirate ? "MOVE_PIRATE" : "MOVE_ROBBER",
+        hexId,
+      });
+      return;
     }
   } else if (
     state.config.enableCitiesAndKnights &&
@@ -191,20 +158,21 @@ export function handleCatanHexSpotClick(
     ctx.model.buildMode === "progress_card" &&
     ctx.model.selectedProgressCardId
   ) {
-    const actingPlayer = state.players.find((p) => p.id === actingPlayerId);
-    const card = actingPlayer?.progressCards.find(
-      (c) => c.id === ctx.model.selectedProgressCardId
-    );
-    if (card?.type === "bishop") {
-      if (getLegalRobberHexes(state, actingPlayerId).includes(hexId)) {
-        ctx.dispatch(actingPlayerId, {
-          type: "PLAY_PROGRESS_CARD",
-          cardId: card.id,
-          params: { hexId },
-        });
-        return;
-      }
-    } else if (card?.type === "merchant") {
+    const card = state.players
+      .find((p) => p.id === actingPlayerId)
+      ?.progressCards.find((c) => c.id === ctx.model.selectedProgressCardId);
+    if (
+      card?.type === "bishop" &&
+      getLegalRobberHexes(state, actingPlayerId).includes(hexId)
+    ) {
+      ctx.dispatch(actingPlayerId, {
+        type: "PLAY_PROGRESS_CARD",
+        cardId: card.id,
+        params: { hexId },
+      });
+      return;
+    }
+    if (card?.type === "merchant") {
       const tile = state.hexes[hexId];
       const touchesOwn = Boolean(
         tile &&
@@ -221,26 +189,22 @@ export function handleCatanHexSpotClick(
         });
         return;
       }
-    } else if (card?.type === "inventor") {
+    }
+    if (card?.type === "inventor") {
       const t = state.hexes[hexId];
       const swappable = Boolean(
         t &&
           t.numberToken !== null &&
-          t.numberToken !== 2 &&
-          t.numberToken !== 6 &&
-          t.numberToken !== 8 &&
-          t.numberToken !== 12 &&
+          ![2, 6, 8, 12].includes(t.numberToken) &&
           t.terrain !== "sea" &&
           t.terrain !== "fog"
       );
       if (swappable) {
         if (!ctx.model.inventorHex1) {
-          ctx.model = {
-            ...ctx.model,
+          patchModelAndRender(ctx, {
             inventorHex1: hexId,
             selectedBoardSpot: null,
-          };
-          ctx.render();
+          });
           return;
         }
         if (ctx.model.inventorHex1 !== hexId) {
@@ -254,13 +218,6 @@ export function handleCatanHexSpotClick(
       }
     }
   }
-  ctx.model = {
-    ...ctx.model,
-    selectedBoardSpot:
-      ctx.model.selectedBoardSpot?.kind === "hex" &&
-      ctx.model.selectedBoardSpot.id === hexId
-        ? null
-        : { kind: "hex", id: hexId },
-  };
-  ctx.render();
+
+  toggleSelectedBoardSpot(ctx, "hex", hexId);
 }

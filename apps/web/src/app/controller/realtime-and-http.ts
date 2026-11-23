@@ -192,6 +192,15 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
   const fetchLobbyRooms = async (): Promise<void> => {
     if (!ctx.model.useServerBackend) return;
     const requestedPlayerId = ctx.model.currentUserId;
+    const markUnreachable = (): void => {
+      ctx.model = {
+        ...ctx.model,
+        serverReachable: false,
+        createRoomMode: "offline",
+      };
+      ctx.scheduleWsReconnect();
+      if (ctx.model.viewMode === "lobby") ctx.renderPreservingFocus();
+    };
     try {
       const res = await ctx.fetchApi(`/api/rooms`, undefined, {
         guestId: requestedPlayerId || null,
@@ -216,22 +225,12 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
           clearTimeout(ctx.wsReconnectTimer);
           ctx.wsReconnectTimer = null;
         }
-        if (ctx.model.viewMode === "lobby") {
-          ctx.renderPreservingFocus();
-        }
+        if (ctx.model.viewMode === "lobby") ctx.renderPreservingFocus();
         return;
       }
 
       if (!res.ok || !ct.includes("application/json")) {
-        ctx.model = {
-          ...ctx.model,
-          serverReachable: false,
-          createRoomMode: "offline",
-        };
-        ctx.scheduleWsReconnect();
-        if (ctx.model.viewMode === "lobby") {
-          ctx.renderPreservingFocus();
-        }
+        markUnreachable();
         return;
       }
 
@@ -288,20 +287,10 @@ export function attachRealtimeAndHttpActions(ctx: AppRuntimeContext): void {
           clearActiveRoomIdFromStorage();
           ctx.syncUrlRoomHash(null);
         }
-        if (ctx.model.viewMode === "lobby") {
-          ctx.renderPreservingFocus();
-        }
+        if (ctx.model.viewMode === "lobby") ctx.renderPreservingFocus();
       }
     } catch {
-      ctx.model = {
-        ...ctx.model,
-        serverReachable: false,
-        createRoomMode: "offline",
-      };
-      ctx.scheduleWsReconnect();
-      if (ctx.model.viewMode === "lobby") {
-        ctx.renderPreservingFocus();
-      }
+      markUnreachable();
     }
   };
 

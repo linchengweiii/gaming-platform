@@ -4,7 +4,6 @@ import {
   type HexBoardTopology,
   type HexId,
   type RngState,
-  type SeededRNG,
   type VertexId,
   axialDistance,
   hexId,
@@ -351,15 +350,4 @@ export function createDevCardDeckPure(
   ];
 
   return shufflePure(rngState, deck);
-}
-
-export function createDevCardDeck(
-  isExpanded: boolean,
-  rng: SeededRNG
-): DevCardType[] {
-  const [deck, nextState] = createDevCardDeckPure(isExpanded, rng.getState());
-  while (rng.getState() !== nextState) {
-    rng.nextFloat();
-  }
-  return deck;
 }

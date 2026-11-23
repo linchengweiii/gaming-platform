@@ -7,7 +7,6 @@ export {
   getRightNeighborIndex,
   hasDuplicateCardName,
   hasWonderStageEffect,
-  isManufacturedGood,
   isRawResource,
 } from "./rules/helpers.ts";
 export {

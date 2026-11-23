@@ -33,174 +33,105 @@ export function renderDomesticTradeSubModalPure(
 ): string {
   const locale = model.locale;
   const pColor = actingPlayer.color;
-  if (state.config.enableCitiesAndKnights) {
-    const goodRatios = getPlayerGoodTradeRatios(state, actingPlayer.id);
-    const getDomGive = (g: TradeGoodType): number =>
-      isCommodityType(g) ? model.domesticCommGive[g] : model.domesticGive[g];
-    const getDomWant = (g: TradeGoodType): number =>
-      isCommodityType(g) ? model.domesticCommWant[g] : model.domesticWant[g];
+  const isCk = Boolean(state.config.enableCitiesAndKnights);
+  const goods: readonly TradeGoodType[] = isCk ? TRADE_GOODS : RESOURCES;
+  const getGive = (g: TradeGoodType): number =>
+    isCommodityType(g) ? model.domesticCommGive[g] : model.domesticGive[g];
+  const getWant = (g: TradeGoodType): number =>
+    isCommodityType(g) ? model.domesticCommWant[g] : model.domesticWant[g];
 
-    const giveTotal =
-      totalResourceCount(model.domesticGive) +
-      totalCommodityCount(model.domesticCommGive);
-    const wantTotal =
-      totalResourceCount(model.domesticWant) +
-      totalCommodityCount(model.domesticCommWant);
-    const canPropose =
-      giveTotal > 0 &&
-      wantTotal > 0 &&
-      TRADE_GOODS.every((g) => !(getDomGive(g) > 0 && getDomWant(g) > 0)) &&
-      hasResources(actingPlayer.resources, model.domesticGive) &&
-      hasCommodities(actingPlayer.commodities, model.domesticCommGive);
-
-    const giveCardsPreview = TRADE_GOODS.filter((g) => getDomGive(g) > 0)
-      .map(
-        (g) =>
-          `<span class="map-yield-chip">−${getDomGive(g)} ${renderMiniTradeGoodCardSvg(g, 32, 20)}</span>`
-      )
-      .join("");
-    const wantCardsPreview = TRADE_GOODS.filter((g) => getDomWant(g) > 0)
-      .map(
-        (g) =>
-          `<span class="map-yield-chip">+${getDomWant(g)} ${renderMiniTradeGoodCardSvg(g, 32, 20)}</span>`
-      )
-      .join("");
-
-    return `<div class="sub-modal sub-modal--trade">
-          <div class="ga-trade-head">
-            ${renderTradeModeTabsPure(model, pColor)}
-            <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
-              <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">${escapeAttr(t(locale, "catan.trade.ckDomesticBadge"))}</span>
-              <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
-            </div>
-          </div>
-
-          <div class="ga-res-matrix ga-res-matrix--ck">
-            ${renderTradeGoodColumnHeadersPure(
-              actingPlayer,
-              undefined,
-              goodRatios,
-              locale
-            )}
-
-            <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.offer"))}
-            </div>
-            ${TRADE_GOODS.map((g) => {
-              const val = getDomGive(g);
-              const max = getPlayerGoodCount(actingPlayer, g);
-              return `
-                <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-give" : ""}">
-                  <button type="button" data-ck-dom-give-dec="${g}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
-                  <span class="ga-res-step-val">${val}</span>
-                  <button type="button" data-ck-dom-give="${g}" class="ga-res-step-btn" ${val >= max ? "disabled" : ""}>+</button>
-                </div>
-              `;
-            }).join("")}
-
-            <div class="ga-res-matrix__row-label">
-              <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.request"))}
-            </div>
-            ${TRADE_GOODS.map((g) => {
-              const val = getDomWant(g);
-              return `
-                <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-want" : ""}">
-                  <button type="button" data-ck-dom-want-dec="${g}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
-                  <span class="ga-res-step-val">${val}</span>
-                  <button type="button" data-ck-dom-want="${g}" class="ga-res-step-btn">+</button>
-                </div>
-              `;
-            }).join("")}
-          </div>
-
-          <div class="ga-trade-preview">
-            <div class="ga-trade-bundle">
-              ${
-                giveCardsPreview || wantCardsPreview
-                  ? `${giveCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noOffer"))}</span>`} ${DRAWN_ARROW_SVG} ${wantCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noRequest"))}</span>`}`
-                  : `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.ckDomesticFootnote"))}</span>`
-              }
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" id="btn-dom-reset" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.reset"))}</button>
-              <button type="button" id="btn-dom-propose" class="btn btn--primary btn--sm action-btn-graphic ga-trade-submit-btn" ${
-                !canPropose ? "disabled" : ""
-              }>
-                ${renderActionPieceIconSvg("domestic_trade", pColor, 16)}
-                <span>${escapeAttr(t(locale, "catan.trade.sendOffer"))}</span>
-              </button>
-            </div>
-          </div>
-        </div>`;
-  }
-
-  const ratios = getPlayerTradeRatios(state, actingPlayer.id);
+  const giveTotal =
+    totalResourceCount(model.domesticGive) +
+    (isCk ? totalCommodityCount(model.domesticCommGive) : 0);
+  const wantTotal =
+    totalResourceCount(model.domesticWant) +
+    (isCk ? totalCommodityCount(model.domesticCommWant) : 0);
   const canPropose =
-    totalResourceCount(model.domesticGive) > 0 &&
-    totalResourceCount(model.domesticWant) > 0 &&
-    RESOURCES.every(
-      (r) => !(model.domesticGive[r] > 0 && model.domesticWant[r] > 0)
-    ) &&
-    hasResources(actingPlayer.resources, model.domesticGive);
+    giveTotal > 0 &&
+    wantTotal > 0 &&
+    goods.every((g) => !(getGive(g) > 0 && getWant(g) > 0)) &&
+    hasResources(actingPlayer.resources, model.domesticGive) &&
+    (!isCk || hasCommodities(actingPlayer.commodities, model.domesticCommGive));
 
-  const giveCardsPreview = RESOURCES.filter((r) => model.domesticGive[r] > 0)
-    .map(
-      (r) =>
-        `<span class="map-yield-chip">−${model.domesticGive[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
-    )
+  const renderCard = (g: TradeGoodType): string =>
+    isCk
+      ? renderMiniTradeGoodCardSvg(g, 32, 20)
+      : renderMiniResourceCardSvg(g as (typeof RESOURCES)[number], 34, 22);
+  const giveCardsPreview = goods
+    .filter((g) => getGive(g) > 0)
+    .map((g) => `<span class="map-yield-chip">−${getGive(g)} ${renderCard(g)}</span>`)
     .join("");
-  const wantCardsPreview = RESOURCES.filter((r) => model.domesticWant[r] > 0)
-    .map(
-      (r) =>
-        `<span class="map-yield-chip">+${model.domesticWant[r]} ${renderMiniResourceCardSvg(r, 34, 22)}</span>`
-    )
+  const wantCardsPreview = goods
+    .filter((g) => getWant(g) > 0)
+    .map((g) => `<span class="map-yield-chip">+${getWant(g)} ${renderCard(g)}</span>`)
     .join("");
+
+  const dataPrefix = isCk ? "data-ck-dom" : "data-dom";
+  const headersHtml = isCk
+    ? renderTradeGoodColumnHeadersPure(
+        actingPlayer,
+        undefined,
+        getPlayerGoodTradeRatios(state, actingPlayer.id),
+        locale
+      )
+    : renderResourceColumnHeadersPure(
+        actingPlayer.resources,
+        undefined,
+        getPlayerTradeRatios(state, actingPlayer.id),
+        locale
+      );
 
   return `<div class="sub-modal sub-modal--trade">
         <div class="ga-trade-head">
           ${renderTradeModeTabsPure(model, pColor)}
           <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
-            <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">${escapeAttr(t(locale, "catan.trade.baseDomesticBadge"))}</span>
+            <span class="ga-chip ${canPropose ? "ga-chip--ok" : ""}">${escapeAttr(
+              t(
+                locale,
+                isCk
+                  ? "catan.trade.ckDomesticBadge"
+                  : "catan.trade.baseDomesticBadge"
+              )
+            )}</span>
             <button type="button" data-close-submodal="true" class="btn btn--secondary btn--sm">${escapeAttr(t(locale, "common.close"))}</button>
           </div>
         </div>
 
-        <div class="ga-res-matrix">
-          ${renderResourceColumnHeadersPure(
-            actingPlayer.resources,
-            undefined,
-            ratios,
-            locale
-          )}
+        <div class="${isCk ? "ga-res-matrix ga-res-matrix--ck" : "ga-res-matrix"}">
+          ${headersHtml}
 
           <div class="ga-res-matrix__row-label">
             <span class="ga-res-row-dot ga-res-row-dot--give"></span>${escapeAttr(t(locale, "catan.trade.offer"))}
           </div>
-          ${RESOURCES.map((r) => {
-            const val = model.domesticGive[r];
-            const max = actingPlayer.resources[r];
-            return `
+          ${goods
+            .map((g) => {
+              const val = getGive(g);
+              const max = getPlayerGoodCount(actingPlayer, g);
+              return `
               <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-give" : ""}">
-                <button type="button" data-dom-give-dec="${r}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
+                <button type="button" ${dataPrefix}-give-dec="${g}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
                 <span class="ga-res-step-val">${val}</span>
-                <button type="button" data-dom-give="${r}" class="ga-res-step-btn" ${val >= max ? "disabled" : ""}>+</button>
+                <button type="button" ${dataPrefix}-give="${g}" class="ga-res-step-btn" ${val >= max ? "disabled" : ""}>+</button>
               </div>
             `;
-          }).join("")}
+            })
+            .join("")}
 
           <div class="ga-res-matrix__row-label">
             <span class="ga-res-row-dot ga-res-row-dot--want"></span>${escapeAttr(t(locale, "catan.trade.request"))}
           </div>
-          ${RESOURCES.map((r) => {
-            const val = model.domesticWant[r];
-            return `
+          ${goods
+            .map((g) => {
+              const val = getWant(g);
+              return `
               <div class="ga-res-cell ${val > 0 ? "ga-res-cell--active-want" : ""}">
-                <button type="button" data-dom-want-dec="${r}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
+                <button type="button" ${dataPrefix}-want-dec="${g}" class="ga-res-step-btn" ${val <= 0 ? "disabled" : ""}>−</button>
                 <span class="ga-res-step-val">${val}</span>
-                <button type="button" data-dom-want="${r}" class="ga-res-step-btn">+</button>
+                <button type="button" ${dataPrefix}-want="${g}" class="ga-res-step-btn">+</button>
               </div>
             `;
-          }).join("")}
+            })
+            .join("")}
         </div>
 
         <div class="ga-trade-preview">
@@ -208,7 +139,7 @@ export function renderDomesticTradeSubModalPure(
             ${
               giveCardsPreview || wantCardsPreview
                 ? `${giveCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noOffer"))}</span>`} ${DRAWN_ARROW_SVG} ${wantCardsPreview || `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.noRequest"))}</span>`}`
-                : `<span class="t-label muted">${escapeAttr(t(locale, "catan.trade.baseBankFootnote"))}</span>`
+                : `<span class="t-label muted">${escapeAttr(t(locale, isCk ? "catan.trade.ckDomesticFootnote" : "catan.trade.baseBankFootnote"))}</span>`
             }
           </div>
           <div style="display: flex; gap: 6px;">

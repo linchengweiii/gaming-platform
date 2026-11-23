@@ -30,7 +30,6 @@ export {
 } from "./cities-and-knights/improvements.ts";
 export {
   canPromoteKnightAtVertex,
-  displaceKnightAtVertexPure,
   getBarbarianStrength,
   getDiplomatRemovableRoadEdges,
   getLegalActivateKnightVertices,

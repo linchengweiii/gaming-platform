@@ -225,15 +225,3 @@ export function checkAndAssignWinnerPure(
   }
   return { state: awarded, won: false };
 }
-
-/**
- * Backwards-compatible wrapper around `checkAndAssignWinnerPure`.
- */
-export function checkAndAssignWinner(
-  state: CatanState,
-  actingPlayerId: string
-): boolean {
-  const result = checkAndAssignWinnerPure(state, actingPlayerId);
-  Object.assign(state, result.state);
-  return result.won;
-}

@@ -1,6 +1,5 @@
 export { PLAYER_COLORS } from "./config/costs-and-limits.ts";
 export {
-  addResources,
   addResourcesPure,
   emptyResources,
   getPlayerResourceCount,
@@ -8,12 +7,10 @@ export {
   getPlayerTradeRatios,
   hasResources,
   isExpanded56State,
-  subtractResources,
   subtractResourcesPure,
   totalResourceCount,
 } from "./rules/helpers.ts";
 export {
-  checkAndAssignWinner,
   checkAndAssignWinnerPure,
   computePlayerVictoryPoints,
   recalculateAwards,

@@ -1,3 +1,4 @@
+import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import { t } from "../../i18n/index.ts";
 import { resolveClientRoomIdPure } from "../helpers/room-hash-and-links.ts";
 import {
@@ -10,7 +11,6 @@ import {
   enterOfflineRoomPure,
   leaveOfflineRoomPure,
 } from "../reducers/session-init-and-signin.ts";
-import { DEFAULT_CATAN_MAP_VIEWPORT } from "../../catan-graphics/viewport.ts";
 import { resetSubModesPure } from "../reducers/trade-and-draft-reducers.ts";
 import type { ClientRoom } from "../types.ts";
 import {
@@ -21,6 +21,72 @@ import {
 import { evictDeletedActiveRoom } from "./realtime-ws.ts";
 
 export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
+  const commitEnteredServerRoom = (
+    latestRoom: ClientRoom,
+    resetViewportIfSwitched: boolean
+  ): void => {
+    saveActiveRoomIdToStorage(latestRoom.roomId);
+    ctx.syncUrlRoomHash(latestRoom.roomId);
+    ctx.model = resetSubModesPure({
+      ...ctx.model,
+      lobbyGameFilter: latestRoom.gameId,
+      createRoomGameId: latestRoom.gameId,
+      activeRoomId: latestRoom.roomId,
+      inspectingSetupDuringMatch: false,
+      viewMode: latestRoom.status === "in_progress" ? "in_game" : "room_setup",
+      ...(resetViewportIfSwitched && latestRoom.roomId !== ctx.model.activeRoomId
+        ? { catanMapViewport: DEFAULT_CATAN_MAP_VIEWPORT }
+        : {}),
+    });
+    ctx.connectServerRealtime();
+    ctx.sendWsMessage({
+      type: "SUBSCRIBE_ROOM",
+      roomId: latestRoom.roomId,
+      playerId: ctx.model.currentUserId,
+    });
+    ctx.render();
+  };
+
+  const joinServerRoomById = async (
+    targetRoomId: string,
+    requestedPlayerId: string,
+    capturedEpoch: number,
+    onFail: () => void
+  ): Promise<ClientRoom | null> => {
+    const joinRes = await ctx.fetchApi(
+      `/api/rooms/${encodeURIComponent(targetRoomId)}/join`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerId: requestedPlayerId,
+          playerName: ctx.model.currentUserName,
+        }),
+      },
+      { guestId: requestedPlayerId }
+    );
+    if (ctx.navEpoch !== capturedEpoch) return null;
+    if (joinRes.status === 404) {
+      evictDeletedActiveRoom(ctx, targetRoomId);
+      return null;
+    }
+    const joinData = await joinRes.json();
+    if (ctx.navEpoch !== capturedEpoch) return null;
+    if (!joinRes.ok) {
+      alert(joinData.error ?? t(ctx.model.locale, "alert.unableJoinRoom"));
+      onFail();
+      return null;
+    }
+    const upserted = upsertRoomFromSummaryPure(
+      ctx.model,
+      joinData.room,
+      joinData.state,
+      joinData.actingPlayerId
+    );
+    ctx.model = upserted.model;
+    return upserted.room;
+  };
+
   const enterOrJoinRoom = (rawRoomId: string): void => {
     ctx.navEpoch += 1;
     const capturedEpoch = ctx.navEpoch;
@@ -31,96 +97,53 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
     const room = ctx.model.rooms[roomId];
 
     if (!room) {
-      if (ctx.model.useServerBackend) {
-        void (async () => {
-          try {
-            const getRes = await ctx.fetchApi(
-              `/api/rooms/${encodeURIComponent(roomId)}`,
-              undefined,
-              { guestId: requestedPlayerId }
-            );
-            if (ctx.navEpoch !== capturedEpoch) return;
-            if (!getRes.ok) {
-              clearActiveRoomIdFromStorage();
-              ctx.syncUrlRoomHash(null);
-              ctx.render();
-              return;
-            }
-            const getData = await getRes.json();
-            if (ctx.navEpoch !== capturedEpoch) return;
-            const fetchedStatus = getData.room?.status ?? "lobby";
-            let latestRoom: ClientRoom;
-
-            if (fetchedStatus === "lobby" || fetchedStatus === "finished") {
-              const joinRes = await ctx.fetchApi(
-                `/api/rooms/${encodeURIComponent(getData.room.roomId)}/join`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    playerId: requestedPlayerId,
-                    playerName: ctx.model.currentUserName,
-                  }),
-                },
-                { guestId: requestedPlayerId }
-              );
-              const joinData = await joinRes.json();
-              if (ctx.navEpoch !== capturedEpoch) return;
-              if (!joinRes.ok) {
-                alert(joinData.error ?? t(ctx.model.locale, "alert.unableJoinRoom"));
-                clearActiveRoomIdFromStorage();
-                ctx.syncUrlRoomHash(null);
-                ctx.render();
-                return;
-              }
-              const upserted = upsertRoomFromSummaryPure(
-                ctx.model,
-                joinData.room,
-                joinData.state,
-                joinData.actingPlayerId
-              );
-              ctx.model = upserted.model;
-              latestRoom = upserted.room;
-            } else {
-              const upserted = upsertRoomFromSummaryPure(
-                ctx.model,
-                getData.room,
-                getData.state,
-                getData.actingPlayerId
-              );
-              ctx.model = upserted.model;
-              latestRoom = upserted.room;
-            }
-
-            saveActiveRoomIdToStorage(latestRoom.roomId);
-            ctx.syncUrlRoomHash(latestRoom.roomId);
-            ctx.model = resetSubModesPure({
-              ...ctx.model,
-              lobbyGameFilter: latestRoom.gameId,
-              createRoomGameId: latestRoom.gameId,
-              activeRoomId: latestRoom.roomId,
-              inspectingSetupDuringMatch: false,
-              viewMode:
-                latestRoom.status === "in_progress" ? "in_game" : "room_setup",
-              catanMapViewport:
-                latestRoom.roomId !== ctx.model.activeRoomId
-                  ? DEFAULT_CATAN_MAP_VIEWPORT
-                  : ctx.model.catanMapViewport,
-            });
-            ctx.connectServerRealtime();
-            ctx.sendWsMessage({
-              type: "SUBSCRIBE_ROOM",
-              roomId: latestRoom.roomId,
-              playerId: ctx.model.currentUserId,
-            });
-            ctx.render();
-          } catch {
-            if (ctx.navEpoch !== capturedEpoch) return;
+      if (!ctx.model.useServerBackend) return;
+      void (async () => {
+        try {
+          const getRes = await ctx.fetchApi(
+            `/api/rooms/${encodeURIComponent(roomId)}`,
+            undefined,
+            { guestId: requestedPlayerId }
+          );
+          if (ctx.navEpoch !== capturedEpoch) return;
+          if (!getRes.ok) {
+            clearActiveRoomIdFromStorage();
             ctx.syncUrlRoomHash(null);
             ctx.render();
+            return;
           }
-        })();
-      }
+          const getData = await getRes.json();
+          if (ctx.navEpoch !== capturedEpoch) return;
+          const fetchedStatus = getData.room?.status ?? "lobby";
+          const latestRoom =
+            fetchedStatus === "lobby" || fetchedStatus === "finished"
+              ? await joinServerRoomById(
+                  getData.room.roomId,
+                  requestedPlayerId,
+                  capturedEpoch,
+                  () => {
+                    clearActiveRoomIdFromStorage();
+                    ctx.syncUrlRoomHash(null);
+                    ctx.render();
+                  }
+                )
+              : (() => {
+                  const upserted = upsertRoomFromSummaryPure(
+                    ctx.model,
+                    getData.room,
+                    getData.state,
+                    getData.actingPlayerId
+                  );
+                  ctx.model = upserted.model;
+                  return upserted.room;
+                })();
+          if (latestRoom) commitEnteredServerRoom(latestRoom, true);
+        } catch {
+          if (ctx.navEpoch !== capturedEpoch) return;
+          ctx.syncUrlRoomHash(null);
+          ctx.render();
+        }
+      })();
       return;
     }
 
@@ -132,47 +155,23 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
       inspectingSetupDuringMatch: false,
     };
     saveActiveRoomIdToStorage(room.roomId);
-    if (!room.isOfflineLocal) {
-      ctx.syncUrlRoomHash(room.roomId);
-    }
+    if (!room.isOfflineLocal) ctx.syncUrlRoomHash(room.roomId);
 
     if (roomUsesServerPure(ctx.model, room)) {
       void (async () => {
         try {
-          let latestRoom = room;
+          let latestRoom: ClientRoom | null = room;
           if (room.status === "lobby" || room.status === "finished") {
-            const joinRes = await ctx.fetchApi(
-              `/api/rooms/${encodeURIComponent(room.roomId)}/join`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  playerId: requestedPlayerId,
-                  playerName: ctx.model.currentUserName,
-                }),
-              },
-              { guestId: requestedPlayerId }
+            latestRoom = await joinServerRoomById(
+              room.roomId,
+              requestedPlayerId,
+              capturedEpoch,
+              () => {
+                ctx.exitRoomToLobby();
+                ctx.render();
+              }
             );
-            if (ctx.navEpoch !== capturedEpoch) return;
-            if (joinRes.status === 404) {
-              evictDeletedActiveRoom(ctx, room.roomId);
-              return;
-            }
-            const joinData = await joinRes.json();
-            if (!joinRes.ok) {
-              alert(joinData.error ?? t(ctx.model.locale, "alert.unableJoinRoom"));
-              ctx.exitRoomToLobby();
-              ctx.render();
-              return;
-            }
-            const upserted = upsertRoomFromSummaryPure(
-              ctx.model,
-              joinData.room,
-              joinData.state,
-              joinData.actingPlayerId
-            );
-            ctx.model = upserted.model;
-            latestRoom = upserted.room;
+            if (!latestRoom) return;
           } else {
             const getRes = await ctx.fetchApi(
               `/api/rooms/${encodeURIComponent(room.roomId)}`,
@@ -196,25 +195,8 @@ export function attachRoomMembershipActions(ctx: AppRuntimeContext): void {
               latestRoom = upserted.room;
             }
           }
-
           if (ctx.navEpoch !== capturedEpoch) return;
-          ctx.syncUrlRoomHash(latestRoom.roomId);
-          ctx.model = resetSubModesPure({
-            ...ctx.model,
-            lobbyGameFilter: latestRoom.gameId,
-            createRoomGameId: latestRoom.gameId,
-            activeRoomId: latestRoom.roomId,
-            inspectingSetupDuringMatch: false,
-            viewMode:
-              latestRoom.status === "in_progress" ? "in_game" : "room_setup",
-          });
-          ctx.connectServerRealtime();
-          ctx.sendWsMessage({
-            type: "SUBSCRIBE_ROOM",
-            roomId: latestRoom.roomId,
-            playerId: ctx.model.currentUserId,
-          });
-          ctx.render();
+          commitEnteredServerRoom(latestRoom, false);
         } catch (err: any) {
           if (ctx.navEpoch !== capturedEpoch) return;
           alert(

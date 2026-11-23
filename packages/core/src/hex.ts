@@ -95,11 +95,6 @@ export function hexId(q: number, r: number): HexId {
   return `${q},${r}`;
 }
 
-export function parseHexId(id: HexId): AxialCoord {
-  const [qStr, rStr] = id.split(",");
-  return { q: Number(qStr), r: Number(rStr) };
-}
-
 export function vertexId(q: number, r: number, dir: VertexDir): VertexId {
   return `${q},${r}:${dir}`;
 }

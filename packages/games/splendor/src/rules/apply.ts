@@ -33,6 +33,45 @@ import {
 } from "./turn-flow.ts";
 import { getSplendorLegalActions } from "./legal-actions.ts";
 
+function validateTokenCounts(
+  payload: unknown,
+  allowedColors: readonly string[],
+  invalidPayloadMsg: string,
+  colorErrPrefix: string,
+  qtyErrPrefix: string
+): void {
+  if (!payload || typeof payload !== "object") {
+    throw new Error(invalidPayloadMsg);
+  }
+  for (const [key, rawVal] of Object.entries(payload)) {
+    if (!allowedColors.includes(key)) {
+      throw new Error(`${colorErrPrefix}: ${key}`);
+    }
+    if (
+      rawVal !== undefined &&
+      (typeof rawVal !== "number" || !Number.isInteger(rawVal) || rawVal < 0)
+    ) {
+      throw new Error(`${qtyErrPrefix} ${key}`);
+    }
+  }
+}
+
+function withUpdatedActivePlayer(
+  state: SplendorState,
+  updatedPlayer: SplendorPlayerState,
+  patch: Partial<SplendorState>
+): SplendorState {
+  return {
+    ...state,
+    ...patch,
+    players: replacePlayerAt(
+      state.players,
+      state.activePlayerIndex,
+      updatedPlayer
+    ),
+  };
+}
+
 export function applySplendorAction(
   currentState: SplendorState,
   playerId: string,
@@ -54,20 +93,13 @@ export function applySplendorAction(
       if (currentState.phase !== "MAIN_ACTION") {
         throw new Error("Cannot take gems now");
       }
-      if (!action.gems || typeof action.gems !== "object") {
-        throw new Error("Invalid gem selection");
-      }
-      for (const [key, rawVal] of Object.entries(action.gems)) {
-        if (!(GEM_COLORS as readonly string[]).includes(key)) {
-          throw new Error(`Invalid gem color: ${key}`);
-        }
-        if (
-          rawVal !== undefined &&
-          (typeof rawVal !== "number" || !Number.isInteger(rawVal) || rawVal < 0)
-        ) {
-          throw new Error(`Invalid gem quantity for ${key}`);
-        }
-      }
+      validateTokenCounts(
+        action.gems,
+        GEM_COLORS,
+        "Invalid gem selection",
+        "Invalid gem color",
+        "Invalid gem quantity for"
+      );
       const entries = GEM_COLORS.map(
         (c) => [c, action.gems[c] ?? 0] as const
       ).filter(([, amt]) => amt > 0);
@@ -75,80 +107,53 @@ export function applySplendorAction(
         throw new Error("Must select at least 1 gem");
       }
 
+      let delta: Partial<Record<TokenColor, number>>;
+      let summary: string;
       if (entries.length === 1 && entries[0]![1] === 2) {
         const [color] = entries[0]!;
         if (currentState.bank[color] < SPLENDOR_DOUBLE_GEM_MIN_BANK) {
           throw new Error(`Cannot take 2 ${color} when bank has fewer than 4`);
         }
-        const delta = { [color]: 2 };
-        const updatedPlayer: SplendorPlayerState = {
-          ...player,
-          tokens: addTokenMaps(player.tokens, delta),
-        };
-        const afterTake: SplendorState = {
-          ...currentState,
-          bank: subtractTokenMaps(currentState.bank, delta),
-          players: replacePlayerAt(
-            currentState.players,
-            currentState.activePlayerIndex,
-            updatedPlayer
-          ),
-        };
-        const logged = appendSplendorEvent(
-          afterTake,
-          [],
-          "GEMS_TAKEN",
-          `${player.name} took 2 ${color} tokens.`,
-          playerId
-        );
-        return resolvePostMainAction(logged.state, logged.events);
-      }
-
-      const availableInBank = GEM_COLORS.filter(
-        (c) => currentState.bank[c] > 0
-      ).length;
-      const maxDistinct = Math.min(SPLENDOR_MAX_DISTINCT_GEMS, availableInBank);
-      if (
-        entries.length > SPLENDOR_MAX_DISTINCT_GEMS ||
-        entries.some(([, amt]) => amt !== 1)
-      ) {
-        throw new Error("Can only take 1 each of up to 3 different gem colors");
-      }
-      if (
-        entries.length < maxDistinct &&
-        totalTokens(player.tokens) + entries.length < SPLENDOR_HAND_TOKEN_LIMIT
-      ) {
-        throw new Error(
-          `Must take ${maxDistinct} different gem colors when available`
-        );
-      }
-      for (const [color] of entries) {
-        if (currentState.bank[color] < 1) {
-          throw new Error(`Bank has no ${color} tokens`);
+        delta = { [color]: 2 };
+        summary = `2 ${color} tokens`;
+      } else {
+        const availableInBank = GEM_COLORS.filter(
+          (c) => currentState.bank[c] > 0
+        ).length;
+        const maxDistinct = Math.min(SPLENDOR_MAX_DISTINCT_GEMS, availableInBank);
+        if (
+          entries.length > SPLENDOR_MAX_DISTINCT_GEMS ||
+          entries.some(([, amt]) => amt !== 1)
+        ) {
+          throw new Error("Can only take 1 each of up to 3 different gem colors");
         }
+        if (
+          entries.length < maxDistinct &&
+          totalTokens(player.tokens) + entries.length < SPLENDOR_HAND_TOKEN_LIMIT
+        ) {
+          throw new Error(
+            `Must take ${maxDistinct} different gem colors when available`
+          );
+        }
+        for (const [color] of entries) {
+          if (currentState.bank[color] < 1) {
+            throw new Error(`Bank has no ${color} tokens`);
+          }
+        }
+        delta = Object.fromEntries(entries) as Partial<Record<TokenColor, number>>;
+        summary = entries.map(([c]) => c).join(", ");
       }
 
-      const delta = Object.fromEntries(entries) as Partial<
-        Record<TokenColor, number>
-      >;
-      const updatedPlayer: SplendorPlayerState = {
-        ...player,
-        tokens: addTokenMaps(player.tokens, delta),
-      };
-      const afterTake: SplendorState = {
-        ...currentState,
-        bank: subtractTokenMaps(currentState.bank, delta),
-        players: replacePlayerAt(
-          currentState.players,
-          currentState.activePlayerIndex,
-          updatedPlayer
-        ),
-      };
+      const afterTake = withUpdatedActivePlayer(
+        currentState,
+        { ...player, tokens: addTokenMaps(player.tokens, delta) },
+        { bank: subtractTokenMaps(currentState.bank, delta) }
+      );
       const logged = appendSplendorEvent(
         afterTake,
         [],
         "GEMS_TAKEN",
-        `${player.name} took ${entries.map(([c]) => c).join(", ")}.`,
+        `${player.name} took ${summary}.`,
         playerId
       );
       return resolvePostMainAction(logged.state, logged.events);
@@ -161,7 +166,6 @@ export function applySplendorAction(
       if (player.reservedCards.length >= SPLENDOR_MAX_RESERVED_CARDS) {
         throw new Error("Cannot hold more than 3 reserved cards");
       }
-
       if (action.cardId && action.deckTier) {
         throw new Error("Cannot specify both cardId and deckTier when reserving");
       }
@@ -173,13 +177,8 @@ export function applySplendorAction(
         fromDeck: boolean;
       } => {
         if (action.cardId) {
-          const loc = findMarketCardLocation(
-            currentState.market,
-            action.cardId
-          );
-          if (!loc) {
-            throw new Error("Target card to reserve not found");
-          }
+          const loc = findMarketCardLocation(currentState.market, action.cardId);
+          if (!loc) throw new Error("Target card to reserve not found");
           return {
             ...takeMarketCardAndRefill(
               currentState.market,
@@ -208,29 +207,21 @@ export function applySplendorAction(
         throw new Error("Target card to reserve not found");
       };
 
-      const { card: rawReservedCard, market, decks, fromDeck } =
-        drawSelection();
+      const { card: rawReservedCard, market, decks, fromDeck } = drawSelection();
       const reservedCard: SplendorCard = fromDeck
         ? { ...rawReservedCard, reservedFromDeck: true }
         : rawReservedCard;
       const gotGold = currentState.bank.gold > 0;
       const goldDelta = gotGold ? { gold: 1 } : {};
-      const updatedPlayer: SplendorPlayerState = {
-        ...player,
-        reservedCards: [...player.reservedCards, reservedCard],
-        tokens: addTokenMaps(player.tokens, goldDelta),
-      };
-      const afterReserve: SplendorState = {
-        ...currentState,
-        market,
-        decks,
-        bank: subtractTokenMaps(currentState.bank, goldDelta),
-        players: replacePlayerAt(
-          currentState.players,
-          currentState.activePlayerIndex,
-          updatedPlayer
-        ),
-      };
+      const afterReserve = withUpdatedActivePlayer(
+        currentState,
+        {
+          ...player,
+          reservedCards: [...player.reservedCards, reservedCard],
+          tokens: addTokenMaps(player.tokens, goldDelta),
+        },
+        { market, decks, bank: subtractTokenMaps(currentState.bank, goldDelta) }
+      );
       const reserveDesc = fromDeck
         ? `blind-reserved from the Tier ${reservedCard.tier} deck`
         : `reserved a Tier ${reservedCard.tier} ${reservedCard.bonus} card (${reservedCard.points} VP)`;
@@ -249,20 +240,15 @@ export function applySplendorAction(
         throw new Error("Cannot purchase card now");
       }
 
-      const marketLoc = findMarketCardLocation(
-        currentState.market,
-        action.cardId
-      );
+      const marketLoc = findMarketCardLocation(currentState.market, action.cardId);
       const reservedIdx = marketLoc
         ? -1
         : player.reservedCards.findIndex((c) => c.id === action.cardId);
-
       const targetCard = marketLoc
         ? currentState.market[marketLoc.tier][marketLoc.index]!
         : reservedIdx !== -1
           ? player.reservedCards[reservedIdx]!
           : null;
-
       if (!targetCard || targetCard.redacted) {
         throw new Error(
           `Card ${action.cardId} not found in market or reserved hand`
@@ -273,9 +259,7 @@ export function applySplendorAction(
         player,
         targetCard
       );
-      if (!affordable) {
-        throw new Error("Cannot afford this card");
-      }
+      if (!affordable) throw new Error("Cannot afford this card");
 
       const marketUpdate = marketLoc
         ? takeMarketCardAndRefill(
@@ -284,35 +268,26 @@ export function applySplendorAction(
             marketLoc.tier,
             marketLoc.index
           )
-        : {
-            market: currentState.market,
-            decks: currentState.decks,
-          };
+        : { market: currentState.market, decks: currentState.decks };
 
-      const nextReservedCards = marketLoc
-        ? player.reservedCards
-        : player.reservedCards.filter((_, idx) => idx !== reservedIdx);
-
-      const updatedPlayer: SplendorPlayerState = {
-        ...player,
-        tokens: subtractTokenMaps(player.tokens, payment),
-        reservedCards: nextReservedCards,
-        purchasedCards: [...player.purchasedCards, targetCard],
-        bonuses: incrementGemBonus(player.bonuses, targetCard.bonus),
-        points: player.points + targetCard.points,
-      };
-
-      const afterPurchase: SplendorState = {
-        ...currentState,
-        bank: addTokenMaps(currentState.bank, payment),
-        market: marketUpdate.market,
-        decks: marketUpdate.decks,
-        players: replacePlayerAt(
-          currentState.players,
-          currentState.activePlayerIndex,
-          updatedPlayer
-        ),
-      };
+      const afterPurchase = withUpdatedActivePlayer(
+        currentState,
+        {
+          ...player,
+          tokens: subtractTokenMaps(player.tokens, payment),
+          reservedCards: marketLoc
+            ? player.reservedCards
+            : player.reservedCards.filter((_, idx) => idx !== reservedIdx),
+          purchasedCards: [...player.purchasedCards, targetCard],
+          bonuses: incrementGemBonus(player.bonuses, targetCard.bonus),
+          points: player.points + targetCard.points,
+        },
+        {
+          bank: addTokenMaps(currentState.bank, payment),
+          market: marketUpdate.market,
+          decks: marketUpdate.decks,
+        }
+      );
 
       const logged = appendSplendorEvent(
         afterPurchase,
@@ -328,37 +303,22 @@ export function applySplendorAction(
       if (currentState.phase !== "RETURN_TOKENS") {
         throw new Error("Not in token return phase");
       }
-      if (!action.tokens || typeof action.tokens !== "object") {
-        throw new Error("Invalid token return payload");
-      }
-      for (const [key, rawVal] of Object.entries(action.tokens)) {
-        if (!(ALL_TOKEN_COLORS as readonly string[]).includes(key)) {
-          throw new Error(`Invalid token color: ${key}`);
-        }
-        if (
-          rawVal !== undefined &&
-          (typeof rawVal !== "number" || !Number.isInteger(rawVal) || rawVal < 0)
-        ) {
-          throw new Error(`Invalid return amount for ${key}`);
-        }
-      }
+      validateTokenCounts(
+        action.tokens,
+        ALL_TOKEN_COLORS,
+        "Invalid token return payload",
+        "Invalid token color",
+        "Invalid return amount for"
+      );
       const excess = totalTokens(player.tokens) - SPLENDOR_HAND_TOKEN_LIMIT;
       for (const color of ALL_TOKEN_COLORS) {
         const amt = action.tokens[color] ?? 0;
-        if (
-          !Number.isInteger(amt) ||
-          amt < 0 ||
-          player.tokens[color] < amt
-        ) {
+        if (player.tokens[color] < amt) {
           throw new Error(`Invalid return amount for ${color}`);
         }
       }
       const returnSum = totalTokens(action.tokens);
-      if (
-        !Number.isInteger(returnSum) ||
-        returnSum <= 0 ||
-        returnSum > excess
-      ) {
+      if (returnSum <= 0 || returnSum > excess) {
         throw new Error(`Must return between 1 and ${excess} tokens`);
       }
 
@@ -366,15 +326,9 @@ export function applySplendorAction(
         ...player,
         tokens: subtractTokenMaps(player.tokens, action.tokens),
       };
-      const afterReturn: SplendorState = {
-        ...currentState,
+      const afterReturn = withUpdatedActivePlayer(currentState, updatedPlayer, {
         bank: addTokenMaps(currentState.bank, action.tokens),
-        players: replacePlayerAt(
-          currentState.players,
-          currentState.activePlayerIndex,
-          updatedPlayer
-        ),
-      };
+      });
       const logged = appendSplendorEvent(
         afterReturn,
         [],
@@ -396,21 +350,18 @@ export function applySplendorAction(
         throw new Error(`Noble ${action.nobleId} is not eligible`);
       }
       const noble = currentState.nobles.find((n) => n.id === action.nobleId)!;
-      const updatedPlayer: SplendorPlayerState = {
-        ...player,
-        nobles: [...player.nobles, noble],
-        points: player.points + noble.points,
-      };
-      const afterNoble: SplendorState = {
-        ...currentState,
-        nobles: currentState.nobles.filter((n) => n.id !== action.nobleId),
-        eligibleNobleIds: [],
-        players: replacePlayerAt(
-          currentState.players,
-          currentState.activePlayerIndex,
-          updatedPlayer
-        ),
-      };
+      const afterNoble = withUpdatedActivePlayer(
+        currentState,
+        {
+          ...player,
+          nobles: [...player.nobles, noble],
+          points: player.points + noble.points,
+        },
+        {
+          nobles: currentState.nobles.filter((n) => n.id !== action.nobleId),
+          eligibleNobleIds: [],
+        }
+      );
       const logged = appendSplendorEvent(
         afterNoble,
         [],

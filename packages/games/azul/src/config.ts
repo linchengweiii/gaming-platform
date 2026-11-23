@@ -31,8 +31,6 @@ export const AZUL_WALL_PATTERN: readonly (readonly AzulColorId[])[] = [
   ["yellow", "red", "black", "teal", "blue"],
 ];
 
-export const WALL_PATTERN = AZUL_WALL_PATTERN;
-
 export const AZUL_BONUS_POINTS = {
   row: 2,
   col: 7,

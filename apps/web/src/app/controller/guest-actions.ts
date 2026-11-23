@@ -46,70 +46,38 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
 
     if (ctx.model.useServerBackend) {
       ctx.connectServerRealtime();
-      ctx.sendWsMessage({
-        type: "IDENTIFY_PLAYER",
-        playerId: res.session.id,
-      });
+      ctx.sendWsMessage({ type: "IDENTIFY_PLAYER", playerId: res.session.id });
     }
 
     if (inviteBeforeSignIn) {
       ctx.model = { ...ctx.model, pendingInviteRoomId: null };
       ctx.pendingRestoreRoomId = null;
       ctx.render();
-      if (ctx.model.useServerBackend) {
-        void ctx.fetchLobbyRooms();
-      }
+      if (ctx.model.useServerBackend) void ctx.fetchLobbyRooms();
       ctx.enterOrJoinRoom(inviteBeforeSignIn);
       return true;
     }
 
     ctx.render();
-
-    if (ctx.model.useServerBackend) {
-      void ctx.fetchLobbyRooms();
-    }
+    if (ctx.model.useServerBackend) void ctx.fetchLobbyRooms();
     return true;
   };
 
-  const startSoloGameFromLogin = (rawName?: string): boolean => {
+  const startOfflineRoomFromLogin = (
+    rawName: string | undefined,
+    botCount: number
+  ): boolean => {
     const fallbackName =
       (rawName ?? ctx.model.loginDraftName).trim() || "Player 1";
     ctx.model = { ...ctx.model, pendingInviteRoomId: null };
-    const ok = signInAsGuest(fallbackName);
-    if (!ok) return false;
+    if (!signInAsGuest(fallbackName)) return false;
     ctx.model = { ...ctx.model, createRoomMode: "offline" };
     const room = ctx.createLocalRoom({
       gameId: ctx.model.createRoomGameId,
       ownerId: ctx.model.currentUserId,
       ownerName: ctx.model.currentUserName,
       isOfflineLocal: true,
-      botCount: 3,
-      startingPlayerMode: "random",
-      autoStart: false,
-    });
-    ctx.model = resetSubModesPure({
-      ...ctx.model,
-      activeRoomId: room.roomId,
-      inspectingSetupDuringMatch: false,
-      viewMode: "room_setup",
-    });
-    ctx.render();
-    return true;
-  };
-
-  const startOfflineLocalFromLogin = (rawName?: string): boolean => {
-    const fallbackName =
-      (rawName ?? ctx.model.loginDraftName).trim() || "Player 1";
-    ctx.model = { ...ctx.model, pendingInviteRoomId: null };
-    const ok = signInAsGuest(fallbackName);
-    if (!ok) return false;
-    ctx.model = { ...ctx.model, createRoomMode: "offline" };
-    const room = ctx.createLocalRoom({
-      gameId: ctx.model.createRoomGameId,
-      ownerId: ctx.model.currentUserId,
-      ownerName: ctx.model.currentUserName,
-      isOfflineLocal: true,
-      botCount: 0,
+      botCount,
       startingPlayerMode: "random",
       autoStart: false,
     });
@@ -146,12 +114,8 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
     ctx.navEpoch += 1;
     const capturedEpoch = ctx.navEpoch;
     const requestedGuestId = found.id;
+    const session: GuestSession = { id: found.id, name: found.name, mode: "guest" };
 
-    const session: GuestSession = {
-      id: found.id,
-      name: found.name,
-      mode: "guest",
-    };
     ctx.model = resetSubModesPure({
       ...ctx.model,
       currentUserId: found.id,
@@ -165,10 +129,7 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
 
     if (ctx.model.useServerBackend) {
       ctx.connectServerRealtime();
-      ctx.sendWsMessage({
-        type: "IDENTIFY_PLAYER",
-        playerId: requestedGuestId,
-      });
+      ctx.sendWsMessage({ type: "IDENTIFY_PLAYER", playerId: requestedGuestId });
     }
 
     const active = ctx.model.rooms[ctx.model.activeRoomId];
@@ -184,11 +145,9 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
         playerId: requestedGuestId,
       });
       void ctx
-        .fetchApi(
-          `/api/rooms/${encodeURIComponent(targetRoomId)}`,
-          undefined,
-          { guestId: requestedGuestId }
-        )
+        .fetchApi(`/api/rooms/${encodeURIComponent(targetRoomId)}`, undefined, {
+          guestId: requestedGuestId,
+        })
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (
@@ -236,11 +195,10 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
 
     if (cleaned.switchedToGuest) {
       saveGuestSessionToStorage(cleaned.switchedToGuest);
-      if (
-        (ctx.model.viewMode === "room_setup" ||
-          ctx.model.viewMode === "in_game") &&
-        ctx.model.activeRoomId
-      ) {
+      const inRoomView =
+        (ctx.model.viewMode === "room_setup" || ctx.model.viewMode === "in_game") &&
+        Boolean(ctx.model.activeRoomId);
+      if (inRoomView) {
         saveActiveRoomIdToStorage(ctx.model.activeRoomId);
         const active = ctx.model.rooms[ctx.model.activeRoomId];
         if (active && roomUsesServerPure(ctx.model, active)) {
@@ -301,23 +259,13 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
     ctx.scheduleBotAutoResponseIfNeeded();
   };
 
-  const signOutGuest = (): void => {
-    performGuestCleanup(ctx.model.currentUserId);
-  };
-
-  const removeDeviceGuest = (guestId: string): void => {
-    performGuestCleanup(guestId);
-  };
-
   const renameCurrentGuest = (rawNewName: string): boolean => {
     const res = renameGuestInModelPure(
       ctx.model,
       ctx.model.currentUserId,
       rawNewName
     );
-    if (!res.ok) {
-      return false;
-    }
+    if (!res.ok) return false;
     ctx.model = res.model;
     saveGuestSessionToStorage(res.session);
     saveDeviceGuestsToStorage(ctx.model.deviceGuests);
@@ -343,12 +291,16 @@ export function attachGuestProfileActions(ctx: AppRuntimeContext): void {
     return true;
   };
 
-  ctx.signInAsGuest = signInAsGuest;
-  ctx.startSoloGameFromLogin = startSoloGameFromLogin;
-  ctx.startOfflineLocalFromLogin = startOfflineLocalFromLogin;
-  ctx.openAddGuestView = openAddGuestView;
-  ctx.switchActiveGuest = switchActiveGuest;
-  ctx.signOutGuest = signOutGuest;
-  ctx.removeDeviceGuest = removeDeviceGuest;
-  ctx.renameCurrentGuest = renameCurrentGuest;
+  Object.assign(ctx, {
+    signInAsGuest,
+    startSoloGameFromLogin: (rawName?: string) =>
+      startOfflineRoomFromLogin(rawName, 3),
+    startOfflineLocalFromLogin: (rawName?: string) =>
+      startOfflineRoomFromLogin(rawName, 0),
+    openAddGuestView,
+    switchActiveGuest,
+    signOutGuest: () => performGuestCleanup(ctx.model.currentUserId),
+    removeDeviceGuest: performGuestCleanup,
+    renameCurrentGuest,
+  });
 }

@@ -115,7 +115,10 @@ export function computeOuterOceanHexes(
   return outerOceanHexes;
 }
 
-export function getCatanBoardViewBox(state: CatanState): {
+export function getCatanBoardViewBox(
+  state: CatanState,
+  precomputedOuterOceanHexes?: ReadonlyMap<string, OuterOceanHexNode>
+): {
   vbX: number;
   vbY: number;
   vbW: number;
@@ -123,7 +126,8 @@ export function getCatanBoardViewBox(state: CatanState): {
 } {
   const topo = state.topology;
   const hexSize = topo.hexSize;
-  const outerOceanHexes = computeOuterOceanHexes(state);
+  const outerOceanHexes =
+    precomputedOuterOceanHexes ?? computeOuterOceanHexes(state);
 
   let minX = Infinity;
   let maxX = -Infinity;

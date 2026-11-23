@@ -1,4 +1,5 @@
 import {
+  type AxialCoord,
   type RngState,
   buildHexBoardTopology,
   generateHexRadiusCoords,
@@ -13,7 +14,7 @@ import {
   STANDARD_NUMBERS,
   STANDARD_TERRAINS,
 } from "../config/scenarios-config.ts";
-import type { CatanConfig } from "../types/domain.ts";
+import type { CatanConfig, HarborType, TerrainType } from "../types/domain.ts";
 import {
   type GeneratedBoard,
   assignBalancedNumbersPure,
@@ -21,13 +22,16 @@ import {
   placeCoastalHarborsPure,
 } from "./helpers.ts";
 
-export function generateStandardBoardPure(
+function buildSingleIslandBoardPure(
   config: CatanConfig,
-  rng0: RngState
+  rng0: RngState,
+  coords: AxialCoord[],
+  terrains: readonly TerrainType[],
+  numbers: readonly number[],
+  harborsDeck: readonly HarborType[]
 ): readonly [GeneratedBoard, RngState] {
-  const coords = generateHexRadiusCoords(2);
   const topology = buildHexBoardTopology(coords);
-  const [shuffledTerrains, rng1] = shufflePure(rng0, STANDARD_TERRAINS);
+  const [shuffledTerrains, rng1] = shufflePure(rng0, terrains);
   const { hexes: rawHexes, productiveIds, robberHexId } = buildSingleIslandHexes(
     coords,
     shuffledTerrains
@@ -35,64 +39,47 @@ export function generateStandardBoardPure(
   const [hexes, rng2] = assignBalancedNumbersPure(
     rawHexes,
     productiveIds,
-    STANDARD_NUMBERS,
+    numbers,
     rng1,
     config.balancedNumbers
   );
   const [harbors, rng3] = placeCoastalHarborsPure(
     topology,
     hexes,
-    STANDARD_HARBORS,
+    harborsDeck,
     rng2
   );
 
   return [
-    {
-      topology,
-      hexes,
-      harbors,
-      robberHexId,
-      pirateHexId: null,
-      fogPool: [],
-    },
+    { topology, hexes, harbors, robberHexId, pirateHexId: null, fogPool: [] },
     rng3,
   ];
+}
+
+export function generateStandardBoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
+  return buildSingleIslandBoardPure(
+    config,
+    rng0,
+    generateHexRadiusCoords(2),
+    STANDARD_TERRAINS,
+    STANDARD_NUMBERS,
+    STANDARD_HARBORS
+  );
 }
 
 export function generateBigIslandBoardPure(
   config: CatanConfig,
   rng0: RngState
 ): readonly [GeneratedBoard, RngState] {
-  const coords = [...generateHexRadiusCoords(2), ...BIG_ISLAND_EXTRA_COORDS];
-  const topology = buildHexBoardTopology(coords);
-  const [shuffledTerrains, rng1] = shufflePure(rng0, BIG_ISLAND_TERRAINS);
-  const { hexes: rawHexes, productiveIds, robberHexId } = buildSingleIslandHexes(
-    coords,
-    shuffledTerrains
-  );
-  const [hexes, rng2] = assignBalancedNumbersPure(
-    rawHexes,
-    productiveIds,
+  return buildSingleIslandBoardPure(
+    config,
+    rng0,
+    [...generateHexRadiusCoords(2), ...BIG_ISLAND_EXTRA_COORDS],
+    BIG_ISLAND_TERRAINS,
     BIG_ISLAND_NUMBERS,
-    rng1,
-    config.balancedNumbers
+    BIG_ISLAND_HARBORS
   );
-  const [harbors, rng3] = placeCoastalHarborsPure(
-    topology,
-    hexes,
-    BIG_ISLAND_HARBORS,
-    rng2
-  );
-
-  return [
-    {
-      topology,
-      hexes,
-      harbors,
-      robberHexId,
-      pirateHexId: null,
-      fogPool: [],
-    },
-    rng3,
-  ];
 }

@@ -265,14 +265,12 @@ describe("Codebase Pure-Functional & Readability Constraints", () => {
     expect(violations).toEqual([]);
   });
 
-  test("enforces readable <= 500-line file size limit across all project TypeScript and CSS files", () => {
-    const excludedDirs = new Set(["node_modules", "dist", "build", "assets"]);
-    const isTrackedSourceFile = (fileName: string): boolean => {
-      if (/config.*\.ts$/i.test(fileName)) {
-        return false;
-      }
-      return fileName.endsWith(".ts") || fileName.endsWith(".css");
-    };
+  test("enforces readable <= 500-line file size limit across all project TypeScript, JS, and CSS files", () => {
+    const excludedDirs = new Set(["node_modules", "dist", "build"]);
+    const isTrackedSourceFile = (fileName: string): boolean =>
+      fileName.endsWith(".ts") ||
+      fileName.endsWith(".js") ||
+      fileName.endsWith(".css");
 
     const collectTrackedFiles = (dir: string): readonly string[] => {
       if (!fs.existsSync(dir)) {
@@ -295,17 +293,13 @@ describe("Codebase Pure-Functional & Readability Constraints", () => {
       "packages",
       "apps/server",
       "apps/web/src",
-      "apps/web/public/styles",
+      "apps/web/public",
       "scripts",
       "tests",
     ].map((relDir) => path.join(REPO_ROOT, relDir));
 
-    const explicitFiles = [path.join(REPO_ROOT, "apps/web/public/styles.css")].filter(
-      (filePath) => fs.existsSync(filePath)
-    );
-
     const allCheckedFiles = Array.from(
-      new Set([...scanRoots.flatMap(collectTrackedFiles), ...explicitFiles])
+      new Set(scanRoots.flatMap(collectTrackedFiles))
     ).sort();
 
     expect(allCheckedFiles.length).toBeGreaterThanOrEqual(35);

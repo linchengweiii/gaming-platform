@@ -28,6 +28,36 @@ import type {
   StepBotOptions,
 } from "./types.ts";
 
+function requireStartedRoom(
+  managerState: RoomManagerState,
+  roomId: string
+): RoomRecord & { sessionState: MatchSessionState<any, any> } {
+  const room = getRoomRecordPure(managerState, roomId);
+  if (!room.sessionState) {
+    throw new Error("Game has not started in this room");
+  }
+  return room as RoomRecord & { sessionState: MatchSessionState<any, any> };
+}
+
+function commitRoomSession(
+  managerState: RoomManagerState,
+  room: RoomRecord,
+  sessionState: MatchSessionState<any, any>,
+  status: RoomRecord["status"],
+  extra?: Partial<RoomRecord>
+): { state: RoomManagerState; gameState: any } {
+  const gameState = getSessionState(sessionState);
+  return {
+    state: setRoomRecordInState(managerState, {
+      ...room,
+      ...extra,
+      sessionState,
+      status,
+    }),
+    gameState,
+  };
+}
+
 export function startGamePure(
   managerState: RoomManagerState,
   roomId: string,
@@ -54,58 +84,30 @@ export function startGamePure(
   }
 
   const engine = getRegisteredEnginePure(managerState.registry, room.gameId);
-  const startConfig = (() => {
-    if (room.startingPlayerMode === "first") {
-      return {
-        startingPlayerIndex: 0 as number | undefined,
-        randomizeStartingPlayer: false,
-      };
-    }
-    if (room.startingPlayerMode === "random") {
-      return {
-        startingPlayerIndex: undefined as number | undefined,
-        randomizeStartingPlayer: true,
-      };
-    }
-    const foundIdx = room.players.findIndex(
-      (p) => p.id === room.startingPlayerMode
-    );
-    return foundIdx >= 0
-      ? {
-          startingPlayerIndex: foundIdx as number | undefined,
-          randomizeStartingPlayer: false,
-        }
-      : {
-          startingPlayerIndex: undefined as number | undefined,
-          randomizeStartingPlayer: true,
-        };
-  })();
+  const explicitIdx =
+    room.startingPlayerMode === "first"
+      ? 0
+      : room.startingPlayerMode === "random"
+        ? -1
+        : room.players.findIndex((p) => p.id === room.startingPlayerMode);
+  const startConfig =
+    explicitIdx >= 0
+      ? { startingPlayerIndex: explicitIdx, randomizeStartingPlayer: false }
+      : { startingPlayerIndex: undefined, randomizeStartingPlayer: true };
 
   const matchSeed =
     room.matchCounter === 0 ? room.seed : `${room.seed}-g${room.matchCounter}`;
 
   const initialState = engine.initGame(
     room.players,
-    {
-      ...room.config,
-      startingPlayerIndex: startConfig.startingPlayerIndex,
-      randomizeStartingPlayer: startConfig.randomizeStartingPlayer,
-    },
+    { ...room.config, ...startConfig },
     matchSeed
   );
 
   const sessionState = createMatchSessionState(engine, initialState, true);
-  const startedRoom: RoomRecord = {
-    ...room,
+  return commitRoomSession(managerState, room, sessionState, "in_progress", {
     matchCounter: room.matchCounter + 1,
-    sessionState,
-    status: "in_progress",
-  };
-
-  return {
-    state: setRoomRecordInState(managerState, startedRoom),
-    gameState: getSessionState(sessionState),
-  };
+  });
 }
 
 export function dispatchActionPure(
@@ -114,10 +116,7 @@ export function dispatchActionPure(
   playerId: string,
   action: any
 ): { state: RoomManagerState; gameState: any } {
-  const room = getRoomRecordPure(managerState, roomId);
-  if (!room.sessionState) {
-    throw new Error("Game has not started in this room");
-  }
+  const room = requireStartedRoom(managerState, roomId);
   const engine = getRegisteredEnginePure(managerState.registry, room.gameId);
   const dispatched = dispatchSessionActionPure(
     engine,
@@ -127,15 +126,12 @@ export function dispatchActionPure(
   );
   const nextStatus =
     dispatched.result.state.phase === "GAME_OVER" ? "finished" : room.status;
-
-  const updatedRoom: RoomRecord = {
-    ...room,
-    sessionState: dispatched.session,
-    status: nextStatus,
-  };
-
   return {
-    state: setRoomRecordInState(managerState, updatedRoom),
+    state: setRoomRecordInState(managerState, {
+      ...room,
+      sessionState: dispatched.session,
+      status: nextStatus,
+    }),
     gameState: dispatched.result.state,
   };
 }
@@ -145,10 +141,7 @@ export function undoActionPure(
   roomId: string,
   requesterId?: string | null
 ): { state: RoomManagerState; gameState: any } {
-  const room = getRoomRecordPure(managerState, roomId);
-  if (!room.sessionState) {
-    throw new Error("Game has not started in this room");
-  }
+  const room = requireStartedRoom(managerState, roomId);
   const engine = getRegisteredEnginePure(managerState.registry, room.gameId);
   const undoTargetId = resolveUndoTargetPlayerIdPure(engine, room, requesterId);
   if (!undoTargetId) {
@@ -170,17 +163,11 @@ export function undoActionPure(
     room.sessionState,
     undoTargetId
   );
-  const nextGameState = getSessionState(nextSession);
-  const updatedRoom: RoomRecord = {
-    ...room,
-    sessionState: nextSession,
-    status: nextGameState.phase === "GAME_OVER" ? "finished" : "in_progress",
-  };
-
-  return {
-    state: setRoomRecordInState(managerState, updatedRoom),
-    gameState: nextGameState,
-  };
+  const nextStatus =
+    getSessionState(nextSession).phase === "GAME_OVER"
+      ? "finished"
+      : "in_progress";
+  return commitRoomSession(managerState, room, nextSession, nextStatus);
 }
 
 export function redoActionPure(
@@ -188,10 +175,7 @@ export function redoActionPure(
   roomId: string,
   requesterId?: string | null
 ): { state: RoomManagerState; gameState: any } {
-  const room = getRoomRecordPure(managerState, roomId);
-  if (!room.sessionState) {
-    throw new Error("Game has not started in this room");
-  }
+  const room = requireStartedRoom(managerState, roomId);
   const redoTargetId = resolveRedoTargetPlayerIdPure(room, requesterId);
   if (!redoTargetId) {
     throw new Error("Cannot redo after the game has finished");
@@ -204,17 +188,11 @@ export function redoActionPure(
   }
 
   const nextSession = redoSessionForPlayerPure(room.sessionState, redoTargetId);
-  const nextGameState = getSessionState(nextSession);
-  const updatedRoom: RoomRecord = {
-    ...room,
-    sessionState: nextSession,
-    status: nextGameState.phase === "GAME_OVER" ? "finished" : "in_progress",
-  };
-
-  return {
-    state: setRoomRecordInState(managerState, updatedRoom),
-    gameState: nextGameState,
-  };
+  const nextStatus =
+    getSessionState(nextSession).phase === "GAME_OVER"
+      ? "finished"
+      : "in_progress";
+  return commitRoomSession(managerState, room, nextSession, nextStatus);
 }
 
 export function finishCatanSetupWithBotsPure(
@@ -251,16 +229,7 @@ export function finishCatanSetupWithBotsPure(
     room.sessionState,
     DEFAULT_CATAN_SETUP_STEP_GUARD
   );
-  const nextGameState = getSessionState(nextSession);
-  const updatedRoom: RoomRecord = {
-    ...room,
-    sessionState: nextSession,
-  };
-
-  return {
-    state: setRoomRecordInState(managerState, updatedRoom),
-    gameState: nextGameState,
-  };
+  return commitRoomSession(managerState, room, nextSession, room.status);
 }
 
 export function stepBotPure(
@@ -273,43 +242,25 @@ export function stepBotPure(
   action: any | null;
   gameState: any;
 } {
-  const room = getRoomRecordPure(managerState, roomId);
-  if (!room.sessionState) {
-    throw new Error("Game has not started in this room");
-  }
+  const room = requireStartedRoom(managerState, roomId);
   const engine = getRegisteredEnginePure(managerState.registry, room.gameId);
   const curGameState = getSessionState(room.sessionState);
+  const noOp = {
+    state: managerState,
+    actedPlayerId: null,
+    action: null,
+    gameState: curGameState,
+  };
   const nextActorId = getRoomActingPlayerId(room.gameId, curGameState);
-  if (!nextActorId) {
-    return {
-      state: managerState,
-      actedPlayerId: null,
-      action: null,
-      gameState: curGameState,
-    };
-  }
+  if (!nextActorId) return noOp;
   if (options?.onlyBots) {
     const actor =
       curGameState.players?.find((p: any) => p.id === nextActorId) ??
       room.players.find((p) => p.id === nextActorId);
-    if (!actor || (!actor.isBot && !room.allBots)) {
-      return {
-        state: managerState,
-        actedPlayerId: null,
-        action: null,
-        gameState: curGameState,
-      };
-    }
+    if (!actor || (!actor.isBot && !room.allBots)) return noOp;
   }
   const action = engine.chooseBotAction(curGameState, nextActorId);
-  if (!action) {
-    return {
-      state: managerState,
-      actedPlayerId: null,
-      action: null,
-      gameState: curGameState,
-    };
-  }
+  if (!action) return noOp;
   const dispatched = dispatchActionPure(
     managerState,
     room.roomId,

@@ -2,7 +2,6 @@ import type {
   CommodityType,
   EventDieFace,
   ImprovementDiscipline,
-  KnightLevel,
   ProgressCardType,
   ResourceMap,
   TerrainType,
@@ -15,15 +14,6 @@ export const DISCIPLINE_TO_COMMODITY: Record<
   trade: "cloth",
   politics: "coin",
   science: "paper",
-};
-
-export const COMMODITY_TO_DISCIPLINE: Record<
-  CommodityType,
-  ImprovementDiscipline
-> = {
-  cloth: "trade",
-  coin: "politics",
-  paper: "science",
 };
 
 export const TERRAIN_TO_COMMODITY: Record<TerrainType, CommodityType | null> = {
@@ -66,12 +56,6 @@ export const CK_THRESHOLDS = {
   maxProgressHandSize: 4,
   progressDeckSizePerDiscipline: 18,
 } as const;
-
-export const KNIGHT_LEVEL_STRENGTH: Record<KnightLevel, number> = {
-  1: 1,
-  2: 2,
-  3: 3,
-};
 
 export interface ProgressCardMetadata {
   readonly type: ProgressCardType;

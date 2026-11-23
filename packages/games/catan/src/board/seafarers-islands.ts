@@ -1,4 +1,5 @@
 import {
+  type AxialCoord,
   type HexId,
   type RngState,
   buildHexBoardTopology,
@@ -11,7 +12,12 @@ import {
   BIG_ISLAND_NUMBERS,
   STANDARD_HARBORS,
 } from "../config/scenarios-config.ts";
-import type { CatanConfig, HexTile, TerrainType } from "../types/domain.ts";
+import type {
+  CatanConfig,
+  HarborType,
+  HexTile,
+  TerrainType,
+} from "../types/domain.ts";
 import {
   type GeneratedBoard,
   assignBalancedNumbersPure,
@@ -19,75 +25,39 @@ import {
   placeCoastalHarborsPure,
 } from "./helpers.ts";
 
-export function generateSeafarersFourIslandsBoardPure(
+interface IslandsPreset {
+  getCoords: () => AxialCoord[];
+  islands: readonly (readonly (readonly [number, number])[])[];
+  terrainCopiesEach: number;
+  landNumbers: readonly number[];
+  harbors: readonly HarborType[];
+  pirateHex: readonly [number, number];
+}
+
+const ISLAND_TERRAINS: readonly TerrainType[] = [
+  "forest",
+  "pasture",
+  "fields",
+  "hills",
+  "mountains",
+];
+
+function buildSeafarersIslandsBoardPure(
   config: CatanConfig,
-  rng0: RngState
+  rng0: RngState,
+  preset: IslandsPreset
 ): readonly [GeneratedBoard, RngState] {
-  const coords = generateHexRadiusCoords(3);
+  const coords = preset.getCoords();
   const topology = buildHexBoardTopology(coords);
-
-  // Four symmetric 5-hex islands strictly separated by >= 1 sea hex (|dq|>=2 or |dr|>=2)
-  const island1Coords = [
-    hexId(0, -3),
-    hexId(-1, -2),
-    hexId(0, -2),
-    hexId(-1, -1),
-    hexId(-2, -1),
-  ] as const;
-  const island2Coords = [
-    hexId(2, -3),
-    hexId(3, -3),
-    hexId(2, -2),
-    hexId(3, -2),
-    hexId(3, -1),
-  ] as const;
-  const island3Coords = [
-    hexId(-3, 1),
-    hexId(-3, 2),
-    hexId(-3, 3),
-    hexId(-2, 2),
-    hexId(-2, 3),
-  ] as const;
-  const island4Coords = [
-    hexId(0, 2),
-    hexId(0, 3),
-    hexId(1, 1),
-    hexId(1, 2),
-    hexId(2, 1),
-  ] as const;
-
-  const islandMap: ReadonlyMap<HexId, number> = new Map<HexId, number>([
-    ...island1Coords.map((id) => [id, 1] as const),
-    ...island2Coords.map((id) => [id, 2] as const),
-    ...island3Coords.map((id) => [id, 3] as const),
-    ...island4Coords.map((id) => [id, 4] as const),
-  ]);
-
-  const [landTerrains, rng1] = shufflePure<TerrainType>(rng0, [
-    "forest",
-    "forest",
-    "forest",
-    "forest",
-    "pasture",
-    "pasture",
-    "pasture",
-    "pasture",
-    "fields",
-    "fields",
-    "fields",
-    "fields",
-    "hills",
-    "hills",
-    "hills",
-    "hills",
-    "mountains",
-    "mountains",
-    "mountains",
-    "mountains",
-  ]);
-  const landNumbers = [
-    2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12, 5, 9,
-  ] as const;
+  const islandMap: ReadonlyMap<HexId, number> = new Map(
+    preset.islands.flatMap((list, idx) =>
+      list.map(([q, r]) => [hexId(q, r), idx + 1] as const)
+    )
+  );
+  const terrainDeck = ISLAND_TERRAINS.flatMap((t) =>
+    Array.from({ length: preset.terrainCopiesEach }, () => t)
+  );
+  const [landTerrains, rng1] = shufflePure<TerrainType>(rng0, terrainDeck);
 
   const laidOut = coords.reduce<{
     hexes: Record<HexId, HexTile>;
@@ -113,18 +83,20 @@ export function generateSeafarersFourIslandsBoardPure(
           landIdx: acc.landIdx + 1,
         };
       }
-      const seaTile: HexTile = {
-        id,
-        q,
-        r,
-        terrain: "sea",
-        numberToken: null,
-        islandId: 0,
-        allowSetupSettlement: false,
-      };
       return {
         ...acc,
-        hexes: { ...acc.hexes, [id]: seaTile },
+        hexes: {
+          ...acc.hexes,
+          [id]: {
+            id,
+            q,
+            r,
+            terrain: "sea",
+            numberToken: null,
+            islandId: 0,
+            allowSetupSettlement: false,
+          },
+        },
       };
     },
     { hexes: {}, productiveIds: [], landIdx: 0 }
@@ -133,14 +105,14 @@ export function generateSeafarersFourIslandsBoardPure(
   const [hexes, rng2] = assignBalancedNumbersPure(
     laidOut.hexes,
     laidOut.productiveIds,
-    landNumbers,
+    preset.landNumbers,
     rng1,
     config.balancedNumbers
   );
   const [harbors, rng3] = placeCoastalHarborsPure(
     topology,
     hexes,
-    STANDARD_HARBORS,
+    preset.harbors,
     rng2
   );
 
@@ -151,175 +123,56 @@ export function generateSeafarersFourIslandsBoardPure(
       harbors,
       // No desert hex on this map: official Seafarers rule starts the Robber off-board
       robberHexId: "",
-      pirateHexId: hexId(0, 0),
+      pirateHexId: hexId(preset.pirateHex[0], preset.pirateHex[1]),
       fogPool: [],
     },
     rng3,
   ];
 }
 
+// Symmetric 5-hex islands strictly separated by >= 1 sea hex (|dq|>=2 or |dr|>=2)
+const FOUR_ISLANDS_PRESET: IslandsPreset = {
+  getCoords: () => generateHexRadiusCoords(3),
+  islands: [
+    [[0, -3], [-1, -2], [0, -2], [-1, -1], [-2, -1]],
+    [[2, -3], [3, -3], [2, -2], [3, -2], [3, -1]],
+    [[-3, 1], [-3, 2], [-3, 3], [-2, 2], [-2, 3]],
+    [[0, 2], [0, 3], [1, 1], [1, 2], [2, 1]],
+  ],
+  terrainCopiesEach: 4,
+  landNumbers: [
+    2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12, 5, 9,
+  ],
+  harbors: STANDARD_HARBORS,
+  pirateHex: [0, 0],
+};
+
+const SIX_ISLANDS_56_PRESET: IslandsPreset = {
+  getCoords: () => buildElongatedMarineCoords(6),
+  islands: [
+    [[-1, -2], [0, -2], [0, -3], [-2, -1], [-1, -1]],
+    [[2, -3], [3, -3], [4, -3], [2, -2], [3, -2]],
+    [[6, -3], [5, -2], [6, -2], [5, -1], [6, -1]],
+    [[-3, 1], [-2, 1], [-3, 2], [-2, 2], [-3, 3]],
+    [[0, 2], [1, 2], [0, 3], [1, 3], [1, 1]],
+    [[4, 1], [5, 1], [3, 2], [4, 2], [3, 3]],
+  ],
+  terrainCopiesEach: 6,
+  landNumbers: [...BIG_ISLAND_NUMBERS, 4, 9],
+  harbors: [...BIG_ISLAND_HARBORS, "generic"],
+  pirateHex: [1, -1],
+};
+
+export function generateSeafarersFourIslandsBoardPure(
+  config: CatanConfig,
+  rng0: RngState
+): readonly [GeneratedBoard, RngState] {
+  return buildSeafarersIslandsBoardPure(config, rng0, FOUR_ISLANDS_PRESET);
+}
+
 export function generateSeafarersSixIslands56BoardPure(
   config: CatanConfig,
   rng0: RngState
 ): readonly [GeneratedBoard, RngState] {
-  const coords = buildElongatedMarineCoords(6);
-  const topology = buildHexBoardTopology(coords);
-
-  const island1Coords = [
-    hexId(-1, -2),
-    hexId(0, -2),
-    hexId(0, -3),
-    hexId(-2, -1),
-    hexId(-1, -1),
-  ] as const;
-  const island2Coords = [
-    hexId(2, -3),
-    hexId(3, -3),
-    hexId(4, -3),
-    hexId(2, -2),
-    hexId(3, -2),
-  ] as const;
-  const island3Coords = [
-    hexId(6, -3),
-    hexId(5, -2),
-    hexId(6, -2),
-    hexId(5, -1),
-    hexId(6, -1),
-  ] as const;
-  const island4Coords = [
-    hexId(-3, 1),
-    hexId(-2, 1),
-    hexId(-3, 2),
-    hexId(-2, 2),
-    hexId(-3, 3),
-  ] as const;
-  const island5Coords = [
-    hexId(0, 2),
-    hexId(1, 2),
-    hexId(0, 3),
-    hexId(1, 3),
-    hexId(1, 1),
-  ] as const;
-  const island6Coords = [
-    hexId(4, 1),
-    hexId(5, 1),
-    hexId(3, 2),
-    hexId(4, 2),
-    hexId(3, 3),
-  ] as const;
-
-  const islandMap: ReadonlyMap<HexId, number> = new Map<HexId, number>([
-    ...island1Coords.map((id) => [id, 1] as const),
-    ...island2Coords.map((id) => [id, 2] as const),
-    ...island3Coords.map((id) => [id, 3] as const),
-    ...island4Coords.map((id) => [id, 4] as const),
-    ...island5Coords.map((id) => [id, 5] as const),
-    ...island6Coords.map((id) => [id, 6] as const),
-  ]);
-
-  const [landTerrains, rng1] = shufflePure<TerrainType>(rng0, [
-    "forest",
-    "forest",
-    "forest",
-    "forest",
-    "forest",
-    "forest",
-    "pasture",
-    "pasture",
-    "pasture",
-    "pasture",
-    "pasture",
-    "pasture",
-    "fields",
-    "fields",
-    "fields",
-    "fields",
-    "fields",
-    "fields",
-    "hills",
-    "hills",
-    "hills",
-    "hills",
-    "hills",
-    "hills",
-    "mountains",
-    "mountains",
-    "mountains",
-    "mountains",
-    "mountains",
-    "mountains",
-  ]);
-  const landNumbers = [
-    ...BIG_ISLAND_NUMBERS,
-    4,
-    9,
-  ] as const;
-
-  const laidOut = coords.reduce<{
-    hexes: Record<HexId, HexTile>;
-    productiveIds: HexId[];
-    landIdx: number;
-  }>(
-    (acc, { q, r }) => {
-      const id = hexId(q, r);
-      const islandId = islandMap.get(id) ?? 0;
-      if (islandId > 0) {
-        const tile: HexTile = {
-          id,
-          q,
-          r,
-          terrain: landTerrains[acc.landIdx]!,
-          numberToken: null,
-          islandId,
-          allowSetupSettlement: true,
-        };
-        return {
-          hexes: { ...acc.hexes, [id]: tile },
-          productiveIds: [...acc.productiveIds, id],
-          landIdx: acc.landIdx + 1,
-        };
-      }
-      const seaTile: HexTile = {
-        id,
-        q,
-        r,
-        terrain: "sea",
-        numberToken: null,
-        islandId: 0,
-        allowSetupSettlement: false,
-      };
-      return {
-        ...acc,
-        hexes: { ...acc.hexes, [id]: seaTile },
-      };
-    },
-    { hexes: {}, productiveIds: [], landIdx: 0 }
-  );
-
-  const [hexes, rng2] = assignBalancedNumbersPure(
-    laidOut.hexes,
-    laidOut.productiveIds,
-    landNumbers,
-    rng1,
-    config.balancedNumbers
-  );
-  const [harbors, rng3] = placeCoastalHarborsPure(
-    topology,
-    hexes,
-    [...BIG_ISLAND_HARBORS, "generic"],
-    rng2
-  );
-
-  return [
-    {
-      topology,
-      hexes,
-      harbors,
-      // No desert hex on this map: official Seafarers rule starts the Robber off-board
-      robberHexId: "",
-      pirateHexId: hexId(1, -1),
-      fogPool: [],
-    },
-    rng3,
-  ];
+  return buildSeafarersIslandsBoardPure(config, rng0, SIX_ISLANDS_56_PRESET);
 }

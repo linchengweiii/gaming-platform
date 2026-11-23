@@ -21,6 +21,18 @@ export const MIME_TYPES: Readonly<Record<string, string>> = {
 
 const REVALIDATE_EXTENSIONS = new Set([".html", ".css", ".js", ".mjs"]);
 
+export function isViewerSeatedOrOwnerPure(
+  room: Pick<RoomInstance, "ownerId" | "humanPlayers">,
+  viewerId: string
+): boolean {
+  return (
+    room.ownerId === viewerId ||
+    room.humanPlayers.some(
+      (p) => p.id === viewerId || p.controllerId === viewerId
+    )
+  );
+}
+
 export function resolveEffectiveViewerIdPure(
   room: Pick<RoomInstance, "players"> & Partial<Pick<RoomInstance, "gameId">>,
   viewerId: string | null,

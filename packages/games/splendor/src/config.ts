@@ -34,7 +34,6 @@ export const SPLENDOR_MAX_DISTINCT_GEMS = 3;
 export const SPLENDOR_MARKET_SIZE_PER_TIER = 4;
 export const SPLENDOR_TARGET_PRESTIGE_POINTS = 15;
 export const SPLENDOR_DEFAULT_MAX_TURNS = 300;
-export const SPLENDOR_NOBLE_POINTS = 3;
 
 export function getSplendorNobleCount(playerCount: number): number {
   return playerCount + 1;

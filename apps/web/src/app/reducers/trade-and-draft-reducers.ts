@@ -14,14 +14,13 @@ import {
 import type { GemColor, SplendorState } from "@gaming-platform/splendor";
 import type { AppModel } from "../types.ts";
 
-export function resetSubModesPure(model: Readonly<AppModel>): AppModel {
+export function createInitialSubModesPure() {
   return {
-    ...model,
     buildMode: null,
     mapBuildMenuExpanded: false,
     selectedBoardSpot: null,
-    setupEdgeKind: "road",
-    robberOrPirateMode: "robber",
+    setupEdgeKind: "road" as const,
+    robberOrPirateMode: "robber" as const,
     selectedMoveFromEdgeId: null,
     selectedMoveKnightFromVertexId: null,
     selectedChaseKnightVertexId: null,
@@ -46,6 +45,13 @@ export function resetSubModesPure(model: Readonly<AppModel>): AppModel {
     azulInspectedPlayerId: null,
     sevenWondersSelectedCardId: null,
     sevenWondersInspectedPlayerId: null,
+  };
+}
+
+export function resetSubModesPure(model: Readonly<AppModel>): AppModel {
+  return {
+    ...model,
+    ...createInitialSubModesPure(),
   };
 }
 

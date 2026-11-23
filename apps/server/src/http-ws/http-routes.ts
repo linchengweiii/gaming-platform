@@ -5,24 +5,16 @@ import {
   createHttpError,
 } from "./guest-sessions.ts";
 import {
+  assertMatchesAuthPlayer,
   buildRedactedStatePayload,
   handleRoomMatchSubRoute,
 } from "./http-match-routes.ts";
 import type { RealtimeHub } from "./realtime-hub.ts";
-import { readJsonBody, sendJson } from "./viewer-and-static.ts";
-
-function assertMatchesAuthPlayer(
-  claimed: unknown,
-  authPlayerId: string,
-  fieldName = "playerId"
-): void {
-  if (typeof claimed === "string" && claimed.trim() && claimed.trim() !== authPlayerId) {
-    throw createHttpError(
-      403,
-      `Authenticated guest does not match ${fieldName}`
-    );
-  }
-}
+import {
+  isViewerSeatedOrOwnerPure,
+  readJsonBody,
+  sendJson,
+} from "./viewer-and-static.ts";
 
 export async function handleApiRequest(
   req: http.IncomingMessage,
@@ -33,6 +25,15 @@ export async function handleApiRequest(
   guestSessions: GuestSessionStore
 ): Promise<boolean> {
   const pathname = url.pathname;
+  const enrichRoom = (room: RoomInstance, viewerId: string | null) =>
+    hub.enrichSummaryWithPresence(roomManager.toRoomSummary(room, viewerId));
+
+  const readAuthedPost = async (fieldName: string) => {
+    const authPlayerId = guestSessions.requireAuthPlayerId(req);
+    const body = await readJsonBody(req);
+    assertMatchesAuthPlayer(body[fieldName], authPlayerId, fieldName);
+    return { authPlayerId, body };
+  };
 
   if (pathname === "/api/games" && req.method === "GET") {
     sendJson(res, 200, { games: roomManager.registry.list() });
@@ -41,26 +42,24 @@ export async function handleApiRequest(
 
   if (pathname === "/api/guests/session" && req.method === "POST") {
     const body = await readJsonBody(req);
-    const isIdReserved = (candidateId: string): boolean => {
-      const rooms = Object.values(roomManager.getStateSnapshot().rooms);
-      return rooms.some(
+    const isIdReserved = (candidateId: string): boolean =>
+      Object.values(roomManager.getStateSnapshot().rooms).some(
         (r) =>
           r.ownerId === candidateId ||
           r.humanPlayers.some((p) => p.id === candidateId) ||
           r.players.some((p) => p.id === candidateId)
       );
-    };
     const session = guestSessions.issueSession(
       typeof body.playerId === "string" ? body.playerId : null,
       guestSessions.extractTokenFromReq(req),
       isIdReserved
     );
+    const cleanName =
+      typeof body.playerName === "string" ? body.playerName.trim() : "";
     sendJson(res, 200, {
       playerId: session.playerId,
       token: session.token,
-      ...(typeof body.playerName === "string" && body.playerName.trim()
-        ? { playerName: body.playerName.trim() }
-        : {}),
+      ...(cleanName ? { playerName: cleanName } : {}),
     });
     return true;
   }
@@ -79,13 +78,9 @@ export async function handleApiRequest(
   }
 
   if (pathname === "/api/guests/signout" && req.method === "POST") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertMatchesAuthPlayer(body.playerId, authPlayerId, "playerId");
-
+    const { authPlayerId } = await readAuthedPost("playerId");
     guestSessions.revokePlayer(authPlayerId);
     hub.signOutGuestConnections(authPlayerId);
-
     const result = roomManager.signOutGuest(authPlayerId);
     result.closedRoomIds.forEach((id) => hub.notifyRoomClosed(id));
     result.updatedRoomIds.forEach((id) => {
@@ -94,18 +89,12 @@ export async function handleApiRequest(
       hub.scheduleRoomBotTurn(id);
     });
     hub.broadcastLobbyRooms();
-    sendJson(res, 200, {
-      ok: true,
-      closedRoomIds: result.closedRoomIds,
-      updatedRoomIds: result.updatedRoomIds,
-    });
+    sendJson(res, 200, { ok: true, ...result });
     return true;
   }
 
   if (pathname === "/api/guests/rename" && req.method === "POST") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertMatchesAuthPlayer(body.playerId, authPlayerId, "playerId");
+    const { authPlayerId, body } = await readAuthedPost("playerId");
     const rawName = typeof body.newName === "string" ? body.newName : "";
     const renamed = roomManager.renameGuest(authPlayerId, rawName);
     renamed.updatedRoomIds.forEach((id) => hub.broadcastRoomState(id));
@@ -119,27 +108,20 @@ export async function handleApiRequest(
   }
 
   if (pathname === "/api/rooms" && req.method === "POST") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertMatchesAuthPlayer(body.ownerId, authPlayerId, "ownerId");
+    const { authPlayerId, body } = await readAuthedPost("ownerId");
     const room = roomManager.createRoom({ ...body, ownerId: authPlayerId });
-    const rawState = room.session?.getState() ?? null;
     const { actingId, view } = buildRedactedStatePayload(
       roomManager,
       room,
-      rawState,
+      room.session?.getState() ?? null,
       authPlayerId
     );
     hub.touchRoomActivity(room.roomId);
     hub.refreshRoomDisconnectClock(room.roomId);
     hub.broadcastLobbyRooms();
-    if (room.status === "in_progress") {
-      hub.scheduleRoomBotTurn(room.roomId);
-    }
+    if (room.status === "in_progress") hub.scheduleRoomBotTurn(room.roomId);
     sendJson(res, 201, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
+      room: enrichRoom(room, authPlayerId),
       state: view,
       actingPlayerId: actingId,
     });
@@ -147,9 +129,7 @@ export async function handleApiRequest(
   }
 
   const roomMatch = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(.+))?$/);
-  if (!roomMatch) {
-    return false;
-  }
+  if (!roomMatch) return false;
 
   const rawRoomId = decodeURIComponent(roomMatch[1]!);
   let targetRoom: RoomInstance;
@@ -170,103 +150,72 @@ export async function handleApiRequest(
     const viewerId = guestSessions.verifyToken(
       guestSessions.extractTokenFromReq(req)
     );
-    if (
-      viewerId &&
-      (room.ownerId === viewerId ||
-        room.humanPlayers.some(
-          (p) => p.id === viewerId || p.controllerId === viewerId
-        ))
-    ) {
+    if (viewerId && isViewerSeatedOrOwnerPure(room, viewerId)) {
       hub.touchRoomActivity(roomId);
     }
-    const state = room.session?.getState() ?? null;
     const { actingId: actingPlayerId, view } = buildRedactedStatePayload(
       roomManager,
       room,
-      state,
+      room.session?.getState() ?? null,
       viewerId
     );
     sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, viewerId)
-      ),
+      room: enrichRoom(room, viewerId),
       state: view,
       actingPlayerId,
     });
     return true;
   }
 
-  if (subRoute === "setup" && req.method === "POST") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertMatchesAuthPlayer(body.requesterId, authPlayerId, "requesterId");
-    const prevHumanIds = targetRoom.humanPlayers.map((p) => p.id);
-    const updated = roomManager.updateRoomSetup(roomId, authPlayerId, body);
-    const nextHumanIdSet = new Set(updated.humanPlayers.map((p) => p.id));
-    for (const prevId of prevHumanIds) {
-      if (!nextHumanIdSet.has(prevId)) {
-        hub.evictPlayerFromRoom(roomId, prevId);
-      }
-    }
+  const broadcastRoomAndLobby = (): void => {
     hub.touchRoomActivity(roomId);
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
-    sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(updated, authPlayerId)
-      ),
-    });
+  };
+
+  if (subRoute === "setup" && req.method === "POST") {
+    const { authPlayerId, body } = await readAuthedPost("requesterId");
+    const prevHumanIds = targetRoom.humanPlayers.map((p) => p.id);
+    const updated = roomManager.updateRoomSetup(roomId, authPlayerId, body);
+    const nextHumanIds = new Set(updated.humanPlayers.map((p) => p.id));
+    for (const prevId of prevHumanIds) {
+      if (!nextHumanIds.has(prevId)) hub.evictPlayerFromRoom(roomId, prevId);
+    }
+    broadcastRoomAndLobby();
+    sendJson(res, 200, { room: enrichRoom(updated, authPlayerId) });
     return true;
   }
 
   if (subRoute === "local-players" && req.method === "POST") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertMatchesAuthPlayer(body.requesterId, authPlayerId, "requesterId");
+    const { authPlayerId, body } = await readAuthedPost("requesterId");
     const player = roomManager.addLocalPlayer(
       roomId,
       authPlayerId,
       body.playerName ?? ""
     );
-    const room = roomManager.getRoom(roomId);
-    hub.touchRoomActivity(roomId);
-    hub.broadcastRoomState(roomId);
-    hub.broadcastLobbyRooms();
+    broadcastRoomAndLobby();
     sendJson(res, 200, {
       player,
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
+      room: enrichRoom(roomManager.getRoom(roomId), authPlayerId),
     });
     return true;
   }
 
   if (subRoute === "remove-player" && req.method === "POST") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertMatchesAuthPlayer(body.requesterId, authPlayerId, "requesterId");
-    const trimmedTargetId =
+    const { authPlayerId, body } = await readAuthedPost("requesterId");
+    const targetId =
       typeof body.targetPlayerId === "string" ? body.targetPlayerId.trim() : "";
-    const wasSeated = targetRoom.humanPlayers.some(
-      (p) => p.id === trimmedTargetId
-    );
-    const room = roomManager.removeLocalPlayer(
-      roomId,
-      authPlayerId,
-      trimmedTargetId
-    );
-    const stillSeated = room.humanPlayers.some((p) => p.id === trimmedTargetId);
-    if (trimmedTargetId && wasSeated && !stillSeated) {
-      hub.evictPlayerFromRoom(roomId, trimmedTargetId);
+    const wasSeated = targetRoom.humanPlayers.some((p) => p.id === targetId);
+    const room = roomManager.removeLocalPlayer(roomId, authPlayerId, targetId);
+    if (
+      targetId &&
+      wasSeated &&
+      !room.humanPlayers.some((p) => p.id === targetId)
+    ) {
+      hub.evictPlayerFromRoom(roomId, targetId);
     }
-    hub.touchRoomActivity(roomId);
-    hub.broadcastRoomState(roomId);
-    hub.broadcastLobbyRooms();
-    sendJson(res, 200, {
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
-    });
+    broadcastRoomAndLobby();
+    sendJson(res, 200, { room: enrichRoom(room, authPlayerId) });
     return true;
   }
 
@@ -288,23 +237,18 @@ export async function handleApiRequest(
       isBot ? undefined : authPlayerId
     );
     const room = roomManager.getRoom(roomId);
-    const rawState = room.session?.getState() ?? null;
     const viewerId = isBot ? authPlayerId : player.id;
     const { actingId, view } = buildRedactedStatePayload(
       roomManager,
       room,
-      rawState,
+      room.session?.getState() ?? null,
       viewerId
     );
-    hub.touchRoomActivity(roomId);
     hub.refreshRoomDisconnectClock(roomId);
-    hub.broadcastRoomState(roomId);
-    hub.broadcastLobbyRooms();
+    broadcastRoomAndLobby();
     sendJson(res, 200, {
       player,
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, viewerId)
-      ),
+      room: enrichRoom(room, viewerId),
       state: view,
       actingPlayerId: actingId,
     });
@@ -312,9 +256,7 @@ export async function handleApiRequest(
   }
 
   if (subRoute === "leave" && req.method === "POST") {
-    const authPlayerId = guestSessions.requireAuthPlayerId(req);
-    const body = await readJsonBody(req);
-    assertMatchesAuthPlayer(body.playerId, authPlayerId, "playerId");
+    const { authPlayerId } = await readAuthedPost("playerId");
     const room = roomManager.leaveRoom(roomId, authPlayerId);
     if (!room) {
       hub.notifyRoomClosed(roomId);
@@ -322,19 +264,13 @@ export async function handleApiRequest(
       sendJson(res, 200, { closed: true, room: null });
       return true;
     }
-    const stillSeated = room.humanPlayers.some((p) => p.id === authPlayerId);
-    if (!stillSeated) {
+    if (!room.humanPlayers.some((p) => p.id === authPlayerId)) {
       hub.removePlayerRoomPresence(roomId, authPlayerId);
     }
     hub.refreshRoomDisconnectClock(roomId);
     hub.broadcastRoomState(roomId);
     hub.broadcastLobbyRooms();
-    sendJson(res, 200, {
-      closed: false,
-      room: hub.enrichSummaryWithPresence(
-        roomManager.toRoomSummary(room, authPlayerId)
-      ),
-    });
+    sendJson(res, 200, { closed: false, room: enrichRoom(room, authPlayerId) });
     return true;
   }
 
