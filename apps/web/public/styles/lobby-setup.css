@@ -20,7 +20,6 @@
   border-radius: var(--r-md);
   background: var(--surface);
   border: 1px solid var(--line);
-  align-self: end;
 }
 
 .ga-lobby-stat {

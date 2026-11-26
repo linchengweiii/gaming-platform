@@ -353,8 +353,8 @@
   }
 
   .ga-game-canvas .visual-hand-tray {
-    padding: 12px 18px 14px;
-    gap: 10px;
+    padding: 12px 18px 8px;
+    gap: 6px;
   }
 
   .ga-game-canvas .ga-hand-privacy-card {
@@ -410,7 +410,7 @@
   .ga-game-canvas .hand-cards-scroll {
     flex: 1 1 0;
     min-height: 0;
-    padding: 3px 2px 2px;
+    padding: 7px 4px 8px;
     gap: 8px;
     overflow-x: auto;
     overflow-y: hidden;
