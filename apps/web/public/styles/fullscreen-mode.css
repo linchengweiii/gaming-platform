@@ -198,8 +198,8 @@ body:has(.ga-game-canvas.is-fullscreen) {
   }
 
   .ga-game-canvas.is-fullscreen .visual-hand-tray {
-    padding: 8px 14px 10px;
-    gap: 6px;
+    padding: 8px 14px 4px;
+    gap: 2px;
   }
 
   .ga-game-canvas.is-fullscreen .hand-tray-header {

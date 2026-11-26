@@ -381,8 +381,8 @@
 
   /* Compact 5-card Catan Hand Tray (all 5 base resources visible at once on iPhone!) */
   .visual-hand-tray {
-    padding: 8px 10px 10px;
-    gap: 6px;
+    padding: 8px 10px 6px;
+    gap: 2px;
   }
 
   .hand-tray-header {
@@ -397,7 +397,7 @@
 
   .hand-cards-scroll {
     gap: 6px;
-    padding: 2px 1px 4px;
+    padding: 7px 2px 8px;
     -webkit-overflow-scrolling: touch;
   }
 
